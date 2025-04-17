@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
-import { storeTaskData } from '@/lib/tempStore'; // Import the store function
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -123,7 +122,7 @@ export async function POST(req) {
         finalAssistantMessageContent = "Great! I have all the information needed. Generating your hybrid offer document now... This might take a minute."; // Update message
 
         // Store the final answers using the chatId
-        storeTaskData(chatId, updatedAnswers);
+        // storeTaskData(chatId, updatedAnswers);
         
         // DO NOT call n8n here anymore
         console.log(`[${requestStartTime}] Data stored for ${chatId}. Frontend should now connect to SSE endpoint.`);

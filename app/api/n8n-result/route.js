@@ -1,50 +1,55 @@
 import { NextResponse } from 'next/server';
-import { retrieveTaskData, removeTaskData } from '@/lib/tempStore';
+// No longer need tempStore
+// import { retrieveTaskData, removeTaskData } from '@/lib/tempStore'; 
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const chatId = searchParams.get('chatId');
+  const encodedAnswersData = searchParams.get('answersData'); // Get encoded data
 
-  if (!chatId) {
-    return new Response('Missing chatId parameter', { status: 400 });
+  if (!chatId || !encodedAnswersData) {
+    return new Response('Missing chatId or answersData parameter', { status: 400 });
   }
 
-  // Retrieve the answers stored by the POST request
-  const collectedAnswers = retrieveTaskData(chatId);
+  let collectedAnswers;
+  try {
+      collectedAnswers = JSON.parse(decodeURIComponent(encodedAnswersData));
+      console.log(`[SSE ${chatId}] Successfully decoded answers from query params:`, collectedAnswers);
+  } catch (e) {
+      console.error(`[SSE ${chatId}] Failed to decode/parse answersData from query param:`, e);
+      return new Response('Invalid answersData format', { status: 400 });
+  }
 
-  if (!collectedAnswers) {
-    console.error(`[SSE ${chatId}] No data found for this chatId.`);
-    // Optionally send an error event to the client before closing
-    const stream = new ReadableStream({
-      start(controller) {
-        const errorPayload = JSON.stringify({ error: "Session data expired or not found. Please try again." });
-        controller.enqueue(`event: error\ndata: ${errorPayload}\n\n`);
-        controller.close();
-      }
-    });
-    return new Response(stream, { 
-       headers: { 'Content-Type': 'text/event-stream' } 
-    }); 
+  // Check if we got a valid object
+  if (!collectedAnswers || typeof collectedAnswers !== 'object' || Object.keys(collectedAnswers).length === 0) {
+      console.error(`[SSE ${chatId}] Decoded answers are empty or invalid.`);
+       // Send error event back to client
+       const stream = new ReadableStream({
+         start(controller) {
+           const errorPayload = JSON.stringify({ error: "Session data expired or not found. Please try again." });
+           controller.enqueue(`event: error\ndata: ${errorPayload}\n\n`);
+           controller.close();
+         }
+       });
+       return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
   }
 
   // Create a streaming response
   const stream = new ReadableStream({
     async start(controller) {
-      // Helper to send messages
       const sendEvent = (event, data) => {
         const payload = JSON.stringify(data);
         controller.enqueue(`event: ${event}\ndata: ${payload}\n\n`);
       };
 
       try {
-        console.log(`[SSE ${chatId}] Data retrieved. Calling n8n webhook...`);
+        console.log(`[SSE ${chatId}] Data retrieved from URL. Calling n8n webhook...`);
         const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(collectedAnswers),
-          // Add a timeout? fetch doesn't support it directly
+          body: JSON.stringify(collectedAnswers), // Use answers from URL
         });
 
         const status = n8nResponse.status;
@@ -78,10 +83,9 @@ export async function GET(request) {
         console.log(`[SSE ${chatId}] Sent error event to client.`);
       
       } finally {
-        // Clean up and close the connection
-        console.log(`[SSE ${chatId}] Cleaning up data and closing connection.`);
-        removeTaskData(chatId); // Remove data from store
-        controller.close(); // Close the SSE stream
+        // No need to remove from store, just close connection
+        console.log(`[SSE ${chatId}] Closing connection.`);
+        controller.close();
       }
     }
   });
