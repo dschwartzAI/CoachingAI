@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2 } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText } from 'lucide-react'; // Icons for status and Loader2
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -282,61 +282,89 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Listen for the specific event from the backend
     es.addEventListener('n8n_result', (event) => {
       console.log("[SSE Connect] Received n8n_result event:", event.data);
+      let resultMessageContent = null; // Initialize as null
+
       try {
         const eventData = JSON.parse(event.data);
         if (eventData.success && eventData.data) {
-          // Format the successful result into a message
+          // --- Construct JSX message content ---
           const n8nResult = eventData.data;
-          // Customize this message based on your actual n8n response structure
-          let resultMessageContent = "✅ Document generated successfully!\n";
-          if (n8nResult.pdfDownlaodLink) {
-            resultMessageContent += `\n[Download PDF](${n8nResult.pdfDownlaodLink})`;
-          }
-          if (n8nResult.pdfWebViewLink) {
-            resultMessageContent += `\n[View PDF](${n8nResult.pdfWebViewLink})`;
-          }
-          if (n8nResult.googleDoc) {
-             resultMessageContent += `\nGoogle Doc ID: ${n8nResult.googleDoc}`;
-          }
-
-          const resultMessage = { role: 'assistant', content: resultMessageContent };
-          // Add this message to the *current* chat
-          setCurrentChat(prevChat => {
-              if (!prevChat) return null; // Should not happen if SSE was initiated
-              return {...prevChat, messages: [...prevChat.messages, resultMessage]};
-          });
-           // Update the main chats list as well
-           setChats(prevChats => prevChats.map(c => c.id === currentChat?.id ? {...c, messages: [...c.messages, resultMessage]} : c));
-        
+          resultMessageContent = (
+            <div className="space-y-3"> {/* Added spacing */}
+              <div className="flex items-center gap-2 font-medium"> {/* Success message style */}
+                 <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                 <span>Document generated successfully!</span>
+              </div>
+              <div className="flex flex-wrap gap-2"> {/* Use flex-wrap for buttons */}
+                 {n8nResult.pdfWebViewLink && (
+                   <Button variant="outline" size="sm" asChild>
+                      <a href={n8nResult.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="mr-2 h-4 w-4" /> View PDF
+                      </a>
+                   </Button>
+                 )}
+                 {n8nResult.pdfDownlaodLink && ( // Typo corrected from original request
+                   <Button variant="outline" size="sm" asChild>
+                      <a href={n8nResult.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download> {/* Added download attribute */}
+                         <Download className="mr-2 h-4 w-4" /> Download PDF
+                      </a>
+                   </Button>
+                 )}
+                 {n8nResult.googleDocLink && ( // Updated key name
+                    <Button variant="outline" size="sm" asChild>
+                       <a href={n8nResult.googleDocLink} target="_blank" rel="noopener noreferrer">
+                           <FileText className="mr-2 h-4 w-4" /> View Google Doc
+                       </a>
+                    </Button>
+                  )}
+              </div>
+            </div>
+          );
+          // --- End JSX construction ---
         } else {
-           // Handle potential { success: false } from backend event
            throw new Error(eventData.message || 'Received unsuccessful result from server.');
         }
       } catch (parseError) {
-        console.error("[SSE Connect] Error parsing n8n_result data:", parseError);
-        // Add a generic error message to chat?
-         const parseErrorMessage = { role: 'assistant', content: "Error processing the document result." };
-         setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, parseErrorMessage]} : null);
-         setChats(prevChats => prevChats.map(c => c.id === currentChat?.id ? {...c, messages: [...c.messages, parseErrorMessage]} : c));
+        console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
+        // Fallback text message on error
+        resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
       }
-      
-      setIsWaitingForN8n(false); // Hide loading indicator
-      es.close(); // Close connection after receiving the result
+
+      // Add the message (JSX or fallback text) to the chat state
+      if (resultMessageContent !== null && currentChat?.id === chatId) { // Ensure chat context is still correct
+          const resultMessage = { role: 'assistant', content: resultMessageContent, isJSX: true }; // Add isJSX flag
+          setCurrentChat(prevChat => {
+              if (!prevChat || prevChat.id !== chatId) return prevChat; // Safety check
+              return {...prevChat, messages: [...prevChat.messages, resultMessage]};
+          });
+          setChats(prevChats => prevChats.map(c => {
+              if (c.id === chatId) {
+                  return {...c, messages: [...c.messages, resultMessage]};
+              }
+              return c;
+          }));
+      } else {
+          console.warn("[SSE Connect] Could not add result message - chat context might have changed or content was null.");
+      }
+
+      setIsWaitingForN8n(false);
+      es.close();
       eventSourceRef.current = null;
       console.log("[SSE Connect] Closed connection after n8n_result.");
-      textareaRef.current?.focus(); // Refocus now
+      textareaRef.current?.focus();
     });
 
-    // Handle generic errors from the EventSource connection itself
+    // Handle generic errors
     es.onerror = (error) => {
       console.error("[SSE Connect] EventSource error:", error);
-      setIsWaitingForN8n(false); // Hide loading indicator on error
-      // Add an error message to the chat
-      const sseErrorMessage = { role: 'assistant', content: "Connection error while generating document. Please try again later." };
-      setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
-      setChats(prevChats => prevChats.map(c => c.id === currentChat?.id ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
-      
-      es.close(); // Close connection on error
+      setIsWaitingForN8n(false);
+      // Add an error message (text) to the chat
+      const sseErrorMessage = { role: 'assistant', content: "Connection error while generating document. Please try again later.", isJSX: false }; // Mark as not JSX
+       if (currentChat?.id === chatId) { // Add error only if chat context is still relevant
+            setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
+            setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
+       }
+      es.close();
       eventSourceRef.current = null;
     };
   };
@@ -395,12 +423,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   </Avatar>
               )}
               <div
-                  className={`rounded-lg p-3 max-w-[80%] whitespace-pre-wrap text-sm ${ 
+                  className={`rounded-lg p-3 max-w-[80%] text-sm ${ // Removed whitespace-pre-wrap IF content is JSX
                   message.role === "user"
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-primary text-primary-foreground whitespace-pre-wrap" // Keep for user text
                       : "bg-muted"
-                  }`}
+                  } ${!message.isJSX ? 'whitespace-pre-wrap' : ''}`} // Apply only if not JSX
               >
+                  {/* Render content directly - React handles JSX vs strings */}
                   {message.content}
               </div>
               {message.role === "user" && (
