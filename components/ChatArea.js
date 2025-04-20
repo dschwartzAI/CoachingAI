@@ -104,9 +104,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   messages: [],
-                  currentTool: 'hybrid-offer',
-                  collectedAnswers: {},
-                  currentQuestionKey: null,
+                  tool: 'hybrid-offer', // Use 'tool' instead of 'currentTool' to match API expectations
+                  isToolInit: true, // Flag this as a tool initialization call
                   chatId: chatIdToInitiate
               }),
           });
@@ -118,14 +117,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           }
           const data = await response.json();
           console.log("[Initiate Func] API response data:", data);
-          const assistantMessage = data.message;
-          const returnedAnswers = data.collectedAnswers;
-          const nextQuestionKey = data.currentQuestionKey;
-          if (!assistantMessage || !nextQuestionKey) {
-               throw new Error("API response missing assistant message or next question key during initiation.");
-          }
-          setCollectedAnswers(returnedAnswers || {});
+          
+          // Handle both old and new API response formats
+          const assistantMessage = { 
+              role: "assistant", 
+              content: data.message || "Let's start creating your hybrid offer."
+          };
+          
+          // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
+          const returnedAnswers = data.collectedAnswers || {};
+          // Default to first question key if not provided by API
+          const nextQuestionKey = data.currentQuestionKey || hybridOfferQuestions[0].key;
+          
+          setCollectedAnswers(returnedAnswers);
           setCurrentQuestionKey(nextQuestionKey);
+          
           const updatedChat = {
               id: chatIdToInitiate,
               title: "Hybrid Offer Chat",
@@ -199,7 +205,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
                messages: updatedMessages,
-               currentTool: selectedTool,
+               tool: selectedTool,
                collectedAnswers: collectedAnswers,
                currentQuestionKey: currentQuestionKey,
                chatId: chatToUpdate.id
@@ -210,13 +216,20 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
         const data = await response.json();
-        const assistantMessage = data.message;
-        const returnedAnswers = data.collectedAnswers;
-        const nextQuestionKey = data.currentQuestionKey;
-        const isComplete = data.isComplete;
-        const chatId = data.chatId;
+        console.log("[handleSubmit] API response data:", data);
+        
+        // Create assistant message with appropriate format (check if we got a string or object)
+        const assistantMessage = typeof data.message === 'string' 
+            ? { role: 'assistant', content: data.message }
+            : data.message || { role: 'assistant', content: "I received your message but couldn't generate a proper response." };
+            
+        // Use returned data or keep existing values
+        const returnedAnswers = data.collectedAnswers || collectedAnswers || {};
+        const nextQuestionKey = data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey;
+        const isComplete = data.isComplete || false;
+        const chatId = data.chatId || chatToUpdate.id;
 
-        setCollectedAnswers(returnedAnswers || {});
+        setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
 
         const finalChat = { ...optimisticChat, messages: [...updatedMessages, assistantMessage] };

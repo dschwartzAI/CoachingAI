@@ -5,26 +5,25 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogIn, LogOut } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { TOOLS } from '@/lib/config/tools';
+import { createNewThread } from '@/lib/utils/thread';
 
 export default function Sidebar({ selectedTool, setSelectedTool, chats, currentChat, setCurrentChat }) {
-  const { user, signInWithGoogle, signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const router = useRouter();
 
-  const tools = [
-    {
-      id: "hybrid-offer",
-      name: "Hybrid Offer Creator",
-      description: "Create personalized hybrid offers"
-    }
-  ];
+  const tools = Object.values(TOOLS);
 
   const handleNewChat = () => {
-    const newChat = {
-      id: Date.now().toString(),
-      title: "New conversation",
-      messages: []
-    };
+    const newChat = createNewThread(selectedTool);
     setCurrentChat(newChat);
   };
+
+  // Only show non-temporary chats in the sidebar
+  const filteredChats = chats.filter(chat => 
+    !chat.isTemporary && (selectedTool ? chat.tool_id === selectedTool : !chat.tool_id)
+  );
 
   return (
     <div className="w-[300px] h-full border-r flex flex-col bg-background">
@@ -40,6 +39,13 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
             Specialized Tools
           </h2>
           <div className="space-y-1">
+            <Button
+              variant={!selectedTool ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              onClick={() => setSelectedTool(null)}
+            >
+              Regular Chat
+            </Button>
             {tools.map((tool) => (
               <Button
                 key={tool.id}
@@ -59,15 +65,15 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
           </h2>
           <ScrollArea className="h-[calc(100% - 40px)]">
             <div className="space-y-1 pr-2">
-              {chats.map((chat) => (
+              {filteredChats.map((chat) => (
                 <Button
                   key={chat.id}
                   variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
                   className="w-full justify-start truncate"
                   onClick={() => setCurrentChat(chat)}
-                  title={chat.title || "New conversation"}
+                  title={chat.title}
                 >
-                  {chat.title || "New conversation"}
+                  {chat.title}
                 </Button>
               ))}
             </div>
@@ -92,8 +98,8 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
             </Button>
           </div>
         ) : (
-          <Button className="w-full" onClick={signInWithGoogle}>
-            <LogIn className="mr-2 h-4 w-4" /> Login with Google
+          <Button className="w-full" onClick={() => router.push('/login')}>
+            <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
           </Button>
         )}
       </div>
