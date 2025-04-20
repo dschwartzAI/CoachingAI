@@ -10,7 +10,7 @@ import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { TOOLS } from '@/lib/config/tools';
 import { ToolProgress } from '@/components/ToolProgress';
-import { Loader2, SendHorizontal, Plus, RefreshCw, ChevronDown, RotateCcw } from 'lucide-react';
+import { Loader2, SendHorizontal, Plus, RefreshCw, ChevronDown, RotateCcw, ArrowUp } from 'lucide-react';
 import Message from '@/components/Message';
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -211,17 +211,32 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         throw new Error('User ID is missing - are you logged in?');
       }
       
+      // For all threads (both tool-based and regular), we'll let initializeThread 
+      // generate the title from the first message. Only if there's no first message,
+      // we'll use the tool name as a fallback.
       const threadData = {
-        title: 'New Chat', // Will be generated in initializeThread
+        title: null, // Will be generated from first message in initializeThread
         tool_id: thread?.tool_id
       };
       
+      // Pass the complete userInput as the first message
+      console.log('[Chat] Passing user input to initializeThread:', {
+        inputLength: userInput.length,
+        threadTitle: '(will be generated from message)',
+        toolId: thread?.tool_id,
+        expectedTitle: userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput
+      });
+      
       const newThread = await initializeThread(threadData, userInput, userId);
       
+      // Verify that the thread title was set correctly
       console.log('[Chat] New thread initialized:', {
         threadId: newThread.id,
         title: newThread.title,
-        messagesCount: newThread.messages?.length
+        expectedTitle: !thread?.tool_id ? (userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput) : threadData.title,
+        titleMatches: !thread?.tool_id ? newThread.title.startsWith(userInput.substring(0, Math.min(10, userInput.length))) : newThread.title === threadData.title,
+        messagesCount: newThread.messages?.length,
+        firstMessage: newThread.messages?.[0]?.content
       });
       
       setThread(newThread);
@@ -413,11 +428,13 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   };
 
   return (
-    <Card className="flex flex-col h-full bg-background border-0 rounded-none shadow-none">
+    <Card className="flex flex-col h-full bg-background border-none">
       {thread?.id && (
-        <div className="border-b p-3 flex items-center justify-between">
+        <div className="border-b px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <h3 className="text-lg font-semibold">{thread.title || "New Chat"}</h3>
+            <h3 className="text-lg font-semibold" title={thread.title}>
+              {thread.title || "New Chat"}
+            </h3>
             {tool && <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">{tool.name}</span>}
           </div>
           <div className="flex space-x-2">
@@ -426,6 +443,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
               size="icon"
               onClick={() => setShowRecentChats(!showRecentChats)}
               title="Recent chats"
+              className="rounded-full h-8 w-8"
             >
               <ChevronDown className={cn("h-4 w-4", showRecentChats && "rotate-180")} />
             </Button>
@@ -434,6 +452,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
               size="icon"
               onClick={handleResetChat}
               title="Reset chat"
+              className="rounded-full h-8 w-8"
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -443,14 +462,14 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       
       {tool && <ToolProgress tool={tool} messages={messages} />}
       
-      <ScrollArea className="flex-grow p-4">
-        <div className="space-y-4 max-w-4xl mx-auto">
+      <ScrollArea className="flex-grow p-6">
+        <div className="space-y-6 max-w-3xl mx-auto">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <RefreshCw className="h-8 w-8 mb-2 animate-spin-slow" />
               {tool ? 
                 <p>Starting {tool.name}...</p> : 
-                <p>Send a message to start the conversation</p>
+                <h2 className="text-xl font-semibold">What can I help with?</h2>
               }
             </div>
           )}
@@ -462,12 +481,12 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         </div>
       </ScrollArea>
 
-      <CardContent className="p-4 border-t bg-card">
+      <CardContent className="p-4 border-t">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex gap-3 items-end">
+          <div className="relative">
             <Textarea
-              placeholder="Type your message..."
-              className="flex-1 resize-none min-h-[60px] border-input bg-background"
+              placeholder="What can I help with?"
+              className="flex-1 resize-none min-h-[60px] px-4 py-3 pr-12 rounded-2xl bg-muted border-0 focus-visible:ring-1 focus-visible:ring-primary"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -482,12 +501,12 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
               type="submit" 
               disabled={isLoading || isInitializingThread} 
               size="icon" 
-              className="rounded-full h-10 w-10"
+              className="absolute right-2 bottom-2 rounded-full h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {isLoading || isInitializingThread ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <SendHorizontal className="h-4 w-4" />
+                <ArrowUp className="h-4 w-4" />
               )}
             </Button>
           </div>

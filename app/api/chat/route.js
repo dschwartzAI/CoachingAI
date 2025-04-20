@@ -13,13 +13,124 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 // Define the questions and their corresponding keys, in order
 const hybridOfferQuestions = [
-  { key: 'offerDescription', question: "Welcome! I'm excited to help you craft a fantastic hybrid offer. Could you tell me a bit about your core offering, whether it's a product or a service?" }, // Make first question conversational
-  { key: 'targetAudience', question: "Who is your target audience?" },
-  { key: 'painPoints', question: "What are their main pain points?" },
-  { key: 'solution', question: "What is the unique way you solve this problem?" },
-  { key: 'pricing', question: "What is your pricing structure?" },
-  { key: 'clientResult', question: "Finally, what's your biggest client result?" } // Make last question conversational
+  { 
+    key: 'offerDescription', 
+    question: "Welcome! I'm excited to help you craft a fantastic hybrid offer. Could you tell me a bit about your core offering, whether it's a product or a service?",
+    guidanceMessage: "I'd love to hear more details about your core offering. What specific product or service are you providing? This helps me craft a better hybrid offer for you."
+  },
+  { 
+    key: 'targetAudience', 
+    question: "Who is your target audience?",
+    guidanceMessage: "Understanding your audience is crucial. Could you share more about who would benefit most from your offering? Consider demographics, pain points, or specific needs they have."
+  },
+  { 
+    key: 'painPoints', 
+    question: "What are their main pain points?",
+    guidanceMessage: "Knowing the problems your audience faces helps create a compelling offer. Could you elaborate on the specific challenges they encounter that your product/service helps solve?"
+  },
+  { 
+    key: 'solution', 
+    question: "What is the unique way you solve this problem?",
+    guidanceMessage: "Your unique approach is what sets you apart! Could you share more about how your solution works and what makes it different from alternatives?"
+  },
+  { 
+    key: 'pricing', 
+    question: "What is your pricing structure?",
+    guidanceMessage: "Pricing is a key element of your offer. Could you provide more details about your pricing model or the price range you're considering?"
+  },
+  { 
+    key: 'clientResult', 
+    question: "Finally, what's your biggest client result?",
+    guidanceMessage: "Success stories really make your offer shine! Could you share a specific result or transformation that clients have experienced with your product/service?"
+  }
 ];
+
+// Add a function to validate answers using AI
+async function validateHybridOfferAnswer(questionKey, answer) {
+  if (!answer || answer.trim().length < 5) {
+    return {
+      isValid: false,
+      reason: "The answer is too short to provide meaningful information."
+    };
+  }
+
+  // Create validation prompts based on question type
+  const validationCriteria = {
+    offerDescription: "Should describe a product or service with enough detail to understand what it is.",
+    targetAudience: "Should describe who the offering is for - could be demographics, professions, or characteristics.",
+    painPoints: "Should identify problems or challenges that the target audience experiences.",
+    solution: "Should explain how the product/service addresses the pain points in a unique way.",
+    pricing: "Should provide some indication of pricing structure, tiers, or general price range.",
+    clientResult: "Should describe a success story or outcome that a client has achieved."
+  };
+
+  const validationPrompt = [
+    {
+      role: "system",
+      content: `You are an assistant that validates answers for creating a hybrid offer.
+You should determine if an answer provides sufficient information to proceed with offer creation.
+Be flexible and accommodating - if the answer has ANY useful information, consider it valid.
+Only reject answers that are completely off-topic, nonsensical, or too vague to use.
+IMPORTANT: Err on the side of accepting answers unless they are clearly unusable.`
+    },
+    {
+      role: "user",
+      content: `Question category: ${questionKey}
+Validation criteria: ${validationCriteria[questionKey]}
+User's answer: "${answer}"
+
+Is this answer useful enough to proceed with creating a hybrid offer? 
+If not, briefly explain why in 1-2 sentences from a helpful perspective.
+Return only JSON: { "isValid": boolean, "reason": "explanation if invalid" }`
+    }
+  ];
+
+  try {
+    // Call OpenAI to validate the answer
+    const validationCompletion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: validationPrompt,
+      temperature: 0.3, // Lower temperature for more consistent validation
+      max_tokens: 150,
+      response_format: { type: "json_object" }
+    });
+
+    // Parse the validation result
+    const validationResult = JSON.parse(validationCompletion.choices[0].message.content);
+    console.log(`[Chat API] Answer validation for ${questionKey}:`, validationResult);
+    return validationResult;
+  } catch (error) {
+    console.error('[Chat API] Error validating answer:', error);
+    // Default to accepting the answer if validation fails
+    return { isValid: true, reason: null };
+  }
+}
+
+// Add this function to generate appropriate thread titles
+function generateThreadTitle(message) {
+  if (!message || !message.content) {
+    return "New conversation";
+  }
+  
+  // Truncate and clean the message to create a title
+  const maxLength = 30;
+  let title = message.content.trim();
+  
+  // Remove any newlines or extra whitespace
+  title = title.replace(/\s+/g, ' ');
+  
+  if (title.length > maxLength) {
+    // Cut at the last complete word within maxLength
+    title = title.substr(0, maxLength).split(' ').slice(0, -1).join(' ') + '...';
+  }
+  
+  console.log('[Chat API] Generated title from message:', {
+    original: message.content.substring(0, 50) + (message.content.length > 50 ? '...' : ''),
+    generated: title
+  });
+  
+  return title || "New conversation";
+}
 
 export async function POST(request) {
   try {
@@ -128,12 +239,25 @@ export async function POST(request) {
         // If there was an error or no thread found
         if (lookupError || !existingThread) {
           console.log('[Chat API] Thread not found, creating new thread in Supabase');
+          
+          // Find the first user message to use for the title
+          const firstUserMessage = messages.find(msg => msg.role === 'user');
+          const threadTitle = firstUserMessage 
+            ? generateThreadTitle(firstUserMessage)
+            : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
+          
+          console.log('[Chat API] Creating thread with title:', {
+            title: threadTitle,
+            fromUserMessage: !!firstUserMessage,
+            toolName: tool ? TOOLS[tool]?.name : null
+          });
+          
           // Create the thread with proper UUID
           const { data: newThread, error: threadError } = await supabase
             .from('threads')
             .insert({
               id: chatId,  // Now using valid UUID
-              title: 'Chat ' + new Date().toLocaleString(),
+              title: threadTitle,
               user_id: userId,
               tool_id: tool || null,
             })
@@ -191,7 +315,7 @@ export async function POST(request) {
     
     // Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4o-mini",
       messages: messages,
       temperature: 0.7,
       max_tokens: 1000,
@@ -246,12 +370,14 @@ export async function POST(request) {
       console.log('[Chat API] Current question key from request:', body.currentQuestionKey);
       console.log('[Chat API] Collected answers:', collectedAnswers);
       
-      // Determine if all questions have been answered
+      // Determine if all questions have been answered with valid responses
       const allQuestionsAnswered = hybridOfferQuestions.every(q => 
-        collectedAnswers[q.key] !== undefined && collectedAnswers[q.key] !== '');
+        collectedAnswers[q.key] !== undefined && 
+        collectedAnswers[q.key] !== ''
+      );
         
       if (allQuestionsAnswered) {
-        console.log('[Chat API] All questions answered, marking as complete');
+        console.log('[Chat API] All questions answered with valid responses, marking as complete');
         isComplete = true;
         currentQuestionKey = null; // No more questions
       } else {
@@ -262,7 +388,40 @@ export async function POST(request) {
         if (currentQuestionKey && messages.length > 0) {
           const lastUserMessage = messages.find(m => m.role === 'user');
           if (lastUserMessage) {
-            // Save this answer to the current question
+            // Get the question object
+            const currentQuestion = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
+            
+            // Validate the answer using AI
+            if (currentQuestion) {
+              console.log(`[Chat API] Validating answer for ${currentQuestionKey}`);
+              const validationResult = await validateHybridOfferAnswer(
+                currentQuestionKey, 
+                lastUserMessage.content
+              );
+              
+              // If the answer isn't valid, provide guidance
+              if (!validationResult.isValid) {
+                console.log(`[Chat API] Invalid answer for ${currentQuestionKey}, providing guidance`);
+                
+                // Create a personalized guidance message that incorporates the validation reason
+                const personalizedGuidance = `${validationResult.reason} ${currentQuestion.guidanceMessage}`;
+                content = personalizedGuidance;
+                
+                // Don't save this answer or advance to the next question
+                responsePayload = {
+                  message: content,
+                  currentQuestionKey, // Keep the same question
+                  collectedAnswers,
+                  isComplete: false,
+                  chatId: chatId
+                };
+                
+                console.log('[Chat API] Sending guidance response:', JSON.stringify(responsePayload, null, 2));
+                return NextResponse.json(responsePayload);
+              }
+            }
+            
+            // Save this answer to the current question (if valid)
             collectedAnswers[currentQuestionKey] = lastUserMessage.content;
             console.log(`[Chat API] Saved answer for ${currentQuestionKey}:`, lastUserMessage.content);
           }
@@ -291,7 +450,9 @@ export async function POST(request) {
         if (!currentQuestionKey && !isComplete) {
           console.log('[Chat API] Finding first unanswered question');
           const unansweredQuestion = hybridOfferQuestions.find(q => 
-            !collectedAnswers[q.key] || collectedAnswers[q.key] === '');
+            !collectedAnswers[q.key] || 
+            collectedAnswers[q.key] === ''
+          );
           currentQuestionKey = unansweredQuestion?.key || null;
           console.log('[Chat API] First unanswered question:', currentQuestionKey);
           
@@ -311,8 +472,44 @@ export async function POST(request) {
           content = questionObj.question;
         }
       } else if (isComplete) {
-        // If we're complete, send a completion message
-        content = "Thank you for providing all the information! I'll now generate your hybrid offer documents. This might take a moment...";
+        // If we're complete, use OpenAI to generate a summary and confirmation
+        console.log('[Chat API] Hybrid offer information collection complete, generating summary');
+        
+        // Build a completion prompt with the collected information
+        const summaryPrompt = [
+          {
+            role: "system",
+            content: `You are a helpful assistant creating a hybrid offer based on the following information.
+A hybrid offer combines digital and physical components to provide more value and multiple price points.
+Review the collected information and provide a friendly, encouraging summary confirming what you've learned.
+Be conversational and enthusiastic, and suggest 1-2 specific ideas for the hybrid offer components based on the information.`
+          },
+          {
+            role: "user",
+            content: `Here's the information I've provided about my business for creating a hybrid offer:
+            
+Core Offering: ${collectedAnswers.offerDescription}
+Target Audience: ${collectedAnswers.targetAudience}
+Pain Points: ${collectedAnswers.painPoints}
+My Solution: ${collectedAnswers.solution}
+Pricing: ${collectedAnswers.pricing}
+Best Client Result: ${collectedAnswers.clientResult}
+
+Please summarize what you've learned and suggest 1-2 specific ideas for my hybrid offer.`
+          }
+        ];
+        
+        // Call OpenAI to generate a tailored summary
+        const summaryCompletion = await openai.chat.completions.create({
+          model: "gpt-4-turbo-preview",
+          messages: summaryPrompt,
+          temperature: 0.7,
+          max_tokens: 1000,
+        });
+        
+        // Extract the summary content
+        content = summaryCompletion.choices[0].message.content;
+        console.log('[Chat API] Generated hybrid offer summary');
       }
     }
     

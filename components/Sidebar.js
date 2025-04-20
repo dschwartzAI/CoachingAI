@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
@@ -11,11 +12,25 @@ import {
   MessageSquare, 
   Plus,
   Settings,
-  ChevronDown
+  ChevronDown,
+  MessagesSquare,
+  PenTool,
+  LineChart,
+  BrainCog,
+  Search,
+  Wrench,
+  Users
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
 import { createNewThread } from '@/lib/utils/thread';
+
+// Map tool IDs to icons
+const toolIcons = {
+  'hybrid-offer': <PenTool className="h-4 w-4 mr-2" />,
+  'content-repurposer': <BrainCog className="h-4 w-4 mr-2" />,
+  'analytics': <LineChart className="h-4 w-4 mr-2" />
+};
 
 export default function Sidebar({ selectedTool, setSelectedTool, chats, currentChat, setCurrentChat, isLoading }) {
   const { user, signOut } = useAuth();
@@ -23,15 +38,44 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
 
   const tools = Object.values(TOOLS);
 
-  const handleNewChat = () => {
-    const newChat = createNewThread(selectedTool);
+  // Add this to debug the thread title issue
+  useEffect(() => {
+    if (currentChat) {
+      console.log('[Sidebar] Current chat updated:', {
+        chatId: currentChat.id,
+        title: currentChat.title,
+        messagesCount: currentChat.messages?.length || 0,
+        firstMessage: currentChat.messages?.[0]?.content?.substring(0, 30)
+      });
+    }
+  }, [currentChat]);
+
+  const handleNewChat = (toolId = null) => {
+    const newChat = createNewThread(toolId);
+    console.log('[Sidebar] Created new chat:', { 
+      id: newChat.id, 
+      title: newChat.title, 
+      toolId: newChat.tool_id 
+    });
     setCurrentChat(newChat);
+    setSelectedTool(toolId);
   };
 
-  // Only show non-temporary chats in the sidebar
-  const filteredChats = chats.filter(chat => 
-    !chat.isTemporary && (selectedTool ? chat.tool_id === selectedTool : !chat.tool_id)
-  );
+  const handleToolClick = (toolId) => {
+    handleNewChat(toolId);
+  };
+
+  // Show all non-temporary chats regardless of the selected tool
+  const filteredChats = chats.filter(chat => !chat.isTemporary);
+
+  // Get chat tool icon based on tool_id
+  const getChatIcon = (chat) => {
+    if (!chat.tool_id) {
+      return <MessagesSquare className="h-4 w-4 mr-2 text-muted-foreground" />;
+    }
+    
+    return toolIcons[chat.tool_id] || <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />;
+  };
 
   return (
     <div className="w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0">
@@ -41,24 +85,31 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
           <MessageSquare className="h-5 w-5" />
           <span className="font-semibold">Coaching AI</span>
         </div>
-        <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
+        <div className="ml-auto flex items-center">
+          <Search className="h-4 w-4 text-muted-foreground mr-2" />
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </div>
       </div>
       
       <div className="flex-grow flex flex-col overflow-hidden">
         {/* Specialized Tools Section */}
         <div className="p-4 border-b">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium">Specialized Tools</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNewChat}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center">
+              <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
+              <h2 className="text-sm font-medium">Specialized Tools</h2>
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat()}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 ml-7">
             <Button
               variant={!selectedTool ? "ghost" : "ghost"}
               className="w-full justify-start h-8 text-sm"
-              onClick={() => setSelectedTool(null)}
+              onClick={() => handleNewChat(null)}
             >
+              <MessagesSquare className="h-4 w-4 mr-2" />
               Regular Chat
             </Button>
             {tools.map((tool) => (
@@ -66,8 +117,9 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
                 key={tool.id}
                 variant={selectedTool === tool.id ? "secondary" : "ghost"}
                 className="w-full justify-start h-8 text-sm"
-                onClick={() => setSelectedTool(tool.id)}
+                onClick={() => handleToolClick(tool.id)}
               >
+                {toolIcons[tool.id] || <MessageSquare className="h-4 w-4 mr-2" />}
                 {tool.name}
               </Button>
             ))}
@@ -76,13 +128,16 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
 
         {/* Chats/Past Conversations Section */}
         <div className="p-4 flex flex-col overflow-hidden flex-1">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium">Chats</h2>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center">
+              <MessagesSquare className="h-5 w-5 mr-2 text-muted-foreground" />
+              <h2 className="text-sm font-medium">Chats</h2>
+            </div>
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <ChevronDown className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNewChat}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(selectedTool)}>
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
@@ -95,21 +150,27 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
                 <span className="text-xs">Loading...</span>
               </div>
             ) : filteredChats.length > 0 ? (
-              <div className="space-y-1">
+              <div className="space-y-1 ml-7">
                 {filteredChats.map((chat) => (
                   <Button
                     key={chat.id}
                     variant={currentChat?.id === chat.id ? "ghost" : "ghost"}
-                    className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
-                    onClick={() => setCurrentChat(chat)}
+                    className={`w-full justify-start px-2 h-8 text-sm hover:bg-muted ${
+                      currentChat?.id === chat.id ? "bg-muted" : ""
+                    }`}
+                    onClick={() => {
+                      setCurrentChat(chat);
+                      setSelectedTool(chat.tool_id || null);
+                    }}
                     title={chat.title}
                   >
+                    {getChatIcon(chat)}
                     <span className="truncate">{chat.title}</span>
                   </Button>
                 ))}
               </div>
             ) : (
-              <div className="text-center p-4 text-muted-foreground">
+              <div className="text-center p-4 text-muted-foreground ml-7">
                 <p className="text-xs">No conversations yet</p>
               </div>
             )}
@@ -117,7 +178,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
           
           <Button 
             variant="ghost" 
-            className="w-full justify-start mt-2 text-xs text-muted-foreground"
+            className="w-full justify-start mt-2 text-xs text-muted-foreground ml-7"
           >
             View all
           </Button>
@@ -142,7 +203,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
                 </span>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={signOut} title="Settings">
+            <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

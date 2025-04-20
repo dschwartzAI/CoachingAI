@@ -470,7 +470,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading ? "Waiting..." : "Type your message..."}
-            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl"
+            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl hover:border-primary focus-visible:ring-1 focus-visible:ring-primary"
             rows={1}
             disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n} // Disable while waiting for n8n
           />
