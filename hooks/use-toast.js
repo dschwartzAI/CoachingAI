@@ -1,5 +1,6 @@
+"use client"
 // Inspired by react-hot-toast library
-import { useState, useCallback } from "react"
+import { useState, useEffect } from "react"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -131,10 +132,10 @@ function toast({ ...props }) {
   }
 }
 
-function useToast() {
+export function useToast() {
   const [state, setState] = useState(memoryState)
 
-  useCallback(() => {
+  useEffect(() => {
     listeners.push(setState)
     return () => {
       const index = listeners.indexOf(setState)
@@ -151,4 +152,4 @@ function useToast() {
   }
 }
 
-export { useToast, toast } 
+export { toast } 

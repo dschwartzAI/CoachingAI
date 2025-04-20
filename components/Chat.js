@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
 import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/supabase';
 import { getAIResponse } from '@/lib/utils/ai';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { TOOLS } from '@/lib/config/tools';
 import { ToolProgress } from '@/components/ToolProgress';
 import { Loader2, SendHorizontal, Plus, RefreshCw, ChevronDown, RotateCcw } from 'lucide-react';

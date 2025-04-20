@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -470,7 +470,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading ? "Waiting..." : "Type your message..."}
-            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1"
+            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl"
             rows={1}
             disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n} // Disable while waiting for n8n
           />
@@ -478,8 +478,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
              type="submit" 
              disabled={isLoading || isInitiating || !input.trim() || isOfferComplete || isWaitingForN8n}
              size="sm"
+             className="rounded-full h-10 w-10"
           >
-            {isLoading || isInitiating || isWaitingForN8n ? "..." : "Send"}
+            {isLoading || isInitiating || isWaitingForN8n ? 
+             <Loader2 className="h-4 w-4 animate-spin" />
+            : 
+            <ArrowUp className="h-4 w-4" />
+          }
           </Button>
         </div>
       </form>
