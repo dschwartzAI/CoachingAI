@@ -4,12 +4,12 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogIn, LogOut } from 'lucide-react';
+import { LogIn, LogOut, Loader2, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
 import { createNewThread } from '@/lib/utils/thread';
 
-export default function Sidebar({ selectedTool, setSelectedTool, chats, currentChat, setCurrentChat }) {
+export default function Sidebar({ selectedTool, setSelectedTool, chats, currentChat, setCurrentChat, isLoading }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
 
@@ -60,23 +60,39 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
         </div>
 
         <div className="flex-1 p-4 overflow-hidden">
-          <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight">
+          <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight flex items-center">
             Past Conversations
+            {isLoading && (
+              <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </h2>
           <ScrollArea className="h-[calc(100% - 40px)]">
-            <div className="space-y-1 pr-2">
-              {filteredChats.map((chat) => (
-                <Button
-                  key={chat.id}
-                  variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                  className="w-full justify-start truncate"
-                  onClick={() => setCurrentChat(chat)}
-                  title={chat.title}
-                >
-                  {chat.title}
-                </Button>
-              ))}
-            </div>
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                <p className="text-sm">Loading conversations...</p>
+              </div>
+            ) : filteredChats.length > 0 ? (
+              <div className="space-y-1 pr-2">
+                {filteredChats.map((chat) => (
+                  <Button
+                    key={chat.id}
+                    variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
+                    className="w-full justify-start truncate"
+                    onClick={() => setCurrentChat(chat)}
+                    title={chat.title}
+                  >
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    <span className="truncate">{chat.title}</span>
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center p-4 text-muted-foreground">
+                <p className="text-sm">No conversations yet</p>
+                <p className="text-xs mt-1">Start a new chat to begin</p>
+              </div>
+            )}
           </ScrollArea>
         </div>
       </div>

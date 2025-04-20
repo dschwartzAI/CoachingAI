@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
+import { v4 as uuidv4 } from 'uuid';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -24,12 +25,23 @@ export async function POST(request) {
   try {
     // Get the request body
     const body = await request.json();
-    const { messages, tool, isToolInit } = body;
+    const { messages, tool, isToolInit, chatId: clientChatId } = body;
+    
+    // Generate a proper UUID if client did not provide one or provided a non-UUID format
+    let chatId = clientChatId;
+    if (!chatId || !isValidUUID(chatId)) {
+      chatId = uuidv4();
+      console.log(`[Chat API] Generated proper UUID for non-UUID chatId: ${clientChatId} -> ${chatId}`);
+    } else {
+      console.log(`[Chat API] Using valid UUID chatId: ${chatId}`);
+    }
 
     console.log('[Chat API] Request received:', { 
       messageCount: messages?.length || 0, 
       toolId: tool || 'none',
-      isToolInit: isToolInit || false 
+      isToolInit: isToolInit || false,
+      originalChatId: clientChatId || 'none',
+      newChatId: chatId
     });
 
     // Verify messages array is not empty - BUT allow empty arrays for tool initialization
@@ -53,28 +65,32 @@ export async function POST(request) {
 
     // Verify authentication - SKIP for development or when env variable is set
     let isAuthenticated = true;
+    let userId = null;
+    let supabase = null;
+    
+    // Setup Supabase client
+    const cookieStore = cookies();
+    supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          get(name) {
+            return cookieStore.get(name)?.value;
+          },
+          set(name, value, options) {
+            cookieStore.set({ name, value, ...options });
+          },
+          remove(name, options) {
+            cookieStore.set({ name, value: '', ...options });
+          },
+        },
+      }
+    );
     
     // Only verify authentication if not explicitly skipped
     if (process.env.NEXT_PUBLIC_SKIP_AUTH !== 'true') {
       console.log('[Chat API] Verifying authentication...');
-      const cookieStore = cookies();
-      const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-          cookies: {
-            get(name) {
-              return cookieStore.get(name)?.value;
-            },
-            set(name, value, options) {
-              cookieStore.set({ name, value, ...options });
-            },
-            remove(name, options) {
-              cookieStore.set({ name, value: '', ...options });
-            },
-          },
-        }
-      );
 
       const { data: { session }, error: authError } = await supabase.auth.getSession();
       if (authError || !session) {
@@ -82,17 +98,88 @@ export async function POST(request) {
         isAuthenticated = false;
       } else {
         console.log('[Chat API] Authentication successful');
+        userId = session.user.id;
+      }
+      
+      // Check if we have an authenticated session (unless skipped)
+      if (!isAuthenticated) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        );
       }
     } else {
       console.log('[Chat API] Authentication check SKIPPED (NEXT_PUBLIC_SKIP_AUTH=true)');
+      // Use a fixed development user ID for development mode
+      userId = 'dev-user-' + (chatId || uuidv4().substring(0, 8));
+      console.log('[Chat API] Using development user ID:', userId);
     }
-    
-    // Check if we have an authenticated session (unless skipped)
-    if (!isAuthenticated) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+
+    // Save thread and messages to Supabase if needed
+    if (chatId && messages.length > 0) {
+      try {
+        console.log('[Chat API] Checking if thread exists...');
+        let { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', chatId)
+          .single();
+        
+        // If there was an error or no thread found
+        if (lookupError || !existingThread) {
+          console.log('[Chat API] Thread not found, creating new thread in Supabase');
+          // Create the thread with proper UUID
+          const { data: newThread, error: threadError } = await supabase
+            .from('threads')
+            .insert({
+              id: chatId,  // Now using valid UUID
+              title: 'Chat ' + new Date().toLocaleString(),
+              user_id: userId,
+              tool_id: tool || null,
+            })
+            .select()
+            .single();
+            
+          if (threadError) {
+            console.error('[Chat API] Error creating thread:', threadError);
+          } else {
+            console.log('[Chat API] Thread created successfully:', newThread.id);
+            existingThread = newThread;
+          }
+        } else {
+          console.log('[Chat API] Thread exists:', existingThread.id);
+        }
+
+        // Check if the last message exists in the database
+        if (messages.length > 0) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.content) {
+            console.log('[Chat API] Saving last message to Supabase');
+            
+            const messageObj = {
+              thread_id: chatId,  // Using valid UUID
+              role: lastMessage.role,
+              content: lastMessage.content,
+              timestamp: lastMessage.timestamp || new Date().toISOString()
+            };
+            
+            const { data: savedMessage, error: messageError } = await supabase
+              .from('messages')
+              .insert(messageObj)
+              .select()
+              .single();
+              
+            if (messageError) {
+              console.error('[Chat API] Error saving message:', messageError);
+            } else {
+              console.log('[Chat API] Message saved successfully:', savedMessage.id);
+            }
+          }
+        }
+      } catch (dbError) {
+        console.error('[Chat API] Database error:', dbError);
+        // Continue with the API call even if database operations fail
+      }
     }
 
     console.log('[Chat API] Calling OpenAI with', messages.length, 'messages');
@@ -118,6 +205,35 @@ export async function POST(request) {
     if (typeof content !== 'string') {
       console.log('[Chat API] Content is not a string, converting:', content);
       content = JSON.stringify(content);
+    }
+    
+    // Save the assistant's response to the database if we have a chatId
+    if (chatId && supabase) {
+      try {
+        console.log('[Chat API] Saving assistant response to Supabase');
+        
+        const messageObj = {
+          thread_id: chatId,  // Using valid UUID
+          role: 'assistant',
+          content: content,
+          timestamp: new Date().toISOString()
+        };
+        
+        const { data: savedMessage, error: messageError } = await supabase
+          .from('messages')
+          .insert(messageObj)
+          .select()
+          .single();
+          
+        if (messageError) {
+          console.error('[Chat API] Error saving assistant message:', messageError);
+        } else {
+          console.log('[Chat API] Assistant message saved successfully:', savedMessage.id);
+        }
+      } catch (dbError) {
+        console.error('[Chat API] Database error saving assistant message:', dbError);
+        // Continue with the response even if database operations fail
+      }
     }
     
     // For hybrid offer tool, try to determine the current question key
@@ -205,7 +321,7 @@ export async function POST(request) {
       currentQuestionKey,
       collectedAnswers,
       isComplete,
-      chatId: body.chatId
+      chatId: chatId  // Return the valid UUID to the client
     };
     
     console.log('[Chat API] Sending response:', JSON.stringify(responsePayload, null, 2));
@@ -218,4 +334,13 @@ export async function POST(request) {
       { status: error.status || 500 }
     );
   }
+}
+
+// Helper function to check if a string is a valid UUID
+function isValidUUID(id) {
+  if (!id) return false;
+  
+  // UUID v4 pattern
+  const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidV4Pattern.test(id);
 } 

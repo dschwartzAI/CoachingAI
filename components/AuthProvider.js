@@ -16,38 +16,97 @@ export function AuthProvider({ children }) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 
+  // Initialize the authentication state on mount
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-      if (event === 'SIGNED_IN') router.refresh();
-      if (event === 'SIGNED_OUT') router.refresh();
-    });
-
-    return () => {
-      subscription.unsubscribe();
+    const initializeAuth = async () => {
+      try {
+        // First, get the current session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting auth session:', error);
+          setLoading(false);
+          return;
+        }
+        
+        // Set the user if we have a session
+        setUser(session?.user || null);
+        console.log('[Auth] Initial session:', session ? 'Active' : 'None');
+        if (session) {
+          console.log('[Auth] User ID:', session.user.id);
+        }
+        
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('[Auth] Auth state change:', event);
+          setUser(session?.user ?? null);
+          
+          if (event === 'SIGNED_IN') {
+            console.log('[Auth] User signed in:', session.user.id);
+            router.refresh();
+          }
+          
+          if (event === 'SIGNED_OUT') {
+            console.log('[Auth] User signed out');
+            router.refresh();
+          }
+        });
+        
+        setLoading(false);
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (err) {
+        console.error('[Auth] Error initializing auth:', err);
+        setLoading(false);
+      }
     };
+    
+    initializeAuth();
   }, [supabase, router]);
 
   const value = {
     user,
-    signOut: () => supabase.auth.signOut(),
-    signInWithGoogle: async () => {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      });
-      if (error) {
-        console.error('Error signing in with Google:', error.message);
-        throw error;
+    loading,
+    signOut: async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        console.log('[Auth] User signed out successfully');
+      } catch (err) {
+        console.error('[Auth] Error signing out:', err);
+        throw err;
       }
     },
+    signInWithGoogle: async () => {
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
+            redirectTo: `${window.location.origin}/auth/callback`
+          }
+        });
+        
+        if (error) {
+          console.error('[Auth] Error signing in with Google:', error.message);
+          throw error;
+        }
+        
+        console.log('[Auth] Google sign-in initiated');
+      } catch (err) {
+        console.error('[Auth] Unexpected error during Google sign-in:', err);
+        throw err;
+      }
+    },
+    // Expose direct methods for checking auth in case needed
+    getSession: async () => {
+      return await supabase.auth.getSession();
+    },
+    // Expose the supabase client for direct use if needed
     supabase
   };
 
