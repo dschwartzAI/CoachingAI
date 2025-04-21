@@ -9,39 +9,41 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const OPENAI_MODEL = "gpt-4o-mini";
+
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 // Define the questions and their corresponding keys, in order
 const hybridOfferQuestions = [
   { 
     key: 'offerDescription', 
-    question: "Welcome! I'm excited to help you craft a fantastic hybrid offer. Could you tell me a bit about your core offering, whether it's a product or a service?",
-    guidanceMessage: "I'd love to hear more details about your core offering. What specific product or service are you providing? This helps me craft a better hybrid offer for you."
+    question: "What's your core product or service?",
+    description: "Core product or service"
   },
   { 
     key: 'targetAudience', 
     question: "Who is your target audience?",
-    guidanceMessage: "Understanding your audience is crucial. Could you share more about who would benefit most from your offering? Consider demographics, pain points, or specific needs they have."
+    description: "Target audience details"
   },
   { 
     key: 'painPoints', 
-    question: "What are their main pain points?",
-    guidanceMessage: "Knowing the problems your audience faces helps create a compelling offer. Could you elaborate on the specific challenges they encounter that your product/service helps solve?"
+    question: "What pain points do they face?",
+    description: "Customer pain points"
   },
   { 
     key: 'solution', 
-    question: "What is the unique way you solve this problem?",
-    guidanceMessage: "Your unique approach is what sets you apart! Could you share more about how your solution works and what makes it different from alternatives?"
+    question: "How do you solve these problems?",
+    description: "Solution approach"
   },
   { 
     key: 'pricing', 
-    question: "What is your pricing structure?",
-    guidanceMessage: "Pricing is a key element of your offer. Could you provide more details about your pricing model or the price range you're considering?"
+    question: "What's your pricing structure?",
+    description: "Pricing information"
   },
   { 
     key: 'clientResult', 
-    question: "Finally, what's your biggest client result?",
-    guidanceMessage: "Success stories really make your offer shine! Could you share a specific result or transformation that clients have experienced with your product/service?"
+    question: "What's your best client result?",
+    description: "Best client outcome"
   }
 ];
 
@@ -88,7 +90,7 @@ Return only JSON: { "isValid": boolean, "reason": "explanation if invalid" }`
   try {
     // Call OpenAI to validate the answer
     const validationCompletion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: OPENAI_MODEL,
       messages: validationPrompt,
       temperature: 0.3, // Lower temperature for more consistent validation
       max_tokens: 150,
@@ -138,26 +140,36 @@ export async function POST(request) {
     const body = await request.json();
     const { messages, tool, isToolInit, chatId: clientChatId } = body;
     
+    // Initialize response variables
+    let responsePayload = null;
+    let aiResponse = "I'm here to help you with your hybrid offer creation.";
+    let currentQuestionKey = null;
+    let isComplete = false;
+    const collectedAnswers = body.collectedAnswers || {};
+    
     // Generate a proper UUID if client did not provide one or provided a non-UUID format
     let chatId = clientChatId;
     if (!chatId || !isValidUUID(chatId)) {
       chatId = uuidv4();
-      console.log(`[Chat API] Generated proper UUID for non-UUID chatId: ${clientChatId} -> ${chatId}`);
+      console.log(`[CHAT_API_DEBUG] ChatId validation failed: received="${clientChatId}", generated new UUID="${chatId}"`);
     } else {
-      console.log(`[Chat API] Using valid UUID chatId: ${chatId}`);
+      console.log(`[CHAT_API_DEBUG] ChatId validation passed: using existing UUID="${chatId}"`);
     }
 
-    console.log('[Chat API] Request received:', { 
+    console.log('[CHAT_API_DEBUG] Request received:', { 
       messageCount: messages?.length || 0, 
       toolId: tool || 'none',
       isToolInit: isToolInit || false,
       originalChatId: clientChatId || 'none',
-      newChatId: chatId
+      newChatId: chatId,
+      clientProvidedValidUUID: !!clientChatId && isValidUUID(clientChatId),
+      hasCollectedAnswers: Object.keys(collectedAnswers || {}).length > 0,
+      collectedAnswerKeys: Object.keys(collectedAnswers || {})
     });
 
     // Verify messages array is not empty - BUT allow empty arrays for tool initialization
     if (!isToolInit && (!messages || !Array.isArray(messages) || messages.length === 0)) {
-      console.log('[Chat API] Rejected: Empty messages array in non-init call');
+      console.log('[CHAT_API_DEBUG] Rejected: Empty messages array in non-init call');
       return NextResponse.json(
         { error: 'Messages array cannot be empty for non-initialization calls' },
         { status: 400 }
@@ -166,12 +178,48 @@ export async function POST(request) {
 
     // For tool initialization, we can simply return the first question directly
     if (isToolInit && tool === 'hybrid-offer') {
-      console.log('[Chat API] Tool initialization request - returning first question');
-      return NextResponse.json({
-        message: hybridOfferQuestions[0].question,
-        currentQuestionKey: hybridOfferQuestions[0].key,
-        collectedAnswers: {}
+      const initialSystemPrompt = `You are creating a hybrid offer for businesses.
+A hybrid offer combines digital and physical components at multiple price points.
+
+Collect this information in a direct, concise manner:
+1. Core product/service
+2. Target audience
+3. Pain points
+4. Solution approach
+5. Pricing structure
+6. Best client result
+
+Be brief and direct. No unnecessary explanations. One question at a time.`;
+
+      console.log('[CHAT_API_DEBUG] Tool initialization request - sending system prompt and returning custom message');
+      
+      const initialMessage = "What's your core product or service?";
+      
+      // Preserve any existing collected answers (though typically there won't be any for initialization)
+      const existingAnswers = body.collectedAnswers || {};
+      console.log('[CHAT_API_DEBUG] Tool initialization with existing answers:', {
+        hasExistingAnswers: Object.keys(existingAnswers).length > 0,
+        existingKeys: Object.keys(existingAnswers)
       });
+      
+      // Set up the conversation context for future messages
+      responsePayload = {
+        message: initialMessage,
+        currentQuestionKey: 'offerDescription',
+        collectedAnswers: { ...existingAnswers }, // Make a copy to ensure we don't lose any data
+        isComplete: false,
+        chatId: chatId,
+        systemPrompt: initialSystemPrompt
+      };
+      
+      console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response', {
+        responsePayload: JSON.stringify({
+          chatId: responsePayload.chatId,
+          questionKey: responsePayload.currentQuestionKey,
+          answersCount: Object.keys(responsePayload.collectedAnswers).length
+        })
+      });
+      return NextResponse.json(responsePayload);
     }
 
     // Verify authentication - SKIP for development or when env variable is set
@@ -201,14 +249,14 @@ export async function POST(request) {
     
     // Only verify authentication if not explicitly skipped
     if (process.env.NEXT_PUBLIC_SKIP_AUTH !== 'true') {
-      console.log('[Chat API] Verifying authentication...');
+      console.log('[CHAT_API_DEBUG] Verifying authentication...');
 
       const { data: { session }, error: authError } = await supabase.auth.getSession();
       if (authError || !session) {
-        console.log('[Chat API] Authentication failed');
+        console.log('[CHAT_API_DEBUG] Authentication failed:', { error: authError?.message });
         isAuthenticated = false;
       } else {
-        console.log('[Chat API] Authentication successful');
+        console.log('[CHAT_API_DEBUG] Authentication successful:', { userId: session.user.id });
         userId = session.user.id;
       }
       
@@ -220,312 +268,523 @@ export async function POST(request) {
         );
       }
     } else {
-      console.log('[Chat API] Authentication check SKIPPED (NEXT_PUBLIC_SKIP_AUTH=true)');
+      console.log('[CHAT_API_DEBUG] Authentication check SKIPPED (NEXT_PUBLIC_SKIP_AUTH=true)');
       // Use a fixed development user ID for development mode
       userId = 'dev-user-' + (chatId || uuidv4().substring(0, 8));
-      console.log('[Chat API] Using development user ID:', userId);
+      console.log('[CHAT_API_DEBUG] Using development user ID:', userId);
     }
 
     // Save thread and messages to Supabase if needed
     if (chatId && messages.length > 0) {
       try {
-        console.log('[Chat API] Checking if thread exists...');
+        console.log('[CHAT_API_DEBUG] Database operations starting for chat:', { 
+          chatId,
+          userId,
+          messageCount: messages.length
+        });
+        
+        console.log('[CHAT_API_DEBUG] Checking if thread exists:', { chatId });
         let { data: existingThread, error: lookupError } = await supabase
           .from('threads')
-          .select('id')
+          .select('id, title, user_id, tool_id')
           .eq('id', chatId)
           .single();
         
-        // If there was an error or no thread found
-        if (lookupError || !existingThread) {
-          console.log('[Chat API] Thread not found, creating new thread in Supabase');
-          
-          // Find the first user message to use for the title
-          const firstUserMessage = messages.find(msg => msg.role === 'user');
-          const threadTitle = firstUserMessage 
-            ? generateThreadTitle(firstUserMessage)
-            : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
-          
-          console.log('[Chat API] Creating thread with title:', {
-            title: threadTitle,
-            fromUserMessage: !!firstUserMessage,
-            toolName: tool ? TOOLS[tool]?.name : null
+        if (lookupError) {
+          console.log(`[CHAT_API_DEBUG] Thread lookup error:`, { 
+            error: lookupError.message,
+            code: lookupError.code,
+            chatId
           });
           
-          // Create the thread with proper UUID
-          const { data: newThread, error: threadError } = await supabase
-            .from('threads')
-            .insert({
-              id: chatId,  // Now using valid UUID
+          // If it's a "not found" error, we'll create a new thread
+          if (lookupError.code === 'PGRST116') {
+            console.log(`[CHAT_API_DEBUG] Thread not found in database: ${chatId}, will create new thread`);
+            
+            // Only create a new thread for first-time message or explicit tool init
+            const firstUserMessage = messages.find(msg => msg.role === 'user');
+            const threadTitle = firstUserMessage 
+              ? generateThreadTitle(firstUserMessage)
+              : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
+            
+            console.log('[CHAT_API_DEBUG] Creating new thread with title:', {
+              chatId,
               title: threadTitle,
-              user_id: userId,
-              tool_id: tool || null,
-            })
-            .select()
-            .single();
+              userId,
+              toolId: tool || null
+            });
             
-          if (threadError) {
-            console.error('[Chat API] Error creating thread:', threadError);
-          } else {
-            console.log('[Chat API] Thread created successfully:', newThread.id);
-            existingThread = newThread;
-          }
-        } else {
-          console.log('[Chat API] Thread exists:', existingThread.id);
-        }
-
-        // Check if the last message exists in the database
-        if (messages.length > 0) {
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage && lastMessage.content) {
-            console.log('[Chat API] Saving last message to Supabase');
-            
-            const messageObj = {
-              thread_id: chatId,  // Using valid UUID
-              role: lastMessage.role,
-              content: lastMessage.content,
-              timestamp: lastMessage.timestamp || new Date().toISOString()
-            };
-            
-            const { data: savedMessage, error: messageError } = await supabase
-              .from('messages')
-              .insert(messageObj)
+            // Create the thread with proper UUID
+            const { data: newThread, error: threadError } = await supabase
+              .from('threads')
+              .insert({
+                id: chatId,
+                title: threadTitle,
+                user_id: userId,
+                tool_id: tool || null,
+              })
               .select()
               .single();
-              
-            if (messageError) {
-              console.error('[Chat API] Error saving message:', messageError);
+            
+            if (threadError) {
+              console.error('[CHAT_API_DEBUG] Error creating thread:', {
+                error: threadError.message,
+                code: threadError.code,
+                chatId
+              });
             } else {
-              console.log('[Chat API] Message saved successfully:', savedMessage.id);
+              console.log('[CHAT_API_DEBUG] Thread created successfully:', {
+                id: newThread.id,
+                title: newThread.title
+              });
+              existingThread = newThread;
             }
+          } else {
+            // If it's some other error, log it but continue
+            console.error('[CHAT_API_DEBUG] Unexpected error looking up thread:', lookupError);
+          }
+        } else {
+          console.log(`[CHAT_API_DEBUG] Thread found in database:`, {
+            id: existingThread.id, 
+            title: existingThread.title,
+            userId: existingThread.user_id,
+            toolId: existingThread.tool_id
+          });
+        }
+
+        // Check if we need to save the latest user message
+        if (messages.length > 0) {
+          const lastMessage = messages[messages.length - 1];
+          
+          // Only try to save if it's a user message (don't save system or assistant messages here)
+          if (lastMessage && lastMessage.content && lastMessage.role === 'user') {
+            console.log('[CHAT_API_DEBUG] Attempting to save user message:', {
+              threadId: chatId,
+              contentLength: lastMessage.content.length,
+              role: lastMessage.role
+            });
+            
+            // First, check if this message already exists (to avoid duplicates)
+            const { data: existingMessages, error: messageCheckError } = await supabase
+              .from('messages')
+              .select('id, content')
+              .eq('thread_id', chatId)
+              .eq('content', lastMessage.content)
+              .eq('role', 'user')
+              .limit(1);
+            
+            if (messageCheckError) {
+              console.error('[CHAT_API_DEBUG] Error checking for existing message:', {
+                error: messageCheckError.message,
+                code: messageCheckError.code
+              });
+            }
+            
+            // Only save if this exact message doesn't already exist
+            if (!existingMessages || existingMessages.length === 0) {
+              console.log('[CHAT_API_DEBUG] Message is new, saving to database');
+              const messageObj = {
+                thread_id: chatId,  // Using valid UUID
+                role: lastMessage.role,
+                content: lastMessage.content,
+                timestamp: lastMessage.timestamp || new Date().toISOString()
+              };
+              
+              const { data: savedMessage, error: messageError } = await supabase
+                .from('messages')
+                .insert(messageObj)
+                .select()
+                .single();
+                
+              if (messageError) {
+                console.error('[CHAT_API_DEBUG] Error saving message:', {
+                  error: messageError.message,
+                  code: messageError.code,
+                  threadId: chatId
+                });
+              } else {
+                console.log('[CHAT_API_DEBUG] User message saved successfully:', {
+                  messageId: savedMessage.id,
+                  threadId: savedMessage.thread_id
+                });
+              }
+            } else {
+              console.log('[CHAT_API_DEBUG] Message already exists, skipping save:', {
+                existingMessageId: existingMessages[0].id,
+                threadId: chatId
+              });
+            }
+          } else {
+            console.log('[CHAT_API_DEBUG] Not saving message - either not a user message or missing content', {
+              role: lastMessage?.role,
+              hasContent: !!lastMessage?.content
+            });
           }
         }
       } catch (dbError) {
-        console.error('[Chat API] Database error:', dbError);
+        console.error('[CHAT_API_DEBUG] Database error:', {
+          error: dbError.message,
+          stack: dbError.stack,
+          chatId
+        });
         // Continue with the API call even if database operations fail
       }
     }
 
-    console.log('[Chat API] Calling OpenAI with', messages.length, 'messages');
+    console.log('[CHAT_API_DEBUG] Calling OpenAI with', {
+      messageCount: messages.length,
+      model: OPENAI_MODEL,
+      chatId
+    });
     
     // Log message details (careful with sensitive data)
     messages.forEach((msg, i) => {
-      console.log(`[Chat API] Message ${i+1}: role=${msg.role}, content_length=${msg.content?.length || 0}`);
+      console.log(`[CHAT_API_DEBUG] Message ${i+1}:`, {
+        role: msg.role, 
+        contentLength: msg.content?.length || 0,
+        contentPreview: msg.content?.substring(0, 30) + '...'
+      });
     });
     
     // Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: OPENAI_MODEL,
       messages: messages,
       temperature: 0.7,
       max_tokens: 1000,
     });
 
-    console.log('[Chat API] OpenAI response received');
+    console.log('[CHAT_API_DEBUG] OpenAI response received:', {
+      status: completion.choices && completion.choices.length > 0 ? 'success' : 'no_choices',
+      chatId,
+      contentLength: completion.choices[0]?.message?.content?.length || 0
+    });
     
     // Extract content, handling both string and object formats
-    let content = completion.choices[0].message.content;
+    aiResponse = completion.choices[0].message.content;
     // For safety, ensure content is a string
-    if (typeof content !== 'string') {
-      console.log('[Chat API] Content is not a string, converting:', content);
-      content = JSON.stringify(content);
+    if (typeof aiResponse !== 'string') {
+      console.log('[CHAT_API_DEBUG] Content is not a string, converting:', {
+        aiResponseType: typeof aiResponse,
+        convertedLength: JSON.stringify(aiResponse).length
+      });
+      aiResponse = JSON.stringify(aiResponse);
     }
     
     // Save the assistant's response to the database if we have a chatId
     if (chatId && supabase) {
       try {
-        console.log('[Chat API] Saving assistant response to Supabase');
+        console.log('[CHAT_API_DEBUG] Checking if assistant response needs to be saved:', {
+          chatId,
+          responseLength: aiResponse.length
+        });
         
-        const messageObj = {
-          thread_id: chatId,  // Using valid UUID
-          role: 'assistant',
-          content: content,
-          timestamp: new Date().toISOString()
-        };
-        
-        const { data: savedMessage, error: messageError } = await supabase
+        // Check if this assistant message already exists
+        const { data: existingAssistantMessages, error: assistantMessageCheckError } = await supabase
           .from('messages')
-          .insert(messageObj)
-          .select()
-          .single();
+          .select('id, content')
+          .eq('thread_id', chatId)
+          .eq('content', aiResponse)
+          .eq('role', 'assistant')
+          .limit(1);
+        
+        if (assistantMessageCheckError) {
+          console.error('[CHAT_API_DEBUG] Error checking for existing assistant message:', {
+            error: assistantMessageCheckError.message,
+            code: assistantMessageCheckError.code,
+            chatId
+          });
+        }
+        
+        // Only save if this exact message doesn't already exist
+        if (!existingAssistantMessages || existingAssistantMessages.length === 0) {
+          console.log('[CHAT_API_DEBUG] Assistant message is new, saving to database');
+        
+          const messageObj = {
+            thread_id: chatId,  // Using valid UUID
+            role: 'assistant',
+            content: aiResponse,
+            timestamp: new Date().toISOString()
+          };
           
-        if (messageError) {
-          console.error('[Chat API] Error saving assistant message:', messageError);
+          const { data: savedMessage, error: messageError } = await supabase
+            .from('messages')
+            .insert(messageObj)
+            .select()
+            .single();
+            
+          if (messageError) {
+            console.error('[CHAT_API_DEBUG] Error saving assistant message:', {
+              error: messageError.message,
+              code: messageError.code,
+              chatId
+            });
+          } else {
+            console.log('[CHAT_API_DEBUG] Assistant message saved successfully:', {
+              messageId: savedMessage.id,
+              threadId: savedMessage.thread_id
+            });
+          }
         } else {
-          console.log('[Chat API] Assistant message saved successfully:', savedMessage.id);
+          console.log('[CHAT_API_DEBUG] Assistant message already exists, skipping save:', {
+            existingMessageId: existingAssistantMessages[0].id,
+            threadId: chatId
+          });
         }
       } catch (dbError) {
-        console.error('[Chat API] Database error saving assistant message:', dbError);
+        console.error('[CHAT_API_DEBUG] Database error saving assistant message:', {
+          error: dbError.message,
+          stack: dbError.stack,
+          chatId
+        });
         // Continue with the response even if database operations fail
       }
     }
     
-    // For hybrid offer tool, try to determine the current question key
-    let currentQuestionKey = null;
-    let isComplete = false;
-    const collectedAnswers = body.collectedAnswers || {};
-    
+    // For hybrid offer, try to determine the current question key
     if (tool === 'hybrid-offer') {
-      console.log('[Chat API] Processing hybrid-offer tool logic');
-      console.log('[Chat API] Current question key from request:', body.currentQuestionKey);
-      console.log('[Chat API] Collected answers:', collectedAnswers);
+      console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic');
+      console.log('[CHAT_API_DEBUG] Current collected answers:', {
+        keys: Object.keys(collectedAnswers),
+        count: Object.keys(collectedAnswers).length,
+        chatId
+      });
       
-      // Determine if all questions have been answered with valid responses
-      const allQuestionsAnswered = hybridOfferQuestions.every(q => 
-        collectedAnswers[q.key] !== undefined && 
-        collectedAnswers[q.key] !== ''
-      );
-        
-      if (allQuestionsAnswered) {
-        console.log('[Chat API] All questions answered with valid responses, marking as complete');
-        isComplete = true;
-        currentQuestionKey = null; // No more questions
-      } else {
-        // Either use the provided key or find the next unanswered question
-        currentQuestionKey = body.currentQuestionKey;
-        
-        // Store the answer to the current question if we have one
-        if (currentQuestionKey && messages.length > 0) {
-          const lastUserMessage = messages.find(m => m.role === 'user');
-          if (lastUserMessage) {
-            // Get the question object
-            const currentQuestion = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
-            
-            // Validate the answer using AI
-            if (currentQuestion) {
-              console.log(`[Chat API] Validating answer for ${currentQuestionKey}`);
-              const validationResult = await validateHybridOfferAnswer(
-                currentQuestionKey, 
-                lastUserMessage.content
-              );
-              
-              // If the answer isn't valid, provide guidance
-              if (!validationResult.isValid) {
-                console.log(`[Chat API] Invalid answer for ${currentQuestionKey}, providing guidance`);
-                
-                // Create a personalized guidance message that incorporates the validation reason
-                const personalizedGuidance = `${validationResult.reason} ${currentQuestion.guidanceMessage}`;
-                content = personalizedGuidance;
-                
-                // Don't save this answer or advance to the next question
-                responsePayload = {
-                  message: content,
-                  currentQuestionKey, // Keep the same question
-                  collectedAnswers,
-                  isComplete: false,
-                  chatId: chatId
-                };
-                
-                console.log('[Chat API] Sending guidance response:', JSON.stringify(responsePayload, null, 2));
-                return NextResponse.json(responsePayload);
-              }
-            }
-            
-            // Save this answer to the current question (if valid)
-            collectedAnswers[currentQuestionKey] = lastUserMessage.content;
-            console.log(`[Chat API] Saved answer for ${currentQuestionKey}:`, lastUserMessage.content);
-          }
-        }
-        
-        // If we have a currentQuestionKey, this response might have answered that question
-        // So we should move to the next question in the sequence
-        if (currentQuestionKey) {
-          console.log('[Chat API] Current question answered:', currentQuestionKey);
-          
-          // Find the current question's index
-          const currentIndex = hybridOfferQuestions.findIndex(q => q.key === currentQuestionKey);
-          if (currentIndex >= 0 && currentIndex < hybridOfferQuestions.length - 1) {
-            // Move to the next question
-            currentQuestionKey = hybridOfferQuestions[currentIndex + 1].key;
-            console.log('[Chat API] Moving to next question:', currentQuestionKey);
-          } else {
-            // We've reached the end of the questions
-            console.log('[Chat API] Reached end of questions');
-            currentQuestionKey = null;
-            isComplete = true;
-          }
-        }
-        
-        // If we don't have a question key, find the first unanswered question
-        if (!currentQuestionKey && !isComplete) {
-          console.log('[Chat API] Finding first unanswered question');
-          const unansweredQuestion = hybridOfferQuestions.find(q => 
-            !collectedAnswers[q.key] || 
-            collectedAnswers[q.key] === ''
-          );
-          currentQuestionKey = unansweredQuestion?.key || null;
-          console.log('[Chat API] First unanswered question:', currentQuestionKey);
-          
-          if (!currentQuestionKey) {
-            isComplete = true;
-          }
-        }
-      }
+      // Create a default responsePayload that will be overridden if needed
+      responsePayload = {
+        message: "Preparing your hybrid offer details...",
+        currentQuestionKey: body.currentQuestionKey || 'offerDescription',
+        collectedAnswers,
+        isComplete: false,
+        chatId: chatId
+      };
       
-      // For hybrid offer, don't use OpenAI's response - just respond with the next question directly
-      if (!isComplete && currentQuestionKey) {
-        const questionObj = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
-        if (questionObj) {
-          console.log(`[Chat API] Sending next hybrid offer question: ${questionObj.question}`);
-          
-          // Use the question text directly instead of OpenAI's response
-          content = questionObj.question;
-        }
-      } else if (isComplete) {
-        // If we're complete, use OpenAI to generate a summary and confirmation
-        console.log('[Chat API] Hybrid offer information collection complete, generating summary');
-        
-        // Build a completion prompt with the collected information
-        const summaryPrompt = [
-          {
-            role: "system",
-            content: `You are a helpful assistant creating a hybrid offer based on the following information.
-A hybrid offer combines digital and physical components to provide more value and multiple price points.
-Review the collected information and provide a friendly, encouraging summary confirming what you've learned.
-Be conversational and enthusiastic, and suggest 1-2 specific ideas for the hybrid offer components based on the information.`
-          },
-          {
-            role: "user",
-            content: `Here's the information I've provided about my business for creating a hybrid offer:
-            
-Core Offering: ${collectedAnswers.offerDescription}
-Target Audience: ${collectedAnswers.targetAudience}
-Pain Points: ${collectedAnswers.painPoints}
-My Solution: ${collectedAnswers.solution}
-Pricing: ${collectedAnswers.pricing}
-Best Client Result: ${collectedAnswers.clientResult}
+      // For regular messages, we'll use AI to figure out what information we have
+      // and what we still need to collect
+      currentQuestionKey = body.currentQuestionKey;
 
-Please summarize what you've learned and suggest 1-2 specific ideas for my hybrid offer.`
-          }
-        ];
-        
-        // Call OpenAI to generate a tailored summary
-        const summaryCompletion = await openai.chat.completions.create({
-          model: "gpt-4-turbo-preview",
-          messages: summaryPrompt,
-          temperature: 0.7,
-          max_tokens: 1000,
+      // Build a system prompt that includes what we've collected so far
+      let analyzingPrompt = `You are creating a hybrid offer.
+Be direct and concise. Avoid unnecessary words.
+
+Information collected so far:
+`;
+
+      // Add collected answers and what's still missing
+      hybridOfferQuestions.forEach(q => {
+        if (collectedAnswers[q.key]) {
+          analyzingPrompt += `✓ ${q.description}: "${collectedAnswers[q.key]}"\n`;
+        } else {
+          analyzingPrompt += `◯ ${q.description}: Not provided\n`;
+        }
+      });
+
+      analyzingPrompt += `
+Based on the user's message:
+1. Is this a valid answer to the current question (${currentQuestionKey})?
+2. What question to ask next?
+
+Rules:
+- Be extremely concise. No fluff.
+- Ask only the essential question.
+- No explanations before or after questions.
+- Focus on collecting information efficiently.
+
+Return a JSON object:
+{
+  "validAnswer": boolean,
+  "savedAnswer": string,
+  "nextQuestionKey": string,
+  "responseToUser": string // Keep this very brief and direct
+}`;
+
+      // Call OpenAI to analyze the response and determine next steps
+      console.log('[CHAT_API_DEBUG] Calling OpenAI to analyze hybrid offer response');
+      const analyzingCompletion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: "system", content: analyzingPrompt },
+          // Include their previous response as context
+          ...(messages.slice(-3).map(m => ({ role: m.role, content: m.content }))),
+        ],
+        temperature: 0.4,
+        response_format: { type: "json_object" }
+      });
+      
+      // Parse the analysis
+      try {
+        const analysisResult = JSON.parse(analyzingCompletion.choices[0].message.content);
+        console.log('[CHAT_API_DEBUG] Analysis result:', {
+          validAnswer: analysisResult.validAnswer,
+          nextQuestionKey: analysisResult.nextQuestionKey,
+          savedAnswerLength: analysisResult.savedAnswer?.length || 0,
+          responseLength: analysisResult.responseToUser?.length || 0,
+          chatId
         });
         
-        // Extract the summary content
-        content = summaryCompletion.choices[0].message.content;
-        console.log('[Chat API] Generated hybrid offer summary');
+        // Update collected answers if we got a valid response
+        if (analysisResult.validAnswer && analysisResult.savedAnswer) {
+          // Make a copy of the collectedAnswers to ensure we're not modifying the original
+          const updatedAnswers = { ...collectedAnswers };
+          updatedAnswers[currentQuestionKey] = analysisResult.savedAnswer;
+          console.log(`[CHAT_API_DEBUG] Saved answer for ${currentQuestionKey}:`, {
+            question: hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.question,
+            answerLength: analysisResult.savedAnswer.length,
+            previousAnswersCount: Object.keys(collectedAnswers).length,
+            newAnswersCount: Object.keys(updatedAnswers).length,
+            chatId
+          });
+          
+          // Update our local reference to collectedAnswers
+          Object.assign(collectedAnswers, updatedAnswers);
+        }
+        
+        // Check if we're complete
+        if (analysisResult.nextQuestionKey === "complete") {
+          isComplete = true;
+          console.log('[CHAT_API_DEBUG] All questions answered, marking as complete');
+        }
+        
+        // Set the content to the AI's response
+        aiResponse = analysisResult.responseToUser;
+        
+        // Determine the next question key
+        let nextQuestionKey = currentQuestionKey;
+        if (analysisResult.validAnswer) {
+          if (analysisResult.nextQuestionKey === "complete") {
+            nextQuestionKey = null;
+          } else {
+            nextQuestionKey = analysisResult.nextQuestionKey;
+          }
+          console.log('[CHAT_API_DEBUG] Moving to next question:', {
+            from: currentQuestionKey,
+            to: nextQuestionKey || 'COMPLETE',
+            collectedAnswers: Object.keys(collectedAnswers),
+            chatId
+          });
+        } else {
+          console.log('[CHAT_API_DEBUG] Staying on current question due to invalid answer:', {
+            questionKey: currentQuestionKey,
+            chatId
+          });
+        }
+        
+        // If we're complete, generate a summary with all collected information
+        if (isComplete) {
+          console.log('[CHAT_API_DEBUG] Hybrid offer information collection complete, generating summary');
+          
+          // Build a completion prompt with the collected information
+          const summaryPrompt = [
+            {
+              role: "system",
+              content: `Create a hybrid offer based on the collected information.
+A hybrid offer combines digital and physical components at different price points.
+Be direct and concise. Avoid fluff. Focus on specific ideas for the hybrid offer.`
+            },
+            {
+              role: "user",
+              content: `Create a hybrid offer using this information:
+      
+Core: ${collectedAnswers.offerDescription}
+Audience: ${collectedAnswers.targetAudience}
+Pain points: ${collectedAnswers.painPoints}
+Solution: ${collectedAnswers.solution}
+Pricing: ${collectedAnswers.pricing}
+Results: ${collectedAnswers.clientResult}
+
+Suggest specific ideas for digital and physical components.`
+            }
+          ];
+          
+          // Call OpenAI to generate a tailored summary
+          const summaryCompletion = await openai.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: summaryPrompt,
+            temperature: 0.7,
+            max_tokens: 1000,
+          });
+          
+          // Extract the summary content
+          aiResponse = summaryCompletion.choices[0].message.content;
+          console.log('[CHAT_API_DEBUG] Generated hybrid offer summary:', {
+            responseLength: aiResponse.length,
+            chatId
+          });
+        }
+        
+        // Build the response payload
+        responsePayload = {
+          message: aiResponse,
+          currentQuestionKey: nextQuestionKey,
+          collectedAnswers: { ...collectedAnswers },
+          isComplete,
+          chatId: chatId
+        };
+        
+        console.log('[CHAT_API_DEBUG] Sending hybrid offer response:', {
+          nextQuestion: nextQuestionKey,
+          answersCount: Object.keys(collectedAnswers).length,
+          answersKeys: Object.keys(collectedAnswers),
+          chatId,
+          isComplete,
+          messageLength: aiResponse.length
+        });
+        return NextResponse.json(responsePayload);
+        
+      } catch (error) {
+        console.error('[CHAT_API_DEBUG] Error parsing analysis result:', {
+          error: error.message,
+          stack: error.stack,
+          chatId
+        });
+        // Fall back to standard processing
+        aiResponse = "I'm having trouble processing that response. Could you please provide more details about " + 
+          hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.question || "your offering";
+        
+        responsePayload = {
+          message: aiResponse,
+          currentQuestionKey,
+          collectedAnswers: { ...collectedAnswers },
+          isComplete: false,
+          chatId: chatId
+        };
+        
+        console.log('[CHAT_API_DEBUG] Sending error fallback response:', {
+          currentQuestion: currentQuestionKey,
+          answersCount: Object.keys(collectedAnswers).length,
+          answersKeys: Object.keys(collectedAnswers),
+          chatId
+        });
+        return NextResponse.json(responsePayload);
       }
     }
     
-    const responsePayload = {
-      message: content,
-      currentQuestionKey,
-      collectedAnswers,
-      isComplete,
-      chatId: chatId  // Return the valid UUID to the client
-    };
-    
-    console.log('[Chat API] Sending response:', JSON.stringify(responsePayload, null, 2));
+    // Build the final response payload if not already set by a tool handler
+    if (!responsePayload) {
+      responsePayload = {
+        message: aiResponse,
+        currentQuestionKey,
+        collectedAnswers: { ...collectedAnswers }, // Make sure we're passing a copy of the latest collectedAnswers
+        isComplete,
+        chatId: chatId // Always include the chatId in the response
+      };
+      
+      console.log('[CHAT_API_DEBUG] Sending fallback response:', {
+        answersCount: Object.keys(collectedAnswers).length,
+        answersKeys: Object.keys(collectedAnswers),
+        chatId: chatId, // Log the chatId being returned
+        messageLength: aiResponse.length
+      });
+    }
+
+    console.log('[CHAT_API_DEBUG] Sending response with chat ID:', chatId);
     return NextResponse.json(responsePayload);
 
   } catch (error) {
-    console.error('[Chat API] Error:', error);
+    console.error('[CHAT_API_DEBUG] Error in API route:', {
+      error: error.message,
+      stack: error.stack
+    });
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' },
       { status: error.status || 500 }

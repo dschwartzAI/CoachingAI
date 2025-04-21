@@ -371,12 +371,15 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       // Replace temp message with saved message
       setMessages(prev => prev.map(msg => msg.id === tempId ? savedUserMessage : msg));
 
-      console.log('[Chat] Calling getAIResponse');
+      console.log('[Chat] handleSubmit: Preparing to call getAIResponse. Thread ID:', currentThread?.id);
+      if (!currentThread?.id) {
+         console.error('[Chat] handleSubmit: CRITICAL - currentThread.id is missing before calling getAIResponse!');
+      }
       const response = await getAIResponse(userInput, {
+        id: currentThread.id,
         ...currentThread,
         messages: [...messages.filter(msg => msg.id !== tempId), savedUserMessage]
       });
-      console.log('[Chat] AI response received:', response);
 
       if (response.error) {
         console.error('[Chat] AI Response Error on submit:', response.error);

@@ -187,70 +187,198 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Also prevent submission if loading/initiating
     if (!trimmedInput || isLoading || isInitiating) return;
 
+    console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
+      currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
+      chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
+      inputLength: trimmedInput.length
+    });
+
     const newMessage = { role: "user", content: trimmedInput };
     setInput("");
 
     let chatToUpdate = currentChat; // Use the guaranteed currentChat
+    const tempId = chatToUpdate.id; // Store the temporary ID for reference
 
     const updatedMessages = [...chatToUpdate.messages, newMessage];
     const optimisticChat = { ...chatToUpdate, messages: updatedMessages };
 
-    setChats(prev => prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat));
+    console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
+      optimisticChatId: optimisticChat.id,
+      optimisticMessageCount: optimisticChat.messages.length
+    });
+
+    // Optimistic update
     setCurrentChat(optimisticChat);
+    setChats(prev => {
+      const updated = prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat);
+      console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
+        updatedChatIds: updated.map(c => c.id)
+      });
+      return updated;
+    });
     setIsLoading(true);
 
     try {
+       console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
+         threadId: currentChat.id,
+         messageCount: updatedMessages.length,
+         existingMessages: currentChat.messages.length,
+         currentQuestionKey,
+         requestBody: JSON.stringify({
+           messageCount: updatedMessages.length,
+           tool: selectedTool,
+           currentQuestionKey,
+           hasCollectedAnswers: !!collectedAnswers,
+           chatId: currentChat.id
+         })
+       });
+            
        const response = await fetch('/api/chat', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
                messages: updatedMessages,
                tool: selectedTool,
-               collectedAnswers: collectedAnswers,
                currentQuestionKey: currentQuestionKey,
-               chatId: chatToUpdate.id
+               collectedAnswers: collectedAnswers,
+               chatId: currentChat.id // Explicitly include the chatId
            }),
        });
         if (!response.ok) {
+           console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
            const errorData = await response.json().catch(() => ({ error: "Request failed with status: " + response.status }));
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
-        const data = await response.json();
-        console.log("[handleSubmit] API response data:", data);
         
-        // Create assistant message with appropriate format (check if we got a string or object)
+        const data = await response.json();
+        console.log("[CHAT_DEBUG] API response data:", {
+          responseData: JSON.stringify({
+            chatId: data.chatId,
+            messageContent: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
+            currentQuestionKey: data.currentQuestionKey,
+            nextQuestionKey: data.nextQuestionKey,
+            answersCount: data.collectedAnswers ? Object.keys(data.collectedAnswers).length : 0,
+            isComplete: data.isComplete
+          })
+        });
+        
+        // Create assistant message
         const assistantMessage = typeof data.message === 'string' 
             ? { role: 'assistant', content: data.message }
-            : data.message || { role: 'assistant', content: "I received your message but couldn't generate a proper response." };
+            : data.message || { role: 'assistant', content: "I couldn't generate a proper response." };
             
-        // Use returned data or keep existing values
+        // Use returned data
         const returnedAnswers = data.collectedAnswers || collectedAnswers || {};
         const nextQuestionKey = data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey;
         const isComplete = data.isComplete || false;
-        const chatId = data.chatId || chatToUpdate.id;
+        const correctChatId = data.chatId; 
+
+        if (!correctChatId) {
+           console.error("[CHAT_DEBUG] CRITICAL: API did not return a chatId!");
+           throw new Error("Chat session ID missing from server response.");
+        }
+
+        console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
 
         setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
 
-        const finalChat = { ...optimisticChat, messages: [...updatedMessages, assistantMessage] };
-        setChats(prev => prev.map(chat => chat.id === finalChat.id ? finalChat : chat));
-        setCurrentChat(finalChat);
+        // Construct the updated current chat state with API response data
+        const finalCurrentChat = {
+          ...chatToUpdate, // Base it on the chat state before optimistic update
+          id: correctChatId, // IMPORTANT: Use the ID from the API response
+          messages: [...updatedMessages, assistantMessage] // User + assistant messages
+        };
+        
+        console.log("[CHAT_DEBUG] Final chat state constructed:", {
+          finalChatId: finalCurrentChat.id,
+          finalMessageCount: finalCurrentChat.messages.length,
+          basedOnChatId: chatToUpdate.id
+        });
 
-        if (isComplete && chatId) {
-            console.log(`[handleSubmit] Offer complete for chatId: ${chatId}. Initiating SSE connection.`);
+        // Update both the current chat state AND the chats list
+        setCurrentChat(finalCurrentChat);
+        
+        // Update the chats array, handling both existing and new chats
+        setChats(prevChats => {
+          console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
+            chatCount: prevChats.length,
+            chatIds: prevChats.map(c => c.id)
+          });
+          
+          // First check if the new chat already exists in the list
+          // This makes the update idempotent (safe to call multiple times)
+          if (prevChats.some(chat => chat.id === correctChatId)) {
+            console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
+            return prevChats.map(chat => 
+              chat.id === correctChatId ? finalCurrentChat : chat
+            );
+          }
+          
+          // Next, remove any temporary version of this chat
+          const filteredChats = tempId !== correctChatId 
+            ? prevChats.filter(chat => chat.id !== tempId)
+            : prevChats;
+            
+          console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
+            filteredCount: filteredChats.length,
+            removedTempChat: tempId !== correctChatId,
+            filteredIds: filteredChats.map(c => c.id)
+          });
+            
+          // Final safety check if chat exists after filtering
+          const chatExists = filteredChats.some(chat => chat.id === correctChatId);
+          
+          console.log(`[CHAT_DEBUG] Chat existence check:`, {
+            chatExists,
+            correctChatId,
+            finalChatId: finalCurrentChat.id
+          });
+          
+          let result;
+          if (chatExists) {
+            // Update existing chat in the list
+            result = filteredChats.map(chat => 
+              chat.id === correctChatId ? finalCurrentChat : chat
+            );
+            console.log(`[CHAT_DEBUG] Updated existing chat in list`);
+          } else {
+            // Add as a new chat if it doesn't exist in the list
+            result = [finalCurrentChat, ...filteredChats];
+            console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
+          }
+          
+          console.log(`[CHAT_DEBUG] Final chats state:`, {
+            resultCount: result.length,
+            resultIds: result.map(c => c.id)
+          });
+          
+          return result;
+        });
+
+        // If the offer is complete, initiate SSE connection
+        if (isComplete && correctChatId) {
+            console.log(`[CHAT_DEBUG] Offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
             setIsWaitingForN8n(true);
             const encodedAnswers = encodeURIComponent(JSON.stringify(returnedAnswers || {}));
-            connectToN8nResultStream(chatId, encodedAnswers);
+            connectToN8nResultStream(correctChatId, encodedAnswers);
         }
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
         const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
         const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
-        setChats(prev => prev.map(chat => chat.id === errorChat.id ? errorChat : chat));
+        setChats(prev => {
+          console.log(`[CHAT_DEBUG] Setting error chat state:`, {
+            errorChatId: errorChat.id,
+            prevChatCount: prev.length
+          });
+          return prev.map(chat => chat.id === errorChat.id ? errorChat : chat);
+        });
         setCurrentChat(errorChat);
     } finally {
       setIsLoading(false);
+      console.log(`[CHAT_DEBUG] handleSubmit completed`);
       if (!isWaitingForN8n) {
          textareaRef.current?.focus();
       } 
