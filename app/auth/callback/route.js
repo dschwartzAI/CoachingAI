@@ -43,8 +43,8 @@ export async function GET(request) {
   }
 
   // URL to redirect to after sign in process completes
-  // Explicitly use the current origin plus root path to ensure we go to the homepage
-  const redirectUrl = `${requestUrl.origin}/`;
-  console.log(`[Auth Callback] Redirecting to: ${redirectUrl}`);
+  // Explicitly use the current origin without any query parameters
+  const redirectUrl = requestUrl.origin;
+  console.log(`[Auth Callback] Redirecting to clean URL: ${redirectUrl}`);
   return NextResponse.redirect(redirectUrl)
 } 
