@@ -592,6 +592,15 @@ Rules:
 - No explanations before or after questions.
 - Focus on collecting information efficiently.
 
+IMPORTANT: Use ONLY these exact keys for nextQuestionKey:
+- offerDescription: Core product or service
+- targetAudience: Target audience
+- painPoints: Pain points they face
+- solution: How you solve the problems
+- pricing: Pricing structure
+- clientResult: Best client result
+- complete: When all questions are answered
+
 Return a JSON object:
 {
   "validAnswer": boolean,
@@ -624,21 +633,40 @@ Return a JSON object:
           chatId
         });
         
+        // Add key mapping to handle inconsistent key naming from the AI
+        const keyMapping = {
+          // Map alternate keys to our standard keys
+          'customerPainPoints': 'painPoints',
+          'solutionApproach': 'solution',
+          'pricingInformation': 'pricing',
+          'clientResults': 'clientResult',
+          'bestClientResult': 'clientResult',
+          // also map standard keys to themselves
+          'offerDescription': 'offerDescription',
+          'targetAudience': 'targetAudience',
+          'painPoints': 'painPoints',
+          'solution': 'solution',
+          'pricing': 'pricing',
+          'clientResult': 'clientResult'
+        };
+        
+        // Use the current question's standard key
+        const standardCurrentKey = keyMapping[currentQuestionKey] || currentQuestionKey;
+        
         // Update collected answers if we got a valid response
         if (analysisResult.validAnswer && analysisResult.savedAnswer) {
-          // Make a copy of the collectedAnswers to ensure we're not modifying the original
-          const updatedAnswers = { ...collectedAnswers };
-          updatedAnswers[currentQuestionKey] = analysisResult.savedAnswer;
-          console.log(`[CHAT_API_DEBUG] Saved answer for ${currentQuestionKey}:`, {
-            question: hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.question,
+          // Save with the standard key
+          collectedAnswers[standardCurrentKey] = analysisResult.savedAnswer;
+          
+          console.log(`[CHAT_API_DEBUG] Saved answer for ${standardCurrentKey}:`, {
+            standardKey: standardCurrentKey,
+            originalKey: currentQuestionKey,
+            question: hybridOfferQuestions.find(q => q.key === standardCurrentKey)?.question,
             answerLength: analysisResult.savedAnswer.length,
-            previousAnswersCount: Object.keys(collectedAnswers).length,
-            newAnswersCount: Object.keys(updatedAnswers).length,
+            answersCount: Object.keys(collectedAnswers).length,
+            answersList: Object.keys(collectedAnswers),
             chatId
           });
-          
-          // Update our local reference to collectedAnswers
-          Object.assign(collectedAnswers, updatedAnswers);
         }
         
         // Check if we're complete
@@ -650,23 +678,25 @@ Return a JSON object:
         // Set the content to the AI's response
         aiResponse = analysisResult.responseToUser;
         
-        // Determine the next question key
-        let nextQuestionKey = currentQuestionKey;
+        // Determine the next question key (using standardized keys)
+        let nextQuestionKey = standardCurrentKey;
         if (analysisResult.validAnswer) {
           if (analysisResult.nextQuestionKey === "complete") {
             nextQuestionKey = null;
           } else {
-            nextQuestionKey = analysisResult.nextQuestionKey;
+            // Map AI's next question key to our standard keys
+            nextQuestionKey = keyMapping[analysisResult.nextQuestionKey] || analysisResult.nextQuestionKey;
           }
           console.log('[CHAT_API_DEBUG] Moving to next question:', {
-            from: currentQuestionKey,
-            to: nextQuestionKey || 'COMPLETE',
+            from: standardCurrentKey,
+            aiSuggested: analysisResult.nextQuestionKey,
+            standardizedNext: nextQuestionKey || 'COMPLETE',
             collectedAnswers: Object.keys(collectedAnswers),
             chatId
           });
         } else {
           console.log('[CHAT_API_DEBUG] Staying on current question due to invalid answer:', {
-            questionKey: currentQuestionKey,
+            questionKey: standardCurrentKey,
             chatId
           });
         }
@@ -687,12 +717,12 @@ Be direct and concise. Avoid fluff. Focus on specific ideas for the hybrid offer
               role: "user",
               content: `Create a hybrid offer using this information:
       
-Core: ${collectedAnswers.offerDescription}
-Audience: ${collectedAnswers.targetAudience}
-Pain points: ${collectedAnswers.painPoints}
-Solution: ${collectedAnswers.solution}
-Pricing: ${collectedAnswers.pricing}
-Results: ${collectedAnswers.clientResult}
+Core: ${collectedAnswers.offerDescription || "Not provided"}
+Audience: ${collectedAnswers.targetAudience || "Not provided"}
+Pain points: ${collectedAnswers.painPoints || "Not provided"}
+Solution: ${collectedAnswers.solution || "Not provided"}
+Pricing: ${collectedAnswers.pricing || "Not provided"}
+Results: ${collectedAnswers.clientResult || "Not provided"}
 
 Suggest specific ideas for digital and physical components.`
             }

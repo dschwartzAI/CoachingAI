@@ -48,7 +48,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Reset state when chat or tool changes
   useEffect(() => {
     console.log(`[Context Change Effect] Running. ChatID: ${currentChat?.id}, Tool: ${selectedTool}`);
-    setCollectedAnswers({});
+    
+    // Check if the current chat has stored answers and question key
+    if (currentChat?.collectedAnswers) {
+      console.log(`[Context Change Effect] Restoring answers from chat:`, {
+        keys: Object.keys(currentChat.collectedAnswers),
+        questionKey: currentChat.currentQuestionKey
+      });
+      setCollectedAnswers(currentChat.collectedAnswers);
+      setCurrentQuestionKey(currentChat.currentQuestionKey);
+    } else {
+      // Reset answers if no stored data
+      setCollectedAnswers({});
+      const firstKey = hybridOfferQuestions[0]?.key || null;
+      setCurrentQuestionKey(selectedTool === 'hybrid-offer' ? firstKey : null);
+    }
+    
     setInitiationAttemptedForContext(false);
     setIsWaitingForN8n(false);
     if (eventSourceRef.current) {
@@ -56,8 +71,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         eventSourceRef.current.close();
         eventSourceRef.current = null;
     }
-    const firstKey = hybridOfferQuestions[0]?.key || null;
-    setCurrentQuestionKey(selectedTool === 'hybrid-offer' ? firstKey : null);
   }, [currentChat?.id, selectedTool]);
 
   // Update starting key if chat history already exists for hybrid-offer
@@ -302,7 +315,17 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
 
         console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
+        
+        // Log detailed information about returned answers
+        console.log("[CHAT_DEBUG] Processing returned answers:", {
+          returnedKeys: Object.keys(returnedAnswers),
+          currentKeys: Object.keys(collectedAnswers),
+          newAnswersCount: Object.keys(returnedAnswers).length,
+          nextQuestionKey,
+          previousQuestionKey: currentQuestionKey
+        });
 
+        // Ensure we're preserving all previous answers and adding new ones
         setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
 
@@ -310,7 +333,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         const finalCurrentChat = {
           ...chatToUpdate, // Base it on the chat state before optimistic update
           id: correctChatId, // IMPORTANT: Use the ID from the API response
-          messages: [...updatedMessages, assistantMessage] // User + assistant messages
+          messages: [...updatedMessages, assistantMessage], // User + assistant messages
+          collectedAnswers: returnedAnswers, // Store answers in the chat object
+          currentQuestionKey: nextQuestionKey // Store current question in chat object
         };
         
         console.log("[CHAT_DEBUG] Final chat state constructed:", {
