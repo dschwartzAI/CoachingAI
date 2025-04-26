@@ -10,6 +10,8 @@ const openai = new OpenAI({
 });
 
 const OPENAI_MODEL = "gpt-4o-mini";
+// Add your GPT Assistant ID here
+const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
@@ -758,7 +760,141 @@ Suggest specific ideas for digital and physical components.`
         return NextResponse.json(responsePayload);
       }
     }
-    
+
+    // Add GPT assistant handling for regular chat
+    if (!tool) {
+      console.log('[CHAT_API_DEBUG] Using GPT Assistant for regular chat');
+      
+      try {
+        // Create a new assistant thread for each conversation
+        // This simplified approach doesn't require thread ID storage in database
+        console.log(`[CHAT_API_DEBUG] Creating new assistant thread for chat: ${chatId}`);
+        const thread = await openai.beta.threads.create();
+        const assistantThreadId = thread.id;
+        console.log(`[CHAT_API_DEBUG] Created new assistant thread ID: ${assistantThreadId}`);
+        
+        // Get the latest user message
+        const latestUserMessage = messages[messages.length - 1].content;
+        
+        // Get the last 5 messages from Supabase for context
+        const { data: recentMessages, error: messagesError } = await supabase
+          .from('messages')
+          .select('role, content')
+          .eq('thread_id', chatId)
+          .order('timestamp', { ascending: false })
+          .limit(6); // Get 6 to exclude the current message which would be the most recent
+        
+        if (messagesError) {
+          console.error('[CHAT_API_DEBUG] Error fetching recent messages:', messagesError);
+        }
+        
+        // Add context to the user's new message if we have previous messages
+        let enhancedMessage = latestUserMessage;
+        
+        if (recentMessages && recentMessages.length > 1) {
+          // Remove the most recent message (which is the one we're processing now)
+          const contextMessages = recentMessages.slice(1, 6).reverse();
+          
+          console.log(`[CHAT_API_DEBUG] Adding ${contextMessages.length} messages as context`);
+          
+          // Format previous messages as context for the new message
+          let contextString = "Here's the recent conversation history for context:\n\n";
+          
+          contextMessages.forEach(msg => {
+            const role = msg.role === 'user' ? 'User' : 'Assistant';
+            contextString += `${role}: ${msg.content}\n`;
+          });
+          
+          contextString += "\nPlease keep this context in mind when responding to the following message:\n";
+          enhancedMessage = contextString + enhancedMessage;
+        }
+        
+        // Add the message to the assistant thread
+        await openai.beta.threads.messages.create(
+          assistantThreadId,
+          {
+            role: "user",
+            content: enhancedMessage
+          }
+        );
+        
+        // Run the assistant
+        const run = await openai.beta.threads.runs.create(
+          assistantThreadId,
+          {
+            assistant_id: GPT_ASSISTANT_ID
+          }
+        );
+        
+        // Poll for completion
+        let runStatus = await openai.beta.threads.runs.retrieve(
+          assistantThreadId,
+          run.id
+        );
+        
+        // Simple polling with timeout (30 seconds max)
+        const startTime = Date.now();
+        const maxWaitTime = 30000; // 30 seconds
+        
+        while (
+          runStatus.status !== "completed" && 
+          runStatus.status !== "failed" &&
+          runStatus.status !== "cancelled" &&
+          Date.now() - startTime < maxWaitTime
+        ) {
+          // Wait 1 second before checking again
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          runStatus = await openai.beta.threads.runs.retrieve(
+            assistantThreadId,
+            run.id
+          );
+          
+          console.log(`[CHAT_API_DEBUG] Run status: ${runStatus.status}`);
+        }
+        
+        if (runStatus.status === "completed") {
+          // Get the assistant's response
+          const messagesResponse = await openai.beta.threads.messages.list(
+            assistantThreadId
+          );
+          
+          // The first message is the most recent one from the assistant
+          const assistantMessages = messagesResponse.data.filter(msg => msg.role === "assistant");
+          
+          if (assistantMessages.length > 0) {
+            // Get the latest message
+            const latestMessage = assistantMessages[0];
+            
+            // Extract text content
+            let messageContent = "";
+            if (latestMessage.content && latestMessage.content.length > 0) {
+              for (const contentPart of latestMessage.content) {
+                if (contentPart.type === 'text') {
+                  messageContent += contentPart.text.value;
+                }
+              }
+            }
+            
+            return NextResponse.json({
+              message: messageContent,
+              chatId: chatId
+            });
+          } else {
+            throw new Error("No assistant message found in response");
+          }
+        } else {
+          throw new Error(`Assistant run did not complete: ${runStatus.status}`);
+        }
+      } catch (error) {
+        console.error('[CHAT_API_DEBUG] GPT Assistant error:', error);
+        return NextResponse.json(
+          { error: `Error with GPT Assistant: ${error.message}`, chatId },
+          { status: 500 }
+        );
+      }
+    }
+
     // Build the final response payload if not already set by a tool handler
     if (!responsePayload) {
       responsePayload = {

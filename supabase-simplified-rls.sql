@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "public"."threads" (
   "title" TEXT NOT NULL,
   "user_id" TEXT,  -- Change to TEXT to allow both UUID and string dev IDs
   "tool_id" TEXT,
+  "metadata" JSONB DEFAULT '{}',
   "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

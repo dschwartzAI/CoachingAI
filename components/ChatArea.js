@@ -6,6 +6,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
+import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -17,9 +20,22 @@ const hybridOfferQuestions = [
   { key: 'clientResult', question: "Finally, what's your biggest client result?" }
 ];
 
+// Add a component for rendering markdown messages
+function MarkdownMessage({ content }) {
+  return (
+    <ReactMarkdown
+      //className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
+      remarkPlugins={[remarkGfm]}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
   const [collectedAnswers, setCollectedAnswers] = useState({});
   const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
   const [isInitiating, setIsInitiating] = useState(false);
@@ -184,14 +200,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         alert("Cannot send message: No active chat selected."); // User feedback
         return;
     }
-    // Also prevent submission if loading/initiating
-    if (!trimmedInput || isLoading || isInitiating) return;
+    
+    // Prevent submission if loading
+    if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
+      console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
+      return;
+    }
 
     console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
       currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
       chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
       inputLength: trimmedInput.length
     });
+
+    // Set both loading states immediately for better visual feedback
+    setIsLoading(true);
+    setIsResponseLoading(true);
 
     const newMessage = { role: "user", content: trimmedInput };
     setInput("");
@@ -216,7 +240,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       });
       return updated;
     });
-    setIsLoading(true);
 
     try {
        console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
@@ -378,7 +401,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         setCurrentChat(errorChat);
     } finally {
       setIsLoading(false);
-      console.log(`[CHAT_DEBUG] handleSubmit completed`);
+      setIsResponseLoading(false); // Make sure to clear response loading state
+      console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
       if (!isWaitingForN8n) {
          textareaRef.current?.focus();
       } 
@@ -392,7 +416,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   };
 
-  // Auto-scroll
+  // Auto-scroll for both messages and loading state changes
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollViewport = scrollAreaRef.current.querySelector('div[style*="overflow: hidden scroll"]');
@@ -400,7 +424,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         scrollViewport.scrollTop = scrollViewport.scrollHeight;
       }
     }
-  }, [currentChat?.messages]);
+  }, [currentChat?.messages, isResponseLoading]);
 
   // Determine if the offer creation process is complete for UI feedback
   const isOfferComplete = currentQuestionKey === null && Object.keys(collectedAnswers).length > 0;
@@ -535,6 +559,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            </div>
        )}
        {/* --- End Status Display --- */}
+       
 
       <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 pt-16"> {/* Reduced padding-top */}
           {/* Initial Welcome Message (simplified) */}  
@@ -564,14 +589,20 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   </Avatar>
               )}
               <div
-                  className={`rounded-lg p-3 max-w-[80%] text-sm ${ // Removed whitespace-pre-wrap IF content is JSX
+                  className={`rounded-lg p-3 max-w-[80%] text-sm ${
                   message.role === "user"
                       ? "bg-primary text-primary-foreground whitespace-pre-wrap" // Keep for user text
-                      : "bg-muted"
-                  } ${!message.isJSX ? 'whitespace-pre-wrap' : ''}`} // Apply only if not JSX
+                      : "bg-muted overflow-auto"
+                  } ${message.isJSX ? '' : (message.role === 'assistant' ? '' : 'whitespace-pre-wrap')}`} // Only whitespace-pre-wrap for non-JSX user messages
               >
-                  {/* Render content directly - React handles JSX vs strings */}
-                  {message.content}
+                  {/* Render content with markdown for assistant messages, directly for JSX, or as text for user */}
+                  {message.isJSX ? (
+                    message.content
+                  ) : message.role === 'assistant' ? (
+                    <MarkdownMessage content={message.content} />
+                  ) : (
+                    message.content
+                  )}
               </div>
               {message.role === "user" && (
                   <Avatar className="flex-shrink-0">
@@ -580,6 +611,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               )}
               </div>
           ))}
+          
+          {/* Loading Message while waiting for response */}
+          {isResponseLoading && (
+            <>
+              <LoadingMessage />
+              {console.log('[CHAT_DEBUG] Rendering LoadingMessage component')}
+            </>
+          )}
+          
           {/* N8N Loading Indicator */} 
           {isWaitingForN8n && (
              <div className="flex items-center justify-center gap-2 p-3 bg-muted rounded-lg">
@@ -587,6 +627,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                  <span className="text-sm text-muted-foreground">Generating document... (approx. 1 min)</span>
              </div>
           )}
+          
+          
       </ScrollArea>
 
       {/* Input Form */}  
@@ -597,18 +639,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading ? "Waiting..." : "Type your message..."}
+            placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading || isResponseLoading ? "Waiting for response..." : "Type your message..."}
             className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl hover:border-primary focus-visible:ring-1 focus-visible:ring-primary"
             rows={1}
-            disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n} // Disable while waiting for n8n
+            disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
           />
           <Button 
              type="submit" 
-             disabled={isLoading || isInitiating || !input.trim() || isOfferComplete || isWaitingForN8n}
+             disabled={isLoading || isInitiating || !input.trim() || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
              size="sm"
              className="rounded-full h-10 w-10"
           >
-            {isLoading || isInitiating || isWaitingForN8n ? 
+            {isLoading || isInitiating || isWaitingForN8n || isResponseLoading ? 
              <Loader2 className="h-4 w-4 animate-spin" />
             : 
             <ArrowUp className="h-4 w-4" />
@@ -618,4 +660,4 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       </form>
     </div>
   );
-} 
+}

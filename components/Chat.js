@@ -12,14 +12,40 @@ import { TOOLS } from '@/lib/config/tools';
 import { ToolProgress } from '@/components/ToolProgress';
 import { Loader2, SendHorizontal, Plus, RefreshCw, ChevronDown, RotateCcw, ArrowUp } from 'lucide-react';
 import Message from '@/components/Message';
+import LoadingMessage from '@/components/LoadingMessage';
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// Add this function to render a message loading UI indicator
+function MessageLoadingIndicator() {
+  return (
+    <div className="flex items-start gap-3 max-w-[85%] group relative py-2 self-start mr-auto animate-pulse">
+      <div className="h-8 w-8 flex-shrink-0 flex items-center justify-center rounded-full bg-primary/20">
+        <Loader2 className="h-5 w-5 text-primary animate-spin" />
+      </div>
+      
+      <div className="rounded-2xl p-4 text-sm bg-muted text-foreground rounded-tl-none min-w-[180px]">
+        <div className="flex flex-col space-y-3">
+          <div className="flex items-center space-x-2">
+            <div className="h-2.5 w-16 bg-primary/30 rounded-full"></div>
+            <div className="h-2.5 w-24 bg-primary/20 rounded-full"></div>
+          </div>
+          <div className="h-2.5 w-32 bg-primary/25 rounded-full"></div>
+          <div className="h-2.5 w-20 bg-primary/15 rounded-full"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Chat({ thread: initialThread, onThreadUpdate }) {
   const { user, getSession } = useAuth();
   const { toast } = useToast();
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResponseLoading, setIsResponseLoading] = useState(false); // Explicit state for AI response loading
   const [thread, setThread] = useState(initialThread);
   const [messages, setMessages] = useState(thread?.messages || []);
   const [error, setError] = useState(null);
@@ -156,6 +182,14 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Add a separate effect to scroll when loading state changes
+  useEffect(() => {
+    if (isLoading) {
+      console.log('[Chat] Loading state changed, scrolling to bottom');
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [isLoading]);
+
   useEffect(() => {
     if (!thread?.id || thread?.isTemporary) {
       console.log('[Chat] Skipping subscription setup - no thread ID or thread is temporary', {
@@ -265,10 +299,11 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const userInput = inputRef.current.value.trim();
-    if (!userInput || isLoading) {
+    if (!userInput || isLoading || isResponseLoading) {
       console.log('[Chat] Submit prevented:', {
         hasInput: !!userInput,
-        isLoading
+        isLoading,
+        isResponseLoading
       });
       return;
     }
@@ -280,6 +315,10 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       messagesCount: messages.length
     });
 
+    // Set loading state immediately for better visual feedback
+    setIsLoading(true);
+    setIsResponseLoading(true); // Set explicit response loading indicator
+
     // Handle the case where no thread exists yet
     let currentThread = thread;
     if (!currentThread?.id) {
@@ -287,13 +326,14 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       currentThread = await initializeNewThread(userInput);
       if (!currentThread) {
         console.log('[Chat] Failed to initialize thread, aborting message submission');
+        setIsLoading(false);
+        setIsResponseLoading(false);
         return;
       }
 
       // At this point, the message has already been saved as part of thread initialization
       console.log('[Chat] User message already saved during thread initialization');
       inputRef.current.value = '';
-      setIsLoading(true);
       setError(null);
 
       // Need to get AI response for the first message
@@ -339,6 +379,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         });
       } finally {
         setIsLoading(false);
+        setIsResponseLoading(false);
       }
       
       return;
@@ -357,7 +398,6 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     const tempId = `temp-${Date.now()}`;
     setMessages(prev => [...prev, { ...userMessagePayload, id: tempId }]);
     inputRef.current.value = '';
-    setIsLoading(true);
     setError(null);
 
     try {
@@ -375,6 +415,11 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       if (!currentThread?.id) {
          console.error('[Chat] handleSubmit: CRITICAL - currentThread.id is missing before calling getAIResponse!');
       }
+      
+      // Make sure loading is still set to true before AI response
+      setIsLoading(true);
+      setIsResponseLoading(true);
+      
       const response = await getAIResponse(userInput, {
         id: currentThread.id,
         ...currentThread,
@@ -418,6 +463,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       });
     } finally {
       setIsLoading(false);
+      setIsResponseLoading(false);
       console.log('[Chat] Message submission completed');
     }
   };
@@ -480,6 +526,15 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           {messages.map((msg) => (
             <Message key={msg.id || msg.tempId || messages.indexOf(msg)} message={msg} />
           ))}
+          
+          {/* Use the new LoadingMessage component with explicit response loading state */}
+          {isResponseLoading && (
+            <>
+              <LoadingMessage />
+              {console.log('[Chat] Rendering LoadingMessage component')}
+            </>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
@@ -497,16 +552,16 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
                 }
               }}
               ref={inputRef}
-              disabled={isLoading || isInitializingThread}
+              disabled={isLoading || isInitializingThread || isResponseLoading}
               rows={1}
             />
             <Button 
               type="submit" 
-              disabled={isLoading || isInitializingThread} 
+              disabled={isLoading || isInitializingThread || isResponseLoading} 
               size="icon" 
               className="absolute right-2 bottom-2 rounded-full h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              {isLoading || isInitializingThread ? (
+              {isLoading || isInitializingThread || isResponseLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
