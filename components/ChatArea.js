@@ -298,6 +298,37 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           })
         });
         
+        // Check if this is an initial response that needs polling
+        if (data.isInitialResponse && data.status === "processing" && data.threadId && data.runId) {
+          console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
+            threadId: data.threadId,
+            runId: data.runId
+          });
+          
+          // Add a temporary thinking message
+          const thinkingMessage = { 
+            role: 'assistant', 
+            content: data.message || "I'm thinking...",
+            isTemporary: true 
+          };
+          
+          // Update UI with thinking message
+          const chatWithThinking = {
+            ...chatToUpdate,
+            id: data.chatId,
+            messages: [...updatedMessages, thinkingMessage],
+          };
+          
+          setCurrentChat(chatWithThinking);
+          setChats(prev => prev.map(chat => 
+            chat.id === chatToUpdate.id ? chatWithThinking : chat
+          ));
+          
+          // Start polling for the real response
+          pollForAssistantResponse(data.threadId, data.runId, data.chatId, chatWithThinking, updatedMessages);
+          return; // Exit early since we'll update UI when polling completes
+        }
+
         // Create assistant message
         const assistantMessage = typeof data.message === 'string' 
             ? { role: 'assistant', content: data.message }
@@ -560,6 +591,114 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       es.close();
       eventSourceRef.current = null;
     };
+  };
+
+  const pollForAssistantResponse = async (threadId, runId, chatId, chatWithThinking, updatedMessages) => {
+    console.log("[CHAT_DEBUG] Starting to poll for assistant response");
+    
+    let attempts = 0;
+    const maxAttempts = 30; // 30 attempts x 2 seconds = 60 seconds max
+    
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        console.error("[CHAT_DEBUG] Polling timed out after max attempts");
+        // Update with an error message
+        const errorMessage = { 
+          role: 'assistant', 
+          content: "I'm sorry, the request timed out. Please try again." 
+        };
+        updateChatWithFinalResponse(chatWithThinking, errorMessage, chatId, updatedMessages);
+        return;
+      }
+      
+      attempts++;
+      console.log(`[CHAT_DEBUG] Polling attempt ${attempts}/${maxAttempts}`);
+      
+      try {
+        const response = await fetch('/api/assistant-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            threadId,
+            runId,
+            chatId
+          }),
+        });
+        
+        if (!response.ok) {
+          console.error(`[CHAT_DEBUG] Polling API error: ${response.status}`);
+          throw new Error(`Polling request failed with status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`[CHAT_DEBUG] Polling response:`, {
+          status: data.status,
+          messagePreview: data.message ? data.message.substring(0, 50) + '...' : 'no message'
+        });
+        
+        if (data.status === "completed") {
+          // We got the final response
+          const assistantMessage = { role: 'assistant', content: data.message };
+          updateChatWithFinalResponse(chatWithThinking, assistantMessage, chatId, updatedMessages);
+          return;
+        } else if (data.status === "failed" || data.status === "cancelled") {
+          // Handle error
+          const errorMessage = { 
+            role: 'assistant', 
+            content: `Sorry, an error occurred: ${data.error || 'Unknown error'}` 
+          };
+          updateChatWithFinalResponse(chatWithThinking, errorMessage, chatId, updatedMessages);
+          return;
+        }
+        
+        // If still processing, wait and try again
+        setTimeout(poll, 2000); // Poll every 2 seconds
+      } catch (error) {
+        console.error("[CHAT_DEBUG] Error during polling:", error);
+        
+        // If there's an error, we'll try a few more times
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000);
+        } else {
+          // Too many errors, give up
+          const errorMessage = { 
+            role: 'assistant', 
+            content: `Sorry, there was an error retrieving the response: ${error.message}` 
+          };
+          updateChatWithFinalResponse(chatWithThinking, errorMessage, chatId, updatedMessages);
+        }
+      }
+    };
+    
+    // Start polling
+    setTimeout(poll, 1000); // Start after 1 second
+  };
+  
+  const updateChatWithFinalResponse = (chatWithThinking, finalMessage, chatId, userMessages) => {
+    console.log("[CHAT_DEBUG] Updating chat with final response", {
+      chatId,
+      messageLengthBeforeUpdate: chatWithThinking.messages.length,
+      finalMessagePreview: finalMessage.content.substring(0, 50) + '...'
+    });
+    
+    // Remove the temporary thinking message and add the final response
+    const updatedMessages = [
+      ...userMessages, // Original user messages
+      finalMessage     // Final assistant response
+    ];
+    
+    const finalChat = {
+      ...chatWithThinking,
+      messages: updatedMessages,
+    };
+    
+    setIsResponseLoading(false);
+    
+    // Update both current chat and chats list
+    setCurrentChat(finalChat);
+    setChats(prev => prev.map(chat => 
+      chat.id === chatId ? finalChat : chat
+    ));
   };
 
   return (

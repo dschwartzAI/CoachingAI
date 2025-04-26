@@ -821,101 +821,17 @@ Return a JSON object:
           assistant_id: GPT_ASSISTANT_ID,
         });
         
-        // Poll for completion
-        let runStatus;
-        console.log(`[CHAT_API_DEBUG] Waiting for run to complete: ${run.id}`);
+        console.log(`[CHAT_API_DEBUG] Run created, returning early response to avoid Netlify timeout`);
         
-        // Simple polling with timeout (30 seconds max)
-        const startTime = Date.now();
-        const maxWaitTime = 30000; // 30 seconds
-        
-        while (true) {
-          runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-          
-          if (runStatus.status === "completed") {
-            console.log(`[CHAT_API_DEBUG] Run completed successfully`);
-            break;
-          } else if (runStatus.status === "failed" || runStatus.status === "cancelled") {
-            console.error(`[CHAT_API_DEBUG] Run failed with status: ${runStatus.status}`);
-            throw new Error(`Assistant run failed with status: ${runStatus.status}`);
-          }
-          
-          // Check for timeout
-          if (Date.now() - startTime > maxWaitTime) {
-            console.error(`[CHAT_API_DEBUG] Run timed out after ${maxWaitTime/1000} seconds`);
-            throw new Error("Assistant run timed out");
-          }
-          
-          // Wait 1 second before checking again
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        // Get the assistant's response
-        console.log(`[CHAT_API_DEBUG] Retrieving messages from thread: ${threadId}`);
-        const threadMessages = await openai.beta.threads.messages.list(threadId);
-        
-        // Filter for assistant messages and get the most recent one
-        const assistantMessages = threadMessages.data.filter(msg => msg.role === "assistant");
-        
-        if (assistantMessages.length === 0) {
-          throw new Error("No assistant response received");
-        }
-        
-        // Get the most recent assistant message
-        const latestMessage = assistantMessages[0];
-        
-        // Extract text content from the message
-        let responseText = "";
-        
-        for (const content of latestMessage.content) {
-          if (content.type === "text") {
-            responseText += content.text.value;
-          }
-        }
-        
-        console.log(`[CHAT_API_DEBUG] Assistant response: ${responseText.substring(0, 50)}...`);
-        
-        // Save the assistant's response to the database
-        if (chatId && supabase) {
-          try {
-            console.log('[CHAT_API_DEBUG] Saving assistant response to database:', {
-              chatId,
-              responseLength: responseText.length
-            });
-            
-            const messageObj = {
-              thread_id: chatId,
-              role: 'assistant',
-              content: responseText,
-              timestamp: new Date().toISOString()
-            };
-            
-            const { error: messageError } = await supabase
-              .from('messages')
-              .insert(messageObj);
-              
-            if (messageError) {
-              console.error('[CHAT_API_DEBUG] Error saving assistant message:', {
-                error: messageError.message,
-                code: messageError.code,
-                chatId
-              });
-            } else {
-              console.log('[CHAT_API_DEBUG] Assistant message saved successfully');
-            }
-          } catch (dbError) {
-            console.error('[CHAT_API_DEBUG] Database error saving assistant message:', {
-              error: dbError.message,
-              stack: dbError.stack,
-              chatId
-            });
-            // Continue with the response even if database operations fail
-          }
-        }
-        
+        // For Netlify, we'll implement a streaming approach to avoid timeouts
+        // Return an initial response to the client and let the client poll for updates
         return NextResponse.json({
-          message: responseText,
-          chatId: chatId
+          message: "Your request is being processed. Assistant is thinking...",
+          chatId: chatId,
+          threadId: threadId,
+          runId: run.id,
+          status: "processing",
+          isInitialResponse: true
         });
       } catch (error) {
         console.error('[CHAT_API_DEBUG] GPT Assistant error:', error);
