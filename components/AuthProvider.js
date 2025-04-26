@@ -98,14 +98,14 @@ export function AuthProvider({ children }) {
     },
     signUpWithEmail: async (email, password) => {
       try {
-        // Simply use the current site URL dynamically
-        const redirect = `${window.location.origin}/auth/callback`;
-            
-        const { error } = await supabase.auth.signUp({
+        const { error, data } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: redirect
+            emailRedirectTo: null,
+            data: {
+              email_confirmed: true
+            }
           }
         });
         
@@ -114,8 +114,13 @@ export function AuthProvider({ children }) {
           throw error;
         }
         
-        console.log('[Auth] Email sign-up initiated with redirect to:', redirect);
-        return { success: true, message: 'Check your email for confirmation link' };
+        console.log('[Auth] Email sign-up initiated, auto-confirming user');
+        
+        if (data?.user?.identities?.length === 0) {
+          return { success: true, message: 'Check your email for confirmation link' };
+        }
+        
+        return { success: true, message: 'Signup successful! You can now log in.' };
       } catch (err) {
         console.error('[Auth] Unexpected error during email sign-up:', err);
         throw err;
