@@ -703,43 +703,13 @@ Return a JSON object:
         
         // If we're complete, generate a summary with all collected information
         if (isComplete) {
-          console.log('[CHAT_API_DEBUG] Hybrid offer information collection complete, generating summary');
+          console.log('[CHAT_API_DEBUG] Hybrid offer information collection complete');
           
-          // Build a completion prompt with the collected information
-          const summaryPrompt = [
-            {
-              role: "system",
-              content: `Create a hybrid offer based on the collected information.
-A hybrid offer combines digital and physical components at different price points.
-Be direct and concise. Avoid fluff. Focus on specific ideas for the hybrid offer.`
-            },
-            {
-              role: "user",
-              content: `Create a hybrid offer using this information:
-      
-Core: ${collectedAnswers.offerDescription || "Not provided"}
-Audience: ${collectedAnswers.targetAudience || "Not provided"}
-Pain points: ${collectedAnswers.painPoints || "Not provided"}
-Solution: ${collectedAnswers.solution || "Not provided"}
-Pricing: ${collectedAnswers.pricing || "Not provided"}
-Results: ${collectedAnswers.clientResult || "Not provided"}
-
-Suggest specific ideas for digital and physical components.`
-            }
-          ];
+          // Instead of generating a detailed offer, just provide a simple completion message
+          aiResponse = "Thank you! I've collected all the information needed for your hybrid offer. Your document is being generated now.";
           
-          // Call OpenAI to generate a tailored summary
-          const summaryCompletion = await openai.chat.completions.create({
-            model: OPENAI_MODEL,
-            messages: summaryPrompt,
-            temperature: 0.7,
-            max_tokens: 1000,
-          });
-          
-          // Extract the summary content
-          aiResponse = summaryCompletion.choices[0].message.content;
-          console.log('[CHAT_API_DEBUG] Generated hybrid offer summary:', {
-            responseLength: aiResponse.length,
+          console.log('[CHAT_API_DEBUG] Sending completion message:', {
+            messageLength: aiResponse.length,
             chatId
           });
         }

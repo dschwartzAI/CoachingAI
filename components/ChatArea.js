@@ -480,7 +480,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // --- Construct JSX message content ---
           const n8nResult = eventData.data;
           resultMessageContent = (
-            <div className="space-y-3"> {/* Added spacing */}
+            <div className="space-y-3 border border-green-500 bg-gradient-to-t from-green-500/20 via-transparent to-transparent"> {/* Added spacing */}
               <div className="flex items-center gap-2 font-medium"> {/* Success message style */}
                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                  <span>Document generated successfully!</span>
@@ -506,6 +506,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                            <FileText className="mr-2 h-4 w-4" /> View Google Doc
                        </a>
                     </Button>
+                  )}
+                  {n8nResult.offerInMd && ( // Updated key name
+                       <MarkdownMessage content={n8nResult.offerInMd} />
                   )}
               </div>
             </div>
@@ -586,7 +589,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        {/* --- End Status Display --- */}
        
 
-      <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 pt-16"> {/* Reduced padding-top */}
+      <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 pt-16 gap-4"> {/* Reduced padding-top */}
           {/* Initial Welcome Message (simplified) */}  
           {!currentChat?.messages?.length && selectedTool === "hybrid-offer" && (
               <div className="text-center space-y-2 p-4 bg-muted rounded-lg">
@@ -606,7 +609,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           {currentChat?.messages?.map((message, i) => (
               <div
               key={`${currentChat.id}-${i}`}
-              className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex gap-3 mb-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
               {message.role === "assistant" && (
                   <Avatar className="flex-shrink-0">
@@ -647,7 +650,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           
           {/* N8N Loading Indicator */} 
           {isWaitingForN8n && (
-             <div className="flex items-center justify-center gap-2 p-3 bg-muted rounded-lg">
+             <div className="flex items-center justify-center m-2 mx-10 gap-2 p-3 bg-muted rounded-lg ring-1 ring-blue-500 bg-gradient-to-t from-blue-500/20 via-transparent to-transparent">
                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                  <span className="text-sm text-muted-foreground">Generating document... (approx. 1 min)</span>
              </div>
