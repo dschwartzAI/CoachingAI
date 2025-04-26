@@ -16,6 +16,22 @@ export function AuthProvider({ children }) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 
+  // Helper function to get the correct URL for redirects
+  const getURL = () => {
+    // Get the site URL or deployment URL
+    let url = process.env.NEXT_PUBLIC_SITE_URL || // Set in production environment
+              typeof window !== 'undefined' ? window.location.origin : ''; // Fallback to origin in browser
+              
+    // Make sure to include `https://` when not localhost
+    url = url.includes('localhost') ? url : url.startsWith('http') ? url : `https://${url}`;
+    
+    // Make sure to include a trailing `/`
+    url = url.endsWith('/') ? url : `${url}/`;
+    
+    // Append the auth callback path
+    return `${url}auth/callback`;
+  };
+
   // Initialize the authentication state on mount
   useEffect(() => {
     const initializeAuth = async () => {
@@ -98,8 +114,9 @@ export function AuthProvider({ children }) {
     },
     signUpWithEmail: async (email, password) => {
       try {
-        // Simply use the current site URL dynamically
-        const redirect = `${window.location.origin}/auth/callback`;
+        // Get redirect URL using the helper function
+        const redirect = getURL();
+        console.log('[Auth] Using redirect URL for email signup:', redirect);
             
         const { error } = await supabase.auth.signUp({
           email,
@@ -123,10 +140,8 @@ export function AuthProvider({ children }) {
     },
     signInWithGoogle: async () => {
       try {
-        // Simply use the current site URL dynamically
-        const redirect = `https://tmurhhigvlarqqcyiwmq.supabase.co/auth/v1/callback`;
-        // const redirect = `https://coachingai.netlify.app/auth/callback`;
-        // const redirect = `${window.location.origin}/auth/callback`;
+        // Get redirect URL using the helper function
+        const redirect = getURL();
         
         // Show the exact URL and domain being used
         console.log('[Auth] Current browser URL:', window.location.href);
