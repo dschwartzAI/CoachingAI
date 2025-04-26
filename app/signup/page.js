@@ -12,6 +12,7 @@ import { Chrome } from 'lucide-react';
 export default function SignUpPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,8 +29,8 @@ export default function SignUpPage() {
     e.preventDefault();
     
     // Basic validation
-    if (!email || !password) {
-      setError('Please fill in all required fields');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
     
@@ -39,7 +40,7 @@ export default function SignUpPage() {
     
     try {
       const result = await signUpWithEmail(email, password);
-      setSuccess(result.message || 'Sign up successful!');
+      setSuccess(result.message || 'Sign up successful! Check your email to confirm your account.');
     } catch (err) {
       console.error("Email signup error:", err);
       setError(err.message || 'Failed to sign up with email.');
@@ -91,6 +92,17 @@ export default function SignUpPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                />
+             </div>
+             <div className="grid gap-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={loading}
                 />
              </div>

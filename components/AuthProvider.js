@@ -98,14 +98,14 @@ export function AuthProvider({ children }) {
     },
     signUpWithEmail: async (email, password) => {
       try {
-        const { error, data } = await supabase.auth.signUp({
+        // Simply use the current site URL dynamically
+        const redirect = `${window.location.origin}/auth/callback`;
+            
+        const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: null,
-            data: {
-              email_confirmed: true
-            }
+            emailRedirectTo: redirect
           }
         });
         
@@ -114,13 +114,8 @@ export function AuthProvider({ children }) {
           throw error;
         }
         
-        console.log('[Auth] Email sign-up initiated, auto-confirming user');
-        
-        if (data?.user?.identities?.length === 0) {
-          return { success: true, message: 'Check your email for confirmation link' };
-        }
-        
-        return { success: true, message: 'Signup successful! You can now log in.' };
+        console.log('[Auth] Email sign-up initiated with redirect to:', redirect);
+        return { success: true, message: 'Check your email for confirmation link' };
       } catch (err) {
         console.error('[Auth] Unexpected error during email sign-up:', err);
         throw err;
@@ -130,10 +125,13 @@ export function AuthProvider({ children }) {
       try {
         // Simply use the current site URL dynamically
         const redirect = `${window.location.origin}/auth/callback`;
-            
-        console.log('[Auth] Using redirect URL:', redirect);
         
-        const { error } = await supabase.auth.signInWithOAuth({
+        // Show the exact URL and domain being used
+        console.log('[Auth] Current browser URL:', window.location.href);
+        console.log('[Auth] Current origin:', window.location.origin);
+        console.log('[Auth] Using redirect URL for Google:', redirect);
+        
+        const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
             queryParams: {
@@ -150,6 +148,9 @@ export function AuthProvider({ children }) {
         }
         
         console.log('[Auth] Google sign-in initiated');
+        if (data?.url) {
+          console.log('[Auth] OAuth URL:', data.url.substring(0, 100) + '...');
+        }
       } catch (err) {
         console.error('[Auth] Unexpected error during Google sign-in:', err);
         throw err;
