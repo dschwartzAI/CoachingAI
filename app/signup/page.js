@@ -9,12 +9,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAuth } from '@/components/AuthProvider';
 import { Chrome } from 'lucide-react';
 
-export default function LoginPage() {
+export default function SignUpPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithGoogle, signInWithEmail, user } = useAuth();
+  const { signUpWithEmail, signInWithGoogle, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -23,15 +25,25 @@ export default function LoginPage() {
     }
   }, [user, router]);
 
-  const handleEmailLogin = async (e) => {
+  const handleEmailSignUp = async (e) => {
     e.preventDefault();
+    
+    // Basic validation
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
     setLoading(true);
     setError('');
+    setSuccess('');
+    
     try {
-      await signInWithEmail(email, password);
+      const result = await signUpWithEmail(email, password);
+      setSuccess(result.message || 'Sign up successful! Check your email to confirm your account.');
     } catch (err) {
-      console.error("Email login error:", err);
-      setError(err.message || 'Failed to log in with email.');
+      console.error("Email signup error:", err);
+      setError(err.message || 'Failed to sign up with email.');
     } finally {
       setLoading(false);
     }
@@ -44,7 +56,7 @@ export default function LoginPage() {
       await signInWithGoogle();
     } catch (err) {
       console.error("Google login error:", err);
-      setError(err.message || 'Failed to initiate Google login.');
+      setError(err.message || 'Failed to initiate Google sign up.');
       setLoading(false);
     }
   };
@@ -53,13 +65,13 @@ export default function LoginPage() {
     <div className="container mx-auto flex items-center justify-center min-h-screen p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl">Login</CardTitle>
+          <CardTitle className="text-2xl">Sign Up</CardTitle>
           <CardDescription>
-            Enter your email below to login or use Google
+            Create an account to get started
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <form onSubmit={handleEmailLogin} className="grid gap-4">
+          <form onSubmit={handleEmailSignUp} className="grid gap-4">
              <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -83,9 +95,21 @@ export default function LoginPage() {
                   disabled={loading}
                 />
              </div>
+             <div className="grid gap-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                />
+             </div>
              {error && <p className="text-sm text-center text-destructive">{error}</p>}
+             {success && <p className="text-sm text-center text-green-500">{success}</p>}
              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Logging in...' : 'Login with Email'}
+                {loading ? 'Signing up...' : 'Sign Up with Email'}
               </Button>
           </form>
 
@@ -105,15 +129,15 @@ export default function LoginPage() {
             Google
           </Button>
         </CardContent>
-         <CardFooter className="text-center text-sm text-muted-foreground">
-           <div className="w-full text-center">
-             Don&apos;t have an account?{' '}
-             <a href="/signup" className="text-primary hover:underline">
-               Sign up
-             </a>
-           </div>
-         </CardFooter>
+        <CardFooter className="text-center text-sm text-muted-foreground">
+          <div className="w-full text-center">
+            Already have an account?{' '}
+            <a href="/login" className="text-primary hover:underline">
+              Log in
+            </a>
+          </div>
+        </CardFooter>
       </Card>
     </div>
   );
-}
+} 

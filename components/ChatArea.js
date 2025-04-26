@@ -480,7 +480,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // --- Construct JSX message content ---
           const n8nResult = eventData.data;
           resultMessageContent = (
-            <div className="space-y-3 border border-green-500 bg-gradient-to-t from-green-500/20 via-transparent to-transparent"> {/* Added spacing */}
+            <div className="space-y-3"> {/* Added spacing */}
               <div className="flex items-center gap-2 font-medium"> {/* Success message style */}
                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                  <span>Document generated successfully!</span>

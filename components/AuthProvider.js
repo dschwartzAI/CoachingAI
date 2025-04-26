@@ -78,6 +78,46 @@ export function AuthProvider({ children }) {
         throw err;
       }
     },
+    signInWithEmail: async (email, password) => {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (error) {
+          console.error('[Auth] Error signing in with email:', error.message);
+          throw error;
+        }
+        
+        console.log('[Auth] Email sign-in successful');
+      } catch (err) {
+        console.error('[Auth] Unexpected error during email sign-in:', err);
+        throw err;
+      }
+    },
+    signUpWithEmail: async (email, password) => {
+      try {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`
+          }
+        });
+        
+        if (error) {
+          console.error('[Auth] Error signing up with email:', error.message);
+          throw error;
+        }
+        
+        console.log('[Auth] Email sign-up initiated');
+        return { success: true, message: 'Check your email for confirmation link' };
+      } catch (err) {
+        console.error('[Auth] Unexpected error during email sign-up:', err);
+        throw err;
+      }
+    },
     signInWithGoogle: async () => {
       try {
         const { error } = await supabase.auth.signInWithOAuth({
