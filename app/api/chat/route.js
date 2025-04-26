@@ -776,10 +776,43 @@ Return a JSON object:
         const latestUserMessage = messages[messages.length - 1].content;
         console.log(`[CHAT_API_DEBUG] Processing user message: ${latestUserMessage.substring(0, 50)}...`);
         
-        // Add the user message to the thread - sending the exact message without modifications
+        // Get the last 4 messages from the database to provide context
+        let messageWithContext = latestUserMessage;
+        try {
+          const { data: recentMessages, error: recentMessagesError } = await supabase
+            .from('messages')
+            .select('role, content')
+            .eq('thread_id', chatId)
+            .order('timestamp', { ascending: false })
+            .limit(5); // Get 5 to exclude the current message which would be the most recent
+          
+          if (!recentMessagesError && recentMessages && recentMessages.length > 1) {
+            // Remove the most recent message (which is the one we're processing now)
+            const contextMessages = recentMessages.slice(1, 5).reverse();
+            console.log(`[CHAT_API_DEBUG] Adding ${contextMessages.length} messages as context`);
+            
+            if (contextMessages.length > 0) {
+              // Format previous messages as context for the new message
+              let contextString = "\n\nFor context, this is our chat history:\n";
+              
+              contextMessages.forEach(msg => {
+                const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+                contextString += `${roleLabel}: ${msg.content}\n`;
+              });
+              
+              messageWithContext = `${latestUserMessage}${contextString}`;
+              console.log(`[CHAT_API_DEBUG] Added conversation history context to message, new length: ${messageWithContext.length}`);
+            }
+          }
+        } catch (contextError) {
+          console.error('[CHAT_API_DEBUG] Error retrieving conversation context:', contextError);
+          // Continue without context if there's an error
+        }
+        
+        // Add the user message to the thread - sending the message with conversation context
         await openai.beta.threads.messages.create(threadId, {
           role: "user",
-          content: latestUserMessage
+          content: messageWithContext
         });
         
         // Run the assistant on the thread
