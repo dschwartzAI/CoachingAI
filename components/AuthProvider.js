@@ -124,7 +124,8 @@ export function AuthProvider({ children }) {
     signInWithGoogle: async () => {
       try {
         // Simply use the current site URL dynamically
-        const redirect = `https://coachingai.netlify.app/auth/callback`;
+        const redirect = `https://tmurhhigvlarqqcyiwmq.supabase.co/auth/v1/callback`;
+        // const redirect = `https://coachingai.netlify.app/auth/callback`;
         // const redirect = `${window.location.origin}/auth/callback`;
         
         // Show the exact URL and domain being used
