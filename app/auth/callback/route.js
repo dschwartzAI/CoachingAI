@@ -29,6 +29,6 @@ export async function GET(request) {
   }
 
   // URL to redirect to after sign in process completes
-  // Use the current origin (wherever the app is hosted)
-  return NextResponse.redirect(requestUrl.origin)
+  // Explicitly use the current origin plus root path to ensure we go to the homepage
+  return NextResponse.redirect(`${requestUrl.origin}/`)
 } 

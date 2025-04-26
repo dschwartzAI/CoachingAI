@@ -98,11 +98,14 @@ export function AuthProvider({ children }) {
     },
     signUpWithEmail: async (email, password) => {
       try {
+        // Simply use the current site URL dynamically
+        const redirect = `${window.location.origin}/auth/callback`;
+            
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`
+            emailRedirectTo: redirect
           }
         });
         
@@ -111,7 +114,7 @@ export function AuthProvider({ children }) {
           throw error;
         }
         
-        console.log('[Auth] Email sign-up initiated');
+        console.log('[Auth] Email sign-up initiated with redirect to:', redirect);
         return { success: true, message: 'Check your email for confirmation link' };
       } catch (err) {
         console.error('[Auth] Unexpected error during email sign-up:', err);
@@ -120,6 +123,11 @@ export function AuthProvider({ children }) {
     },
     signInWithGoogle: async () => {
       try {
+        // Simply use the current site URL dynamically
+        const redirect = `${window.location.origin}/auth/callback`;
+            
+        console.log('[Auth] Using redirect URL:', redirect);
+        
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -127,7 +135,7 @@ export function AuthProvider({ children }) {
               access_type: 'offline',
               prompt: 'consent',
             },
-            redirectTo: `${window.location.origin}/auth/callback`
+            redirectTo: redirect
           }
         });
         
