@@ -48,6 +48,9 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Explicit state for AI response loading
   const [thread, setThread] = useState(initialThread);
   const [messages, setMessages] = useState(thread?.messages || []);
+  const [collectedAnswers, setCollectedAnswers] = useState(thread?.collectedAnswers || {});
+  const [currentQuestionKey, setCurrentQuestionKey] = useState(thread?.currentQuestionKey || null);
+  const [questionsAnswered, setQuestionsAnswered] = useState(thread?.questionsAnswered || 0);
   const [error, setError] = useState(null);
   const [showRecentChats, setShowRecentChats] = useState(false);
   const messagesEndRef = useRef(null);
@@ -95,10 +98,14 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       threadId: initialThread?.id,
       toolId: initialThread?.tool_id,
       messagesCount: initialThread?.messages?.length,
-      isTemporary: initialThread?.isTemporary
+      isTemporary: initialThread?.isTemporary,
+      questionsAnswered: initialThread?.questionsAnswered
     });
     setThread(initialThread);
     setMessages(initialThread?.messages || []);
+    setCollectedAnswers(initialThread?.collectedAnswers || {});
+    setCurrentQuestionKey(initialThread?.currentQuestionKey || null);
+    setQuestionsAnswered(initialThread?.questionsAnswered || 0);
   }, [initialThread]);
 
   // Handle initial tool message
@@ -312,7 +319,9 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       userInput: userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput,
       threadId: thread?.id,
       toolId: thread?.tool_id,
-      messagesCount: messages.length
+      messagesCount: messages.length,
+      questionsAnswered: questionsAnswered,
+      currentQuestionKey: currentQuestionKey
     });
 
     // Set loading state immediately for better visual feedback
@@ -423,7 +432,10 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       const response = await getAIResponse(userInput, {
         id: currentThread.id,
         ...currentThread,
-        messages: [...messages.filter(msg => msg.id !== tempId), savedUserMessage]
+        messages: [...messages.filter(msg => msg.id !== tempId), savedUserMessage],
+        currentQuestionKey: currentQuestionKey,
+        questionsAnswered: questionsAnswered,
+        collectedAnswers: collectedAnswers
       });
 
       if (response.error) {
@@ -446,11 +458,38 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         content: savedAssistantMessage.content.substring(0, 30) + '...'
       });
       
+      // Update tool state if available
+      if (response.currentQuestionKey !== undefined) {
+        setCurrentQuestionKey(response.currentQuestionKey);
+      }
+      
+      if (response.questionsAnswered !== undefined) {
+        setQuestionsAnswered(response.questionsAnswered);
+      }
+      
+      if (response.collectedAnswers) {
+        setCollectedAnswers(response.collectedAnswers);
+      }
+      
       setMessages(prev => [...prev, savedAssistantMessage]);
 
+      // Construct updated thread with tool data
+      const updatedThread = {
+        ...currentThread,
+        messages: [...messages, savedAssistantMessage],
+        currentQuestionKey: response.currentQuestionKey || currentQuestionKey,
+        questionsAnswered: response.questionsAnswered || questionsAnswered,
+        collectedAnswers: response.collectedAnswers || collectedAnswers,
+        isComplete: response.isComplete || false
+      };
+
       if (onThreadUpdate) {
-        console.log('[Chat] Notifying parent of thread update');
-        onThreadUpdate({...currentThread, messages: [...messages, savedAssistantMessage]});
+        console.log('[Chat] Notifying parent of thread update with tool data:', {
+          currentQuestionKey: updatedThread.currentQuestionKey,
+          questionsAnswered: updatedThread.questionsAnswered,
+          answersCount: Object.keys(updatedThread.collectedAnswers || {}).length
+        });
+        onThreadUpdate(updatedThread);
       }
 
     } catch (err) {
@@ -509,7 +548,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         </div>
       )}
       
-      {tool && <ToolProgress tool={tool} messages={messages} />}
+      {tool && <ToolProgress tool={tool} messages={messages} thread={thread} />}
       
       <ScrollArea className="flex-grow p-6">
         <div className="space-y-6 max-w-3xl mx-auto">

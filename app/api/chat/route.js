@@ -110,6 +110,21 @@ Return only JSON: { "isValid": boolean, "reason": "explanation if invalid" }`
   }
 }
 
+// Add a function to calculate questions answered
+function calculateQuestionsAnswered(collectedAnswers) {
+  if (!collectedAnswers) return 0;
+  
+  // Count how many of the predefined questions have answers
+  let count = 0;
+  for (const question of hybridOfferQuestions) {
+    if (collectedAnswers[question.key] && collectedAnswers[question.key].trim().length > 0) {
+      count++;
+    }
+  }
+  
+  return count;
+}
+
 // Add this function to generate appropriate thread titles
 function generateThreadTitle(message) {
   if (!message || !message.content) {
@@ -204,11 +219,15 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
         existingKeys: Object.keys(existingAnswers)
       });
       
+      // Calculate questions answered for initialization
+      const questionsAnswered = calculateQuestionsAnswered(existingAnswers);
+      
       // Set up the conversation context for future messages
       responsePayload = {
         message: initialMessage,
         currentQuestionKey: 'offerDescription',
         collectedAnswers: { ...existingAnswers }, // Make a copy to ensure we don't lose any data
+        questionsAnswered: questionsAnswered, // Add questionsAnswered to the response
         isComplete: false,
         chatId: chatId,
         systemPrompt: initialSystemPrompt
@@ -218,7 +237,8 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
         responsePayload: JSON.stringify({
           chatId: responsePayload.chatId,
           questionKey: responsePayload.currentQuestionKey,
-          answersCount: Object.keys(responsePayload.collectedAnswers).length
+          answersCount: Object.keys(responsePayload.collectedAnswers).length,
+          questionsAnswered: responsePayload.questionsAnswered
         })
       });
       return NextResponse.json(responsePayload);
@@ -324,6 +344,11 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
                 title: threadTitle,
                 user_id: userId,
                 tool_id: tool || null,
+                metadata: tool === 'hybrid-offer' ? {
+                  currentQuestionKey: 'offerDescription',
+                  questionsAnswered: 0,
+                  isComplete: false
+                } : null
               })
               .select()
               .single();
@@ -527,6 +552,38 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
               threadId: savedMessage.thread_id
             });
           }
+
+          // For hybrid-offer, update the thread's metadata with the current progress
+          if (tool === 'hybrid-offer' && responsePayload) {
+            console.log('[CHAT_API_DEBUG] Updating thread metadata for hybrid-offer:', {
+              chatId,
+              questionsAnswered: responsePayload.questionsAnswered,
+              currentQuestionKey: responsePayload.currentQuestionKey,
+              isComplete: responsePayload.isComplete
+            });
+
+            // Update thread metadata
+            const { error: threadUpdateError } = await supabase
+              .from('threads')
+              .update({
+                metadata: {
+                  currentQuestionKey: responsePayload.currentQuestionKey,
+                  questionsAnswered: responsePayload.questionsAnswered,
+                  isComplete: responsePayload.isComplete
+                }
+              })
+              .eq('id', chatId);
+
+            if (threadUpdateError) {
+              console.error('[CHAT_API_DEBUG] Error updating thread metadata:', {
+                error: threadUpdateError.message,
+                code: threadUpdateError.code,
+                chatId
+              });
+            } else {
+              console.log('[CHAT_API_DEBUG] Thread metadata updated successfully');
+            }
+          }
         } else {
           console.log('[CHAT_API_DEBUG] Assistant message already exists, skipping save:', {
             existingMessageId: existingAssistantMessages[0].id,
@@ -552,11 +609,16 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
         chatId
       });
       
+      // Calculate questions answered based on collected answers
+      const questionsAnswered = calculateQuestionsAnswered(collectedAnswers);
+      console.log('[CHAT_API_DEBUG] Questions answered:', questionsAnswered);
+      
       // Create a default responsePayload that will be overridden if needed
       responsePayload = {
         message: "Preparing your hybrid offer details...",
         currentQuestionKey: body.currentQuestionKey || 'offerDescription',
         collectedAnswers,
+        questionsAnswered,
         isComplete: false,
         chatId: chatId
       };
@@ -565,47 +627,44 @@ Be brief and direct. No unnecessary explanations. One question at a time.`;
       // and what we still need to collect
       currentQuestionKey = body.currentQuestionKey;
 
-      // Build a system prompt that includes what we've collected so far
+      // Build a system prompt that includes what we've collected so far and the questions answered count
       let analyzingPrompt = `You are creating a hybrid offer.
 Be direct and concise. Avoid unnecessary words.
 
-Information collected so far:
+Information collected so far (${questionsAnswered}/6 questions answered):
 `;
 
       // Add collected answers and what's still missing
-      hybridOfferQuestions.forEach(q => {
+      hybridOfferQuestions.forEach((q, index) => {
+        const questionNumber = index + 1;
         if (collectedAnswers[q.key]) {
-          analyzingPrompt += `✓ ${q.description}: "${collectedAnswers[q.key]}"\n`;
+          analyzingPrompt += `✓ ${questionNumber}. ${q.description}: "${collectedAnswers[q.key]}"\n`;
         } else {
-          analyzingPrompt += `◯ ${q.description}: Not provided\n`;
+          analyzingPrompt += `◯ ${questionNumber}. ${q.description}: Not provided\n`;
         }
       });
 
       analyzingPrompt += `
+Current questions answered: ${questionsAnswered}
+Current question to evaluate: ${currentQuestionKey} (${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description})
+
 Based on the user's message:
-1. Is this a valid answer to the current question (${currentQuestionKey})?
-2. What question to ask next?
+1. Is this a valid answer to the current question?
+2. If valid, the next question should be question #${questionsAnswered + 1 + 1} in the list (if available).
 
 Rules:
 - Be extremely concise. No fluff.
 - Ask only the essential question.
 - No explanations before or after questions.
 - Focus on collecting information efficiently.
-
-IMPORTANT: Use ONLY these exact keys for nextQuestionKey:
-- offerDescription: Core product or service
-- targetAudience: Target audience
-- painPoints: Pain points they face
-- solution: How you solve the problems
-- pricing: Pricing structure
-- clientResult: Best client result
-- complete: When all questions are answered
+- If all 6 questions are answered, mark as complete.
 
 Return a JSON object:
 {
   "validAnswer": boolean,
   "savedAnswer": string,
   "nextQuestionKey": string,
+  "questionsAnswered": number,
   "responseToUser": string // Keep this very brief and direct
 }`;
 
@@ -628,6 +687,7 @@ Return a JSON object:
         console.log('[CHAT_API_DEBUG] Analysis result:', {
           validAnswer: analysisResult.validAnswer,
           nextQuestionKey: analysisResult.nextQuestionKey,
+          questionsAnswered: analysisResult.questionsAnswered || questionsAnswered,
           savedAnswerLength: analysisResult.savedAnswer?.length || 0,
           responseLength: analysisResult.responseToUser?.length || 0,
           chatId
@@ -669,37 +729,79 @@ Return a JSON object:
           });
         }
         
-        // Check if we're complete
-        if (analysisResult.nextQuestionKey === "complete") {
-          isComplete = true;
-          console.log('[CHAT_API_DEBUG] All questions answered, marking as complete');
-        }
+        // Recalculate questions answered after potential update
+        const updatedQuestionsAnswered = analysisResult.validAnswer 
+          ? calculateQuestionsAnswered(collectedAnswers)
+          : questionsAnswered;
         
-        // Set the content to the AI's response
-        aiResponse = analysisResult.responseToUser;
+        console.log('[CHAT_API_DEBUG] Updated questions answered:', updatedQuestionsAnswered);
         
-        // Determine the next question key (using standardized keys)
+        // Use questions answered to determine the next question - prefer using the index
         let nextQuestionKey = standardCurrentKey;
+        let isComplete = false;
+        
         if (analysisResult.validAnswer) {
-          if (analysisResult.nextQuestionKey === "complete") {
+          if (updatedQuestionsAnswered >= hybridOfferQuestions.length) {
+            // All questions answered
+            isComplete = true;
             nextQuestionKey = null;
+            console.log('[CHAT_API_DEBUG] All questions answered, marking as complete');
           } else {
-            // Map AI's next question key to our standard keys
-            nextQuestionKey = keyMapping[analysisResult.nextQuestionKey] || analysisResult.nextQuestionKey;
+            // Get the next question based on the number of questions answered
+            nextQuestionKey = hybridOfferQuestions[updatedQuestionsAnswered]?.key || null;
+            console.log('[CHAT_API_DEBUG] Moving to next question based on count:', {
+              from: standardCurrentKey,
+              to: nextQuestionKey,
+              questionsAnswered: updatedQuestionsAnswered,
+              collectedAnswers: Object.keys(collectedAnswers),
+              chatId
+            });
           }
-          console.log('[CHAT_API_DEBUG] Moving to next question:', {
-            from: standardCurrentKey,
-            aiSuggested: analysisResult.nextQuestionKey,
-            standardizedNext: nextQuestionKey || 'COMPLETE',
-            collectedAnswers: Object.keys(collectedAnswers),
-            chatId
-          });
+          
+          // Update thread metadata immediately when answer is valid
+          if (chatId && supabase) {
+            try {
+              console.log('[CHAT_API_DEBUG] Updating thread metadata after valid answer:', {
+                chatId,
+                questionsAnswered: updatedQuestionsAnswered,
+                nextQuestionKey: nextQuestionKey,
+                isComplete: isComplete
+              });
+              
+              const { error: answerMetadataUpdateError } = await supabase
+                .from('threads')
+                .update({
+                  metadata: {
+                    currentQuestionKey: nextQuestionKey,
+                    questionsAnswered: updatedQuestionsAnswered,
+                    isComplete: isComplete
+                  }
+                })
+                .eq('id', chatId);
+                
+              if (answerMetadataUpdateError) {
+                console.error('[CHAT_API_DEBUG] Error updating thread metadata after answer validation:', {
+                  error: answerMetadataUpdateError.message,
+                  code: answerMetadataUpdateError.code,
+                  chatId
+                });
+              } else {
+                console.log('[CHAT_API_DEBUG] Thread metadata updated successfully after answer validation');
+              }
+            } catch (answerMetadataError) {
+              console.error('[CHAT_API_DEBUG] Error in metadata update after answer validation:', answerMetadataError);
+              // Continue with the response even if database operations fail
+            }
+          }
         } else {
           console.log('[CHAT_API_DEBUG] Staying on current question due to invalid answer:', {
             questionKey: standardCurrentKey,
             chatId
           });
         }
+        
+        // Set the content to the AI's response
+        aiResponse = analysisResult.responseToUser;
         
         // If we're complete, generate a summary with all collected information
         if (isComplete) {
@@ -714,11 +816,12 @@ Return a JSON object:
           });
         }
         
-        // Build the response payload
+        // Build the response payload - make sure to include the correct updated questionsAnswered
         responsePayload = {
           message: aiResponse,
           currentQuestionKey: nextQuestionKey,
           collectedAnswers: { ...collectedAnswers },
+          questionsAnswered: analysisResult.validAnswer ? updatedQuestionsAnswered : questionsAnswered,
           isComplete,
           chatId: chatId
         };
@@ -726,6 +829,7 @@ Return a JSON object:
         console.log('[CHAT_API_DEBUG] Sending hybrid offer response:', {
           nextQuestion: nextQuestionKey,
           answersCount: Object.keys(collectedAnswers).length,
+          questionsAnswered: analysisResult.validAnswer ? updatedQuestionsAnswered : questionsAnswered,
           answersKeys: Object.keys(collectedAnswers),
           chatId,
           isComplete,
@@ -747,6 +851,7 @@ Return a JSON object:
           message: aiResponse,
           currentQuestionKey,
           collectedAnswers: { ...collectedAnswers },
+          questionsAnswered,
           isComplete: false,
           chatId: chatId
         };
@@ -754,6 +859,7 @@ Return a JSON object:
         console.log('[CHAT_API_DEBUG] Sending error fallback response:', {
           currentQuestion: currentQuestionKey,
           answersCount: Object.keys(collectedAnswers).length,
+          questionsAnswered,
           answersKeys: Object.keys(collectedAnswers),
           chatId
         });

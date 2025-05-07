@@ -38,6 +38,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
   const [collectedAnswers, setCollectedAnswers] = useState({});
   const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
+  const [questionsAnswered, setQuestionsAnswered] = useState(0); // Add questionsAnswered state
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
@@ -53,13 +54,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     if (currentChat?.collectedAnswers) {
       console.log(`[Context Change Effect] Restoring answers from chat:`, {
         keys: Object.keys(currentChat.collectedAnswers),
-        questionKey: currentChat.currentQuestionKey
+        questionKey: currentChat.currentQuestionKey,
+        questionsAnswered: currentChat.questionsAnswered
       });
       setCollectedAnswers(currentChat.collectedAnswers);
       setCurrentQuestionKey(currentChat.currentQuestionKey);
+      setQuestionsAnswered(currentChat.questionsAnswered || 0);
     } else {
       // Reset answers if no stored data
       setCollectedAnswers({});
+      setQuestionsAnswered(0);
       const firstKey = hybridOfferQuestions[0]?.key || null;
       setCurrentQuestionKey(selectedTool === 'hybrid-offer' ? firstKey : null);
     }
@@ -79,12 +83,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // A more robust way would be to persist/load answers+key with the chat 
           // For now, just don't reset to first key if history exists
           if (!currentQuestionKey) {
-              setCurrentQuestionKey(hybridOfferQuestions[0].key); // Default if somehow null
+              setCurrentQuestionKey(hybridOfferQuestions[questionsAnswered]?.key || hybridOfferQuestions[0].key); // Use questions answered to determine key
           }
       } else if (selectedTool === 'hybrid-offer') {
           setCurrentQuestionKey(hybridOfferQuestions[0].key);
       }
-  }, [currentChat?.id, currentChat?.messages?.length, selectedTool]); // Re-run if chat loads
+  }, [currentChat?.id, currentChat?.messages?.length, selectedTool, questionsAnswered]); // Re-run if chat loads or questions answered changes
 
   // Effect to initiate chat for Hybrid Offer tool
   useEffect(() => {
@@ -260,10 +264,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
          messageCount: updatedMessages.length,
          existingMessages: currentChat.messages.length,
          currentQuestionKey,
+         questionsAnswered,
          requestBody: JSON.stringify({
            messageCount: updatedMessages.length,
            tool: selectedTool,
            currentQuestionKey,
+           questionsAnswered,
            hasCollectedAnswers: !!collectedAnswers,
            chatId: currentChat.id
          })
@@ -276,6 +282,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                messages: updatedMessages,
                tool: selectedTool,
                currentQuestionKey: currentQuestionKey,
+               questionsAnswered: questionsAnswered,
                collectedAnswers: collectedAnswers,
                chatId: currentChat.id // Explicitly include the chatId
            }),
@@ -292,7 +299,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             chatId: data.chatId,
             messageContent: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
             currentQuestionKey: data.currentQuestionKey,
-            nextQuestionKey: data.nextQuestionKey,
+            questionsAnswered: data.questionsAnswered,
             answersCount: data.collectedAnswers ? Object.keys(data.collectedAnswers).length : 0,
             isComplete: data.isComplete
           })
@@ -337,6 +344,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // Use returned data
         const returnedAnswers = data.collectedAnswers || collectedAnswers || {};
         const nextQuestionKey = data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey;
+        const updatedQuestionsAnswered = data.questionsAnswered !== undefined ? data.questionsAnswered : questionsAnswered;
         const isComplete = data.isComplete || false;
         const correctChatId = data.chatId; 
 
@@ -353,12 +361,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           currentKeys: Object.keys(collectedAnswers),
           newAnswersCount: Object.keys(returnedAnswers).length,
           nextQuestionKey,
-          previousQuestionKey: currentQuestionKey
+          previousQuestionKey: currentQuestionKey,
+          questionsAnswered: updatedQuestionsAnswered
         });
 
         // Ensure we're preserving all previous answers and adding new ones
         setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
+        setQuestionsAnswered(updatedQuestionsAnswered);
 
         // Construct the updated current chat state with API response data
         const finalCurrentChat = {
@@ -366,7 +376,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           id: correctChatId, // IMPORTANT: Use the ID from the API response
           messages: [...updatedMessages, assistantMessage], // User + assistant messages
           collectedAnswers: returnedAnswers, // Store answers in the chat object
-          currentQuestionKey: nextQuestionKey // Store current question in chat object
+          currentQuestionKey: nextQuestionKey, // Store current question in chat object
+          questionsAnswered: updatedQuestionsAnswered // Store questions answered count
         };
         
         console.log("[CHAT_DEBUG] Final chat state constructed:", {
@@ -707,17 +718,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        {selectedTool === 'hybrid-offer' && (
            <div className="absolute top-4 right-4 bg-background border rounded-lg p-3 shadow-md max-w-[200px] z-10">
                 <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Offer Status</h4>
+                <div className="text-xs mb-2 font-medium">{questionsAnswered}/6 Questions Answered</div>
                 <ul className="space-y-1">
-                    {hybridOfferQuestions.map(q => (
+                    {hybridOfferQuestions.map((q, index) => (
                         <li key={q.key} className="flex items-center gap-2 text-xs">
                             {collectedAnswers[q.key] ? (
                                 <CheckCircle2 className="h-3 w-3 text-green-500 flex-shrink-0" />
-                            ) : currentQuestionKey === q.key ? (
+                            ) : index === questionsAnswered ? (
                                 <HelpCircle className="h-3 w-3 text-blue-500 flex-shrink-0 animate-pulse" />
                             ) : (
                                 <Circle className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
                             )}
-                            <span className={`${currentQuestionKey === q.key ? 'font-medium' : 'text-muted-foreground'} truncate`} title={q.question}>
+                            <span className={`${index === questionsAnswered ? 'font-medium' : 'text-muted-foreground'} truncate`} title={q.question}>
                                 {q.question.split(' ').slice(0, 4).join(' ')}...
                             </span>
                         </li>

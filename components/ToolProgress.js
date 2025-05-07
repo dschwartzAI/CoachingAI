@@ -3,10 +3,22 @@
 import { Progress } from "@/components/ui/progress";
 import { getProgress } from "@/lib/config/tools";
 
-export default function ToolProgress({ tool, messages }) {
+export default function ToolProgress({ tool, messages, thread }) {
   if (!tool?.questions) return null;
 
-  const progress = getProgress(tool, messages);
+  // Use the questionsAnswered from the thread if available, otherwise calculate from messages
+  let progress;
+  if (thread?.questionsAnswered !== undefined) {
+    // Use the more accurate questionsAnswered count
+    const current = thread.questionsAnswered;
+    const total = tool.questions.length;
+    const isComplete = current >= total;
+    progress = { current, total, isComplete };
+  } else {
+    // Fall back to the original calculation
+    progress = getProgress(tool, messages);
+  }
+  
   const percentage = (progress.current / progress.total) * 100;
 
   return (
