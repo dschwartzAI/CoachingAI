@@ -206,7 +206,14 @@ Collect this information in a direct, concise manner:
 5. Pricing structure
 6. Best client result
 
-Be brief and direct. No unnecessary explanations. One question at a time.`;
+IMPORTANT RULES:
+- Be extremely brief and direct
+- No detailed explanations or summaries at any point
+- Only ask ONE simple question at a time
+- Do not repeat or summarize the user's answers
+- Your responses will be saved exactly as written, so keep them minimal
+
+Always respond with just the question and nothing else.`;
 
       console.log('[CHAT_API_DEBUG] Tool initialization request - sending system prompt and returning custom message');
       
@@ -652,12 +659,20 @@ Based on the user's message:
 1. Is this a valid answer to the current question?
 2. If valid, the next question should be question #${questionsAnswered + 1 + 1} in the list (if available).
 
-Rules:
-- Be extremely concise. No fluff.
-- Ask only the essential question.
-- No explanations before or after questions.
-- Focus on collecting information efficiently.
-- If all 6 questions are answered, mark as complete.
+CRITICAL INSTRUCTIONS:
+- Your "responseToUser" field is shown DIRECTLY to the user and EXACTLY as you write it
+- The "responseToUser" must ONLY contain the EXACT next question text, nothing else
+- NO summaries of previous answers
+- NO introductions like "Now, let me ask about..."
+- NO explanations or additional context
+- NO acknowledgments of the user's answer
+- If the answer is valid, your "responseToUser" should simply be the next question from the list
+- If all questions are answered, mark as complete
+
+Examples of good responseToUser values:
+- "What's your target audience?"
+- "What pain points do they face?"
+- "How do you solve these problems?"
 
 Return a JSON object:
 {
@@ -665,7 +680,7 @@ Return a JSON object:
   "savedAnswer": string,
   "nextQuestionKey": string,
   "questionsAnswered": number,
-  "responseToUser": string // Keep this very brief and direct
+  "responseToUser": string // ABSOLUTELY ONLY the next question and nothing else
 }`;
 
       // Call OpenAI to analyze the response and determine next steps
@@ -843,9 +858,9 @@ Return a JSON object:
           stack: error.stack,
           chatId
         });
-        // Fall back to standard processing
-        aiResponse = "I'm having trouble processing that response. Could you please provide more details about " + 
-          hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.question || "your offering";
+        // Fall back to standard processing - keep the error message brief and direct
+        aiResponse = "Please provide a clearer response about " + 
+          (hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.question || "your offering");
         
         responsePayload = {
           message: aiResponse,
