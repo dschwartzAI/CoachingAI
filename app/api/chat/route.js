@@ -321,87 +321,117 @@ export async function POST(request) {
       console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path)');
       currentQuestionKey = body.currentQuestionKey || 'offerDescription';
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers);
+      const totalQuestions = hybridOfferQuestions.length;
+
+      // Prepare chat history for the prompt
+      const recentHistoryMessages = messages.slice(-5); // Get last 5 messages
+      let chatHistoryString = "No recent history available.";
+      if (recentHistoryMessages.length > 0) {
+        chatHistoryString = recentHistoryMessages.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n');
+      }
+      const latestUserMessageContent = messages.length > 0 ? messages[messages.length - 1].content : "";
+      const currentQuestionDetails = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
+      const currentQuestionDescription = currentQuestionDetails?.description || 'the current topic';
+      const currentQuestionText = currentQuestionDetails?.question || 'this aspect of your offer';
+
 
       let promptParts = [];
-      promptParts.push(`You are creating a hybrid offer.`);
-      promptParts.push(`Be direct and concise. Avoid unnecessary words.`);
-      promptParts.push(`\nInformation collected so far (${currentQuestionsAnswered}/6 questions answered):`);
+      promptParts.push("You are a friendly and helpful AI assistant guiding a user through creating a 'hybrid offer'. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
+      promptParts.push("Your tone should be friendly, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
+
+      promptParts.push(`\nInformation collected so far for the hybrid offer (${currentQuestionsAnswered}/${totalQuestions} questions answered):`);
       hybridOfferQuestions.forEach((q, index) => {
-        const questionNumber = index + 1;
         if (collectedAnswers[q.key]) {
-          promptParts.push(`✓ ${questionNumber}. ${q.description}: "${collectedAnswers[q.key]}"`);
+          promptParts.push(`✓ ${index + 1}. ${q.description}: Answered`); // Don't show the answer itself to keep prompt shorter
         } else {
-          promptParts.push(`◯ ${questionNumber}. ${q.description}: Not provided`);
+          promptParts.push(`◯ ${index + 1}. ${q.description}: Not yet discussed`);
         }
       });
-      promptParts.push(`\nCurrent questions answered: ${currentQuestionsAnswered}`);
-      promptParts.push(`Currently evaluating: ${currentQuestionKey} (${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description || 'Unknown Question'})`);
-      promptParts.push(`\nBased on the user's message:`);
-      promptParts.push(`1. Is this a valid answer to the current question?`);
-      promptParts.push(`2. If valid, what is the next question key from the list: ${hybridOfferQuestions.map(q => q.key).join(", ")}?`);
-      promptParts.push(`\nCRITICAL INSTRUCTIONS:`);
-      promptParts.push(`- Your "responseToUser" field is shown DIRECTLY to the user and EXACTLY as you write it.`);
-      promptParts.push(`- The "responseToUser" must ONLY contain the EXACT next question text, or a re-prompt if the answer is invalid. NO other conversational text.`);
-      promptParts.push(`- NO summaries of previous answers.`);
-      promptParts.push(`- NO introductions like "Now, let me ask about..."`);
-      promptParts.push(`- NO explanations or additional context.`);
-      promptParts.push(`- NO acknowledgments of the user's answer.`);
-      promptParts.push(`- If all questions are answered, responseToUser should be a completion message and isComplete should be true.`);
-      promptParts.push(`\nReturn a JSON object with the following structure:`);
+
+      promptParts.push(`\nWe are currently focusing on: '${currentQuestionDescription}' (Key: ${currentQuestionKey}). The guiding question for this topic is: "${currentQuestionText}"`);
+
+      promptParts.push(`\nRecent Conversation History (last 5 messages):`);
+      promptParts.push(chatHistoryString);
+
+      promptParts.push(`\n---`);
+      promptParts.push(`Your Tasks based on the User's LATEST message ("${latestUserMessageContent}"):`);
+      promptParts.push(`1. validAnswer (boolean): Is the user's latest message a relevant and sufficient answer for '${currentQuestionDescription}'? Be reasonably flexible. If it's somewhat on-topic and provides some useful detail, consider it valid.`);
+      promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. If validAnswer is false, this can be an empty string or null.`);
+      promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
+      promptParts.push(`4. nextQuestionKey (string):`);
+      promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* unanswered question from this list: ${hybridOfferQuestions.map(q => q.key).join(", ")}. The next question should be the first one in the sequence that hasn't been answered yet.`);
+      promptParts.push(`   - If validAnswer is false: This should be the *current* currentQuestionKey (${currentQuestionKey}), as we need to re-ask or clarify.`);
+      promptParts.push(`   - If isComplete is true: This can be null.`);
+      promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
+      promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
+      promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Rephrase the request or ask clarifying questions. Avoid accusatory language.`);
+      promptParts.push(`   - If isComplete is true: Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
+      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'`);
+      promptParts.push(`---`);
+      promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
       promptParts.push(`{`);
-      promptParts.push(`  "validAnswer": boolean,            // Was the user's answer to the current question valid and usable?`);
-      promptParts.push(`  "savedAnswer": string,             // The user's answer, potentially summarized or extracted.`);
-      promptParts.push(`  "nextQuestionKey": string,         // Key of the next question if the answer was valid and not complete. Else, current key or null if complete.`);
-      promptParts.push(`  "isComplete": boolean,             // True if all questions are now answered.`);
-      promptParts.push(`  "responseToUser": string           // The exact text to show the user (next question, re-prompt, or completion message).`);
+      promptParts.push(`  "validAnswer": boolean,`);
+      promptParts.push(`  "savedAnswer": string | null,`);
+      promptParts.push(`  "nextQuestionKey": string | null,`);
+      promptParts.push(`  "isComplete": boolean,`);
+      promptParts.push(`  "responseToUser": string`);
       promptParts.push(`}`);
       const analyzingPrompt = promptParts.join('\n');
       
+      // Use all messages for context to the AI, but the prompt focuses on the latest one for specific analysis.
+      // The system prompt itself contains the instructions and context from collectedAnswers and history.
+      const messagesForOpenAI = [
+        { role: "system", content: analyzingPrompt },
+        // Pass only the user's last message, as the system prompt already incorporates history and asks to analyze it.
+        // Or, pass a few recent messages if the model handles that better for conversational flow, despite system prompt.
+        // Let's try with the full message list for context, up to a reasonable limit.
+        // The prompt guides the AI to focus on the LATEST user message for its structured output.
+        ...messages 
+      ];
+
+      console.log('[CHAT_API_DEBUG] Sending analyzing prompt for hybrid-offer (conversational):', analyzingPrompt);
+      console.log('[CHAT_API_DEBUG] Messages for OpenAI:', JSON.stringify(messagesForOpenAI.slice(-6))); // Log last few messages sent
+
+
       const analyzingCompletion = await openai.chat.completions.create({
         model: OPENAI_MODEL,
-        messages: [{ role: "system", content: analyzingPrompt }, ...messages.slice(-3)],
-        temperature: 0.4,
+        messages: messagesForOpenAI, // Pass the constructed messages
+        temperature: 0.5, // Slightly higher for more conversational, but still focused
         response_format: { type: "json_object" }
       });
       
-      const analysisResult = JSON.parse(analyzingCompletion.choices[0].message.content);
-      console.log('[CHAT_API_DEBUG] Analysis result:', { valid: analysisResult.validAnswer, nextKey: analysisResult.nextQuestionKey, responseLen: analysisResult.responseToUser?.length });
+      const analysisResultString = analyzingCompletion.choices[0].message.content;
+      console.log('[CHAT_API_DEBUG] Raw analysisResult string:', analysisResultString);
+      const analysisResult = JSON.parse(analysisResultString);
+      console.log('[CHAT_API_DEBUG] Conversational Analysis result:', analysisResult);
       
       determinedAiResponseContent = analysisResult.responseToUser;
       const tempCollectedAnswers = { ...collectedAnswers };
-      const keyMapping = {
-        'customerPainPoints': 'painPoints', 'solutionApproach': 'solution',
-        'pricingInformation': 'pricing', 'clientResults': 'clientResult',
-        'bestClientResult': 'clientResult', 'offerDescription': 'offerDescription',
-        'targetAudience': 'targetAudience', 'painPoints': 'painPoints',
-        'solution': 'solution', 'pricing': 'pricing', 'clientResult': 'clientResult'
-      };
-      const standardCurrentKey = keyMapping[currentQuestionKey] || currentQuestionKey;
+      
+      const currentKeyForSaving = hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.key || currentQuestionKey;
+
 
       if (analysisResult.validAnswer && analysisResult.savedAnswer) {
-        tempCollectedAnswers[standardCurrentKey] = analysisResult.savedAnswer;
+        tempCollectedAnswers[currentKeyForSaving] = analysisResult.savedAnswer;
       }
       
       const finalQuestionsAnswered = calculateQuestionsAnswered(tempCollectedAnswers);
-      let finalNextQuestionKey = standardCurrentKey;
-      let finalIsComplete = false;
+      let finalNextQuestionKey = analysisResult.nextQuestionKey;
+      let finalIsComplete = analysisResult.isComplete;
 
-      if (analysisResult.validAnswer) {
-        if (finalQuestionsAnswered >= hybridOfferQuestions.length) {
-          finalIsComplete = true;
-          finalNextQuestionKey = null;
-          determinedAiResponseContent = "Thank you! I've collected all the information needed for your hybrid offer. Your document is being generated now.";
-        } else {
-          finalNextQuestionKey = hybridOfferQuestions[finalQuestionsAnswered]?.key || null;
-          if (finalNextQuestionKey) {
-            determinedAiResponseContent = hybridOfferQuestions.find(q => q.key === finalNextQuestionKey)?.question || analysisResult.responseToUser;
-          } else {
-            determinedAiResponseContent = analysisResult.responseToUser;
-            console.warn("[CHAT_API_DEBUG] Incomplete but no next question key found. Using AI's responseToUser.");
-          }
-        }
+      // If the AI indicates completion, ensure response reflects that.
+      // The AI is prompted to create this message, so analysisResult.responseToUser should be appropriate.
+      if (finalIsComplete) {
+        finalNextQuestionKey = null; // Ensure this is null if complete
+         // Potentially override with a very specific message if needed, but ideally AI handles this.
+        // determinedAiResponseContent = "Thank you! I've collected all the information needed for your hybrid offer. Your document is being generated now.";
+      } else if (analysisResult.validAnswer) {
+        // Valid answer, not complete. AI's responseToUser should be asking the next question.
+        // finalNextQuestionKey is already set by AI.
       } else {
-        finalNextQuestionKey = standardCurrentKey;
+        // Invalid answer. AI's responseToUser should be a re-prompt.
+        // Ensure nextQuestionKey reflects current question if AI didn't explicitly set it.
+        finalNextQuestionKey = finalNextQuestionKey || currentKeyForSaving;
       }
       
       toolResponsePayload = {
@@ -466,20 +496,22 @@ export async function POST(request) {
         if (contentToSaveForDB.length > MAX_HYBRID_QUESTION_LENGTH) {
           console.log('[CHAT_API_DEBUG] Hybrid offer rsp too long, truncating for DB:', { len: contentToSaveForDB.length });
           const qMarkIdx = contentToSaveForDB.indexOf('?');
-          if (qMarkIdx > 0 && qMarkIdx < MAX_HYBRID_QUESTION_LENGTH) {
+          if (qMarkIdx > 0 && qMarkIdx < MAX_HYBRID_QUESTION_LENGTH && contentToSaveForDB.includes(hybridOfferQuestions.find(q => q.key === (toolResponsePayload?.currentQuestionKey || finalNextQuestionKey))?.question?.substring(0,10) || "impossible string")) {
+            // Only truncate if it seems to be a question it's asking
             contentToSaveForDB = contentToSaveForDB.substring(0, qMarkIdx + 1);
-          } else {
-            contentToSaveForDB = contentToSaveForDB.substring(0, MAX_HYBRID_QUESTION_LENGTH);
+          } else if (!toolResponsePayload?.isComplete) { // Don't truncate completion messages
+            contentToSaveForDB = contentToSaveForDB.substring(0, MAX_HYBRID_QUESTION_LENGTH) + "...";
           }
         }
-        const prefixesToRemove = ["Great! ", "Now, ", "Thank you. ", "Thanks! ", "I see. ", "Understood. ", "Perfect. ", "Excellent. ", "Got it. ", "Next, ", "Okay. ", "OK. "];
-        for (const prefix of prefixesToRemove) {
-          if (contentToSaveForDB.startsWith(prefix)) {
-            contentToSaveForDB = contentToSaveForDB.substring(prefix.length);
-            console.log('[CHAT_API_DEBUG] Removed prefix for DB save:', { prefix });
-            break; 
-          }
-        }
+        // For conversational AI, prefix removal might be less necessary or could be handled by more nuanced logic
+        // const prefixesToRemove = ["Great! ", "Now, ", "Thank you. ", "Thanks! ", "I see. ", "Understood. ", "Perfect. ", "Excellent. ", "Got it. ", "Next, ", "Okay. ", "OK. "];
+        // for (const prefix of prefixesToRemove) {
+        //   if (contentToSaveForDB.startsWith(prefix)) {
+        //     contentToSaveForDB = contentToSaveForDB.substring(prefix.length);
+        //     console.log('[CHAT_API_DEBUG] Removed prefix for DB save:', { prefix });
+        //     break; 
+        //   }
+        // }
       }
 
       const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', contentToSaveForDB).eq('role', 'assistant').limit(1);

@@ -10,6 +10,10 @@ import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingM
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { TOOLS } from '@/lib/config/tools'; // Import TOOLS
+import { useAuth } from "./AuthProvider";
+import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/supabase';
+import { getAIResponse } from '@/lib/utils/ai';
+import { useToast } from '@/hooks/use-toast';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -572,79 +576,117 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     };
 
     // Listen for the specific event from the backend
-    es.addEventListener('n8n_result', (event) => {
+    es.addEventListener('n8n_result', async (event) => {
       console.log("[SSE Connect] Received n8n_result event:", event.data);
-      let resultMessageContent = null; // Initialize as null
+      let resultMessageContent = null; // For immediate JSX display
+      let contentToSaveToDB = null;   // For saving to DB
+      let n8nResultData = null;
 
       try {
         const eventData = JSON.parse(event.data);
         if (eventData.success && eventData.data) {
-          // --- Construct JSX message content ---
-          const n8nResult = eventData.data;
+          n8nResultData = eventData.data; // Store for later use
+          
+          // 1. Construct JSX for immediate display
           resultMessageContent = (
-            <div className="space-y-3"> {/* Added spacing */}
-              <div className="flex items-center gap-2 font-medium"> {/* Success message style */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 font-medium">
                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                  <span>Document generated successfully!</span>
               </div>
-              <div className="flex flex-wrap gap-2"> {/* Use flex-wrap for buttons */}
-                 {n8nResult.pdfWebViewLink && (
+              <div className="flex flex-wrap gap-2">
+                 {n8nResultData.pdfWebViewLink && (
                    <Button variant="outline" size="sm" asChild>
-                      <a href={n8nResult.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
+                      <a href={n8nResultData.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="mr-2 h-4 w-4" /> View PDF
                       </a>
                    </Button>
                  )}
-                 {n8nResult.pdfDownlaodLink && ( // Typo corrected from original request
+                 {n8nResultData.pdfDownlaodLink && (
                    <Button variant="outline" size="sm" asChild>
-                      <a href={n8nResult.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download> {/* Added download attribute */}
+                      <a href={n8nResultData.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download>
                          <Download className="mr-2 h-4 w-4" /> Download PDF
                       </a>
                    </Button>
                  )}
-                 {n8nResult.googleDocLink && ( // Updated key name
+                 {n8nResultData.googleDocLink && (
                     <Button variant="outline" size="sm" asChild>
-                       <a href={n8nResult.googleDocLink} target="_blank" rel="noopener noreferrer">
+                       <a href={n8nResultData.googleDocLink} target="_blank" rel="noopener noreferrer">
                            <FileText className="mr-2 h-4 w-4" /> View Google Doc
                        </a>
                     </Button>
                   )}
-                  {n8nResult.offerInMd && ( // Updated key name
-                       <MarkdownMessage content={n8nResult.offerInMd} />
+                  {n8nResultData.offerInMd && (
+                       <MarkdownMessage content={n8nResultData.offerInMd} />
                   )}
               </div>
             </div>
           );
-          // --- End JSX construction ---
+
+          // 2. Construct Text content for DB saving
+          let dbText = "Document generated successfully.";
+          if (n8nResultData.pdfWebViewLink) dbText += `\nView PDF: ${n8nResultData.pdfWebViewLink}`;
+          if (n8nResultData.pdfDownlaodLink) dbText += `\nDownload PDF: ${n8nResultData.pdfDownlaodLink}`;
+          if (n8nResultData.googleDocLink) dbText += `\nView Google Doc: ${n8nResultData.googleDocLink}`;
+          // Optionally include markdown text if desired in DB
+          // if (n8nResultData.offerInMd) dbText += `\n\n---\n${n8nResultData.offerInMd}`;
+          contentToSaveToDB = dbText;
+
         } else {
            throw new Error(eventData.message || 'Received unsuccessful result from server.');
         }
       } catch (parseError) {
         console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
-        // Fallback text message on error
         resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
+        contentToSaveToDB = "Document generated, but link display failed."; // Save fallback text
       }
 
-      // Add the message (JSX or fallback text) to the chat state
-      if (resultMessageContent !== null && currentChat?.id === chatId) { // Ensure chat context is still correct
-          const resultMessage = { role: 'assistant', content: resultMessageContent, isJSX: true }; // Add isJSX flag
+      // 3. Save the text version to DB (if content exists and chat context is still valid)
+      // Ensure we use the correct chatId associated with the currentChat state when saving
+      const finalChatId = currentChat?.id; 
+      if (contentToSaveToDB && finalChatId && finalChatId === chatId) { // Double check chatId hasn't changed
+        try {
+          const messagePayload = {
+            thread_id: finalChatId, // Use the ID from the current chat state
+            role: 'assistant',
+            content: contentToSaveToDB,
+            timestamp: new Date().toISOString()
+          };
+          console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
+          await saveMessage(messagePayload); // Call saveMessage utility
+          console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
+        } catch (dbError) {
+          console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+          // Optionally inform user or handle error appropriately
+        }
+      } else {
+          console.warn(`[SSE Connect] Did not save n8n result message to DB. Context Changed? chatId=${chatId}, finalChatId=${finalChatId}, contentExists=${!!contentToSaveToDB}`);
+      }
+
+      // 4. Update React state with JSX for immediate display
+      if (resultMessageContent !== null && finalChatId && finalChatId === chatId) { // Use finalChatId for consistency
+          const resultMessageForState = { role: 'assistant', content: resultMessageContent, isJSX: true }; 
           setCurrentChat(prevChat => {
-              if (!prevChat || prevChat.id !== chatId) return prevChat; // Safety check
-              return {...prevChat, messages: [...prevChat.messages, resultMessage]};
+              if (!prevChat || prevChat.id !== finalChatId) return prevChat; // Safety check with finalChatId
+              return {...prevChat, messages: [...prevChat.messages, resultMessageForState]};
           });
           setChats(prevChats => prevChats.map(c => {
-              if (c.id === chatId) {
-                  return {...c, messages: [...c.messages, resultMessage]};
+              if (c.id === finalChatId) {
+                  // Ensure metadata is preserved/updated correctly if needed, though likely not changing here
+                  return {...c, messages: [...c.messages, resultMessageForState]};
               }
               return c;
           }));
       } else {
-          console.warn("[SSE Connect] Could not add result message - chat context might have changed or content was null.");
+          console.warn("[SSE Connect] Could not add result message to UI state - chat context might have changed or content was null.");
       }
 
+      // 5. Finalize SSE handling
       setIsWaitingForN8n(false);
-      es.close();
-      eventSourceRef.current = null;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
       console.log("[SSE Connect] Closed connection after n8n_result.");
       textareaRef.current?.focus();
     });
@@ -776,7 +818,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     <div className="flex-1 flex flex-col h-full relative"> {/* Added relative positioning */}
        {/* --- Status Display --- */}
        {selectedTool === 'hybrid-offer' && (
-           <div className="absolute top-4 right-4 bg-background border rounded-lg p-3 shadow-md max-w-[200px] z-10">
+           <div className="fixed top-4 right-4 bg-background border rounded-lg p-3 shadow-md max-w-[200px] z-10">
                 <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Offer Status</h4>
                 <div className="text-xs mb-2 font-medium">{questionsAnswered}/6 Questions Answered</div>
                 <ul className="space-y-1">
