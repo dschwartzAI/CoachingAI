@@ -355,7 +355,28 @@ export async function POST(request) {
 
       promptParts.push(`\n---`);
       promptParts.push(`Your Tasks based on the User's LATEST message ("${latestUserMessageContent}"):`);
-      promptParts.push(`1. validAnswer (boolean): Is the user's latest message a relevant and sufficient answer for '${currentQuestionDescription}'? Be reasonably flexible. If it's somewhat on-topic and provides some useful detail, consider it valid.`);
+      promptParts.push(`1. validAnswer (boolean): Is the user's latest message a relevant and sufficient answer for '${currentQuestionDescription}'? Apply reasonable judgment based on the specific question context.`);
+      
+      // Update the validation criteria to be more balanced
+      promptParts.push(`   IMPORTANT - Balanced Validation Criteria: When evaluating if an answer is valid (validAnswer=true):
+         * The answer must be relevant to the current question
+         * Consider the context of previous exchanges - if the user has provided details across multiple messages, consider the cumulative information
+         * If the user asks a question, you cannot consider it an answer. Example: "Do you think SaaS businesses are a good target audience for my offer?" is not an answer. Here you need to say your opinion, and if he then says "ok, let's say SaaS then", that is an answer.
+         * Interpret industry-standard terms and services without requiring excessive explanation (e.g., "Google Ads management" is a known service type)
+         * For each question type, these are SUFFICIENT examples:
+            - offerDescription: "Google Ads management service" or "Social media content creation for small businesses" (basic service description is enough)
+            - targetAudience: "Small business owners who don't have time for marketing" (a general description of who it's for)
+            - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend" (basic problem statement)
+            - solution: "We handle campaign creation, keyword research, and ongoing optimization" (general approach)
+            - pricing: "Monthly retainer of $1000" or "15% of ad spend" (basic pricing model)
+            - clientResult: "Doubled their conversion rate" or "Generated 50 new leads per month" (basic metric)
+         * Only ask for more details if:
+            1. The answer is completely off-topic from the question
+            2. The answer is so vague it could apply to virtually any business (e.g., just saying "it's good")
+            3. After 2-3 exchanges, you still don't have the basic information needed
+         * Pay attention to user frustration - if they've repeated similar information multiple times, consider it valid and move on
+         * When in doubt, ACCEPT the answer rather than frustrating the user with repeated requests`);
+      
       promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. If validAnswer is false, this can be an empty string or null.`);
       promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
       promptParts.push(`4. nextQuestionKey (string):`);
@@ -366,7 +387,19 @@ export async function POST(request) {
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
       promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Rephrase the request or ask clarifying questions. Avoid accusatory language.`);
       promptParts.push(`   - If isComplete is true: Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
-      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't  say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
+      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
+      
+      // Add the new section on conversational approach
+      promptParts.push(`   - IMPORTANT - Natural Conversation Flow: Your primary goal is to have a natural conversation. When a user responds:
+         1. First, genuinely engage with whatever they've shared - comment on it, ask follow-up questions if relevant, or share a brief insight
+         2. Don't rush to get an answer to the next question in every response
+         3. If they're discussing something off-topic, spend time engaging with that topic first
+         4. Only after properly engaging, gently guide the conversation back toward the hybrid offer questions
+         5. It's perfectly fine if it takes multiple exchanges to get back to the structured question flow
+         6. Use phrases like "By the way...", "Speaking of which...", "That reminds me...", or "I'm also curious about..." when transitioning back to the questions
+         7. If the user asks you questions, answer them honestly and thoroughly before gently returning to the offer structure
+         8. Remember that building rapport is more important than rigidly following the question sequence`);
+      
       promptParts.push(`---`);
       promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
       promptParts.push(`{`);
