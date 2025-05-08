@@ -13,6 +13,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const chatId = searchParams.get('chatId');
   const answersDataString = searchParams.get('answersData'); 
+  const chatHistoryString = searchParams.get('chatHistory');
 
   if (!chatId) {
     console.error(`[SSE ${sseStartTime}] Error: Missing chatId parameter.`);
@@ -49,12 +50,29 @@ export async function GET(request) {
         controller.enqueue(`event: ${event}\ndata: ${payload}\n\n`);
       };
 
+      // Parse chatHistory (moved inside start function)
+      let conversationHistory = [];
+      if (chatHistoryString) {
+        try {
+          conversationHistory = JSON.parse(decodeURIComponent(chatHistoryString));
+          console.log(`[SSE ${chatId} ${sseStartTime}] Successfully parsed chatHistory JSON:`, conversationHistory.length > 0 ? `${conversationHistory.length} messages` : "empty");
+        } catch (e) {
+          console.error(`[SSE ${chatId} ${sseStartTime}] Failed to JSON.parse chatHistory string:`, e);
+          sendEvent('error', { success: false, message: 'Failed to parse conversation history. Proceeding without it.' });
+          // Not closing controller here, will proceed to call n8n without history
+        }
+      }
+
       try {
         console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook...`);
         const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(collectedAnswers), // Use answers from URL
+          body: JSON.stringify({
+            chatId: chatId,
+            answers: collectedAnswers, // Use answers from URL
+            conversation: conversationHistory // Add parsed conversation history
+          }), 
         });
 
         const status = n8nResponse.status;

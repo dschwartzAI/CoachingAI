@@ -567,8 +567,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       eventSourceRef.current.close(); // Close any previous connection
     }
 
-    console.log(`[SSE Connect] Connecting to /api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}`);
-    const es = new EventSource(`/api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}`);
+    // Get the last 30 messages from the current chat
+    let chatHistory = [];
+    if (currentChat && currentChat.messages) {
+      chatHistory = currentChat.messages.slice(-30).map(msg => ({
+        role: msg.role,
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) // Ensure content is string
+      }));
+    }
+    const encodedChatHistory = encodeURIComponent(JSON.stringify(chatHistory));
+
+    console.log(`[SSE Connect] Connecting to /api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}&chatHistory=${encodedChatHistory}`);
+    const es = new EventSource(`/api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}&chatHistory=${encodedChatHistory}`);
     eventSourceRef.current = es; // Store the reference
 
     es.onopen = () => {
