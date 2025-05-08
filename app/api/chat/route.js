@@ -336,8 +336,8 @@ export async function POST(request) {
 
 
       let promptParts = [];
-      promptParts.push("You are a friendly and helpful AI assistant guiding a user through creating a 'hybrid offer'. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
-      promptParts.push("Your tone should be friendly, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
+      promptParts.push("You are a friendly and cheeky helpful AI assistant guiding a user through creating a 'hybrid offer'. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
+      promptParts.push("Your tone should be friendly, funny when appropriate, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
 
       promptParts.push(`\nInformation collected so far for the hybrid offer (${currentQuestionsAnswered}/${totalQuestions} questions answered):`);
       hybridOfferQuestions.forEach((q, index) => {
@@ -366,7 +366,7 @@ export async function POST(request) {
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
       promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Rephrase the request or ask clarifying questions. Avoid accusatory language.`);
       promptParts.push(`   - If isComplete is true: Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
-      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'`);
+      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't  say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
       promptParts.push(`---`);
       promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
       promptParts.push(`{`);
@@ -396,7 +396,7 @@ export async function POST(request) {
       const analyzingCompletion = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: messagesForOpenAI, // Pass the constructed messages
-        temperature: 0.5, // Slightly higher for more conversational, but still focused
+        temperature: 0.9, // Slightly higher for more conversational, but still focused
         response_format: { type: "json_object" }
       });
       
