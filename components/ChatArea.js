@@ -46,58 +46,64 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
   const scrollAreaRef = useRef(null);
+  const prevChatIdRef = useRef();
+  const prevSelectedToolRef = useRef();
 
-  // Reset state when chat or tool changes
+  // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
-    // Log details at the beginning of the effect
-    console.log('[ChatArea Context Change Effect] Triggered. SelectedTool:', selectedTool);
-    console.log('[ChatArea Context Change Effect] CurrentChat details:', currentChat ? 
-      { id: currentChat.id, tool_id: currentChat.tool_id, messages: currentChat.messages?.length, metadata: JSON.stringify(currentChat.metadata), title: currentChat.title } : 'null');
+    console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
+  }, [isWaitingForN8n]);
 
-    console.log(`[ChatArea Context Change Effect] ChatID: ${currentChat?.id}, Tool: ${selectedTool}, Metadata:`, currentChat?.metadata);
-    
-    // Ensure selectedTool is aligned with currentChat.tool_id if currentChat exists
-    // This assumes selectedTool might be passed by a parent that's already done this, 
-    // or ChatArea needs to derive it. For now, we rely on the incoming selectedTool prop reflecting currentChat.
+  // Reset state when chat or tool changes (Refactored Logic)
+  useEffect(() => {
+    const currentChatId = currentChat?.id;
+    const previousChatId = prevChatIdRef.current;
+    const currentSelectedTool = selectedTool;
+    const previousSelectedTool = prevSelectedToolRef.current;
 
-    if (selectedTool === 'hybrid-offer' && currentChat) {
-      if (currentChat.metadata && typeof currentChat.metadata === 'object') {
-        console.log(`[ChatArea] Restoring hybrid-offer state from metadata:`, currentChat.metadata);
-        setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-        // Default to first question if metadata doesn't have a key, or if it's explicitly null (e.g. completed)
-        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
-        setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-      } else if (currentChat.collectedAnswers || currentChat.currentQuestionKey || typeof currentChat.questionsAnswered === 'number') {
-        // Fallback if metadata is not there or not an object, but direct properties exist
-        console.warn(`[ChatArea] Metadata missing or not an object for hybrid-offer chat ${currentChat.id}. Falling back to direct properties.`);
-        setCollectedAnswers(currentChat.collectedAnswers || {});
-        setCurrentQuestionKey(currentChat.currentQuestionKey || hybridOfferQuestions[0].key);
-        setQuestionsAnswered(currentChat.questionsAnswered || 0);
-      } else {
-        // If hybrid-offer tool is selected but no state in currentChat or its metadata, reset to initial.
-        console.log(`[ChatArea] Initializing hybrid-offer state for new or empty chat.`);
-        setCollectedAnswers({});
-        setQuestionsAnswered(0);
-        setCurrentQuestionKey(hybridOfferQuestions[0]?.key || null);
-      }
-    } else {
-      // Reset for non-hybrid-offer tools or if no currentChat/selectedTool
-      console.log(`[ChatArea] Resetting tool state (not hybrid-offer or no chat/tool).`);
+    const hasChatSwitched = currentChatId !== previousChatId;
+    const hasToolSwitched = currentSelectedTool !== previousSelectedTool;
+    const hasContextSwitched = hasChatSwitched || hasToolSwitched;
+
+    console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
+    console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
+
+    // Only reset state and close SSE if the actual chat or tool context has changed
+    if (hasContextSwitched) {
+      console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
+      
+      // Reset tool-specific state
       setCollectedAnswers({});
       setQuestionsAnswered(0);
-      setCurrentQuestionKey(null); // Ensure currentQuestionKey is also reset
-    }
-    
-    setInitiationAttemptedForContext(false); // Reset initiation attempt for the current context
-    setIsWaitingForN8n(false); // Reset n8n waiting state
+      setCurrentQuestionKey(currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null);
+      setInitiationAttemptedForContext(false);
+      setIsWaitingForN8n(false); // Reset n8n waiting state
 
-    // Close any existing EventSource connection when chat or tool changes
-    if (eventSourceRef.current) {
-        console.log("[ChatArea Context Change Effect] Closing existing EventSource.");
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+      // Close EventSource only if context switched
+      if (eventSourceRef.current) {
+          console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+      }
+    } else {
+      // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
+      // Re-apply state from metadata if available to ensure consistency
+      console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
+      if (currentSelectedTool === 'hybrid-offer' && currentChat?.metadata && typeof currentChat.metadata === 'object') {
+         // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
+         console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
+         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
+         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+         // Avoid resetting isWaitingForN8n here
+      }
     }
-  }, [currentChat, selectedTool]); // Key dependencies: currentChat and selectedTool
+
+    // Update refs for the next render *after* all checks
+    prevChatIdRef.current = currentChatId;
+    prevSelectedToolRef.current = currentSelectedTool;
+
+  }, [currentChat, selectedTool]); // Keep dependencies: effect needs to run when chat or tool potentially changes
 
   // Update starting key if chat history already exists for hybrid-offer
   // This effect might be redundant if the above effect correctly initializes from metadata.
@@ -500,6 +506,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         });
 
         // If the offer is complete, initiate SSE connection
+        console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
         if (isComplete && correctChatId) {
             console.log(`[CHAT_DEBUG] Offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
             setIsWaitingForN8n(true);
