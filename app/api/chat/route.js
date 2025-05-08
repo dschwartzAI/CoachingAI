@@ -393,6 +393,12 @@ export async function POST(request) {
           determinedAiResponseContent = "Thank you! I've collected all the information needed for your hybrid offer. Your document is being generated now.";
         } else {
           finalNextQuestionKey = hybridOfferQuestions[finalQuestionsAnswered]?.key || null;
+          if (finalNextQuestionKey) {
+            determinedAiResponseContent = hybridOfferQuestions.find(q => q.key === finalNextQuestionKey)?.question || analysisResult.responseToUser;
+          } else {
+            determinedAiResponseContent = analysisResult.responseToUser;
+            console.warn("[CHAT_API_DEBUG] Incomplete but no next question key found. Using AI's responseToUser.");
+          }
         }
       } else {
         finalNextQuestionKey = standardCurrentKey;
@@ -406,7 +412,9 @@ export async function POST(request) {
         isComplete: finalIsComplete,
         chatId: chatId
       };
-      console.log('[CHAT_API_DEBUG] Hybrid offer tool payload prepared.');
+
+      // Log the constructed toolResponsePayload
+      console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
 
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using GPT Assistant for regular chat');
@@ -486,11 +494,29 @@ export async function POST(request) {
       }
 
       if (tool === 'hybrid-offer' && toolResponsePayload) {
-        console.log('[CHAT_API_DEBUG] Updating thread metadata for hybrid-offer:', { qAnswered: toolResponsePayload.questionsAnswered });
-        const { error: metaUpdateError } = await supabase.from('threads').update({
-            metadata: { currentQuestionKey: toolResponsePayload.currentQuestionKey, questionsAnswered: toolResponsePayload.questionsAnswered, isComplete: toolResponsePayload.isComplete }
-          }).eq('id', chatId);
-        if (metaUpdateError) console.error('[CHAT_API_DEBUG] Error updating thread metadata:', metaUpdateError); else console.log('[CHAT_API_DEBUG] Thread metadata updated.');
+        console.log('[CHAT_API_DEBUG] Updating thread metadata for hybrid-offer (after saving message):', {
+          chatId,
+          questionsAnswered: toolResponsePayload.questionsAnswered,
+          currentQuestionKey: toolResponsePayload.currentQuestionKey,
+          isComplete: toolResponsePayload.isComplete,
+          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length 
+        });
+        const { error: threadUpdateError } = await supabase
+          .from('threads')
+          .update({
+            metadata: {
+              currentQuestionKey: toolResponsePayload.currentQuestionKey,
+              questionsAnswered: toolResponsePayload.questionsAnswered,
+              isComplete: toolResponsePayload.isComplete,
+              collectedAnswers: toolResponsePayload.collectedAnswers 
+            }
+          })
+          .eq('id', chatId);
+        if (threadUpdateError) {
+          console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
+        } else {
+          console.log('[CHAT_API_DEBUG] Thread metadata updated successfully');
+        }
       }
     }
 

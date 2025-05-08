@@ -416,9 +416,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           ...chatToUpdate, // Base it on the chat state before optimistic update
           id: correctChatId, // IMPORTANT: Use the ID from the API response
           messages: [...updatedMessages, assistantMessage], // User + assistant messages
-          collectedAnswers: returnedAnswers, // Store answers in the chat object
-          currentQuestionKey: nextQuestionKey, // Store current question in chat object
-          questionsAnswered: updatedQuestionsAnswered // Store questions answered count
+          tool_id: selectedTool, // Preserve/ensure tool_id is correct
+          
+          // Update metadata with the new state from the API response
+          metadata: {
+            currentQuestionKey: nextQuestionKey, // from data.currentQuestionKey or data.nextQuestionKey
+            questionsAnswered: updatedQuestionsAnswered, // from data.questionsAnswered
+            collectedAnswers: returnedAnswers,         // from data.collectedAnswers
+            isComplete: isComplete                     // from data.isComplete
+          },
+
+          // Also update top-level convenience properties for immediate UI consistency
+          currentQuestionKey: nextQuestionKey,
+          questionsAnswered: updatedQuestionsAnswered,
+          collectedAnswers: returnedAnswers,
+          isComplete: isComplete
         };
         
         console.log("[CHAT_DEBUG] Final chat state constructed:", {
