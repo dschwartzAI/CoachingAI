@@ -146,7 +146,22 @@ export default function ChatLayout() {
     if (user?.id) {
       loadThreads();
     }
-  }, [user?.id, toast, currentChat]);
+  }, [user?.id, toast]);
+
+  // New useEffect to synchronize selectedTool with currentChat.tool_id
+  useEffect(() => {
+    console.log('[ChatLayout] useEffect for selectedTool sync triggered. currentChat:', currentChat ? { id: currentChat.id, tool_id: currentChat.tool_id, title: currentChat.title } : null);
+    if (currentChat && currentChat.tool_id) {
+      console.log(`[ChatLayout] Syncing selectedTool. Current: ${selectedTool}, New: ${currentChat.tool_id}`);
+      setSelectedTool(currentChat.tool_id);
+    } else if (currentChat && !currentChat.tool_id) {
+      console.log(`[ChatLayout] Current chat has no tool_id. Current selectedTool: ${selectedTool}, Setting to null.`);
+      setSelectedTool(null);
+    } else if (!currentChat) {
+      console.log(`[ChatLayout] No current chat. Current selectedTool: ${selectedTool}, Setting to null.`);
+      setSelectedTool(null);
+    }
+  }, [currentChat]); // This effect runs when currentChat changes
 
   // If still loading auth or no user, show loading or nothing
   if (authLoading) {

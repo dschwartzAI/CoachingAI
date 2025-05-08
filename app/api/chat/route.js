@@ -188,15 +188,70 @@ export async function POST(request) {
       const initialMessage = "What's your core product or service?";
       const existingAnswers = body.collectedAnswers || {};
       const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
+      
+      // Note: chatId here is the one from the client, which might be temporary.
+      // The API will generate a permanent UUID if clientChatId was not a valid UUID.
+      // We need to use the *final* chatId (permanent UUID) for DB operations.
+      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId; // chatId is already the potentially new UUID
+
+      const initialMetadataForDB = {
+        currentQuestionKey: 'offerDescription',
+        questionsAnswered: 0,
+        isComplete: false,
+        // collectedAnswers should be empty at init, but let's ensure it is for metadata
+        collectedAnswers: {}
+      };
+
       const initResponsePayload = {
         message: initialMessage,
-        currentQuestionKey: 'offerDescription',
-        collectedAnswers: { ...existingAnswers },
-        questionsAnswered: questionsAnsweredOnInit,
-        isComplete: false,
-        chatId: chatId,
+        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
+        collectedAnswers: { ...initialMetadataForDB.collectedAnswers }, // Send empty for client to start fresh
+        questionsAnswered: initialMetadataForDB.questionsAnswered,
+        isComplete: initialMetadataForDB.isComplete,
+        chatId: finalChatIdForDB, // Send the permanent UUID back to the client
         systemPrompt: initialSystemPrompt
       };
+
+      // Attempt to save this new thread with its initial metadata to the database
+      try {
+        console.log(`[CHAT_API_DEBUG] Attempting to save new thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        const { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', finalChatIdForDB)
+          .single();
+
+        if (lookupError && lookupError.code === 'PGRST116') { // Not found, so insert
+          const toolDetails = TOOLS[tool];
+          const threadTitle = toolDetails ? toolDetails.name : 'Hybrid Offer Chat'; // Default title
+          
+          const { error: insertError } = await supabase
+            .from('threads')
+            .insert({
+              id: finalChatIdForDB,
+              user_id: userId, // Ensure userId is available here
+              tool_id: tool,
+              title: threadTitle,
+              metadata: initialMetadataForDB
+            });
+
+          if (insertError) {
+            console.error('[CHAT_API_DEBUG] Error inserting new thread during tool init:', insertError);
+            // Don't fail the whole request, but log the error. Client will have initial state.
+          } else {
+            console.log('[CHAT_API_DEBUG] New thread saved successfully during tool init:', finalChatIdForDB);
+          }
+        } else if (existingThread) {
+          // Thread already exists, maybe update its metadata if it was a re-init attempt?
+          // For now, let's assume init is for a new session. If it exists, metadata should already be there.
+          console.log('[CHAT_API_DEBUG] Thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+        } else if (lookupError) {
+          console.error('[CHAT_API_DEBUG] Error looking up thread during tool init:', lookupError);
+        }
+      } catch (dbSaveError) {
+        console.error('[CHAT_API_DEBUG] DB exception during tool init thread save:', dbSaveError);
+      }
+
       console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
       return NextResponse.json(initResponsePayload);
     }

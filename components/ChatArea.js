@@ -9,6 +9,7 @@ import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, File
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { TOOLS } from '@/lib/config/tools'; // Import TOOLS
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -48,36 +49,59 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Reset state when chat or tool changes
   useEffect(() => {
-    console.log(`[Context Change Effect] Running. ChatID: ${currentChat?.id}, Tool: ${selectedTool}`);
+    // Log details at the beginning of the effect
+    console.log('[ChatArea Context Change Effect] Triggered. SelectedTool:', selectedTool);
+    console.log('[ChatArea Context Change Effect] CurrentChat details:', currentChat ? 
+      { id: currentChat.id, tool_id: currentChat.tool_id, messages: currentChat.messages?.length, metadata: JSON.stringify(currentChat.metadata), title: currentChat.title } : 'null');
+
+    console.log(`[ChatArea Context Change Effect] ChatID: ${currentChat?.id}, Tool: ${selectedTool}, Metadata:`, currentChat?.metadata);
     
-    // Check if the current chat has stored answers and question key
-    if (currentChat?.collectedAnswers) {
-      console.log(`[Context Change Effect] Restoring answers from chat:`, {
-        keys: Object.keys(currentChat.collectedAnswers),
-        questionKey: currentChat.currentQuestionKey,
-        questionsAnswered: currentChat.questionsAnswered
-      });
-      setCollectedAnswers(currentChat.collectedAnswers);
-      setCurrentQuestionKey(currentChat.currentQuestionKey);
-      setQuestionsAnswered(currentChat.questionsAnswered || 0);
+    // Ensure selectedTool is aligned with currentChat.tool_id if currentChat exists
+    // This assumes selectedTool might be passed by a parent that's already done this, 
+    // or ChatArea needs to derive it. For now, we rely on the incoming selectedTool prop reflecting currentChat.
+
+    if (selectedTool === 'hybrid-offer' && currentChat) {
+      if (currentChat.metadata && typeof currentChat.metadata === 'object') {
+        console.log(`[ChatArea] Restoring hybrid-offer state from metadata:`, currentChat.metadata);
+        setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+        // Default to first question if metadata doesn't have a key, or if it's explicitly null (e.g. completed)
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
+        setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+      } else if (currentChat.collectedAnswers || currentChat.currentQuestionKey || typeof currentChat.questionsAnswered === 'number') {
+        // Fallback if metadata is not there or not an object, but direct properties exist
+        console.warn(`[ChatArea] Metadata missing or not an object for hybrid-offer chat ${currentChat.id}. Falling back to direct properties.`);
+        setCollectedAnswers(currentChat.collectedAnswers || {});
+        setCurrentQuestionKey(currentChat.currentQuestionKey || hybridOfferQuestions[0].key);
+        setQuestionsAnswered(currentChat.questionsAnswered || 0);
+      } else {
+        // If hybrid-offer tool is selected but no state in currentChat or its metadata, reset to initial.
+        console.log(`[ChatArea] Initializing hybrid-offer state for new or empty chat.`);
+        setCollectedAnswers({});
+        setQuestionsAnswered(0);
+        setCurrentQuestionKey(hybridOfferQuestions[0]?.key || null);
+      }
     } else {
-      // Reset answers if no stored data
+      // Reset for non-hybrid-offer tools or if no currentChat/selectedTool
+      console.log(`[ChatArea] Resetting tool state (not hybrid-offer or no chat/tool).`);
       setCollectedAnswers({});
       setQuestionsAnswered(0);
-      const firstKey = hybridOfferQuestions[0]?.key || null;
-      setCurrentQuestionKey(selectedTool === 'hybrid-offer' ? firstKey : null);
+      setCurrentQuestionKey(null); // Ensure currentQuestionKey is also reset
     }
     
-    setInitiationAttemptedForContext(false);
-    setIsWaitingForN8n(false);
+    setInitiationAttemptedForContext(false); // Reset initiation attempt for the current context
+    setIsWaitingForN8n(false); // Reset n8n waiting state
+
+    // Close any existing EventSource connection when chat or tool changes
     if (eventSourceRef.current) {
-        console.log("[Context Change Effect] Closing existing EventSource.");
+        console.log("[ChatArea Context Change Effect] Closing existing EventSource.");
         eventSourceRef.current.close();
         eventSourceRef.current = null;
     }
-  }, [currentChat?.id, selectedTool]);
+  }, [currentChat, selectedTool]); // Key dependencies: currentChat and selectedTool
 
   // Update starting key if chat history already exists for hybrid-offer
+  // This effect might be redundant if the above effect correctly initializes from metadata.
+  // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
       if (selectedTool === 'hybrid-offer' && currentChat?.messages?.length > 0) {
           // A more robust way would be to persist/load answers+key with the chat 
@@ -93,7 +117,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Effect to initiate chat for Hybrid Offer tool
   useEffect(() => {
     console.log(
-        `[Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
+        `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
         `MsgCount=${currentChat?.messages?.length}, Attempted=${initiationAttemptedForContext}, ` +
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
@@ -102,9 +126,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         !initiationAttemptedForContext && 
         !isInitiating &&
         !isLoading &&
-        (!currentChat || currentChat.messages.length === 0)
+        // Ensure it's genuinely a new chat for the tool, or an existing empty one for this tool
+        (!currentChat || !currentChat.messages || currentChat.messages.length === 0) &&
+        (!currentChat || currentChat.tool_id === 'hybrid-offer') // Also ensure current chat is for this tool if it exists
        ) {
-      console.log(`[Initiation Check] Conditions met. Attempting initiation...`);
+      console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
       setInitiationAttemptedForContext(true); 
       setIsInitiating(true);
       const chatIdToUse = currentChat?.id || Date.now().toString() + "-temp";
@@ -124,54 +150,69 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Function to call the API for the first message
   const initiateHybridOfferChat = async (chatIdToInitiate) => {
-      console.log(`[Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
+      console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
       setIsLoading(true);
-      setCollectedAnswers({}); 
-      // We let the backend determine the first question key based on empty messages
-      // setCurrentQuestionKey(hybridOfferQuestions[0].key); // No longer needed here
+      // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
+      
+      const requestBody = {
+        messages: [], // For init, messages should be empty
+        tool: 'hybrid-offer',
+        isToolInit: true,
+        chatId: chatIdToInitiate, // Use the passed chatId, which could be temp or real
+        // Ensure collectedAnswers and currentQuestionKey are not sent or are explicitly empty for a true init
+        collectedAnswers: {}, 
+        currentQuestionKey: null 
+      };
+      console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
 
       try {
-          console.log(`[Initiate Func] Calling fetch for initial message...`);
           const response = await fetch('/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  messages: [],
-                  tool: 'hybrid-offer', // Use 'tool' instead of 'currentTool' to match API expectations
-                  isToolInit: true, // Flag this as a tool initialization call
-                  chatId: chatIdToInitiate
-              }),
+              body: JSON.stringify(requestBody),
           });
 
-          console.log(`[Initiate Func] Fetch response status: ${response.status}`);
+          console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
           if (!response.ok) {
               const errorText = await response.text(); 
               throw new Error(`API failed (${response.status}): ${errorText}`);
           }
           const data = await response.json();
-          console.log("[Initiate Func] API response data:", data);
+          console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
           
-          // Handle both old and new API response formats
           const assistantMessage = { 
               role: "assistant", 
               content: data.message || "Let's start creating your hybrid offer."
           };
           
+          // IMPORTANT FIXES HERE:
+          const finalChatId = data.chatId; // Use the permanent ID from the API response
+          const originalToolId = selectedTool; // selectedTool should be 'hybrid-offer' at this point
+          
           // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
           const returnedAnswers = data.collectedAnswers || {};
-          // Default to first question key if not provided by API
-          const nextQuestionKey = data.currentQuestionKey || hybridOfferQuestions[0].key;
-          
-          setCollectedAnswers(returnedAnswers);
-          setCurrentQuestionKey(nextQuestionKey);
-          
+          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? hybridOfferQuestions[0].key : null);
+          const initialQuestionsAnswered = data.questionsAnswered || 0;
+          const initialIsComplete = data.isComplete || false;
+
           const updatedChat = {
-              id: chatIdToInitiate,
-              title: "Hybrid Offer Chat",
-              messages: [assistantMessage] 
+              id: finalChatId,      // NEW: Use the permanent ID from API
+              title: TOOLS[originalToolId]?.name || "New Chat", // Use tool name for title, or a fallback
+              tool_id: originalToolId, // NEW: Ensure tool_id is set
+              messages: [assistantMessage], 
+              isTemporary: false, // It's now a real chat in the DB
+              // Initialize metadata based on API response
+              metadata: {
+                  currentQuestionKey: nextQuestionKey,
+                  questionsAnswered: initialQuestionsAnswered,
+                  collectedAnswers: returnedAnswers,
+                  isComplete: initialIsComplete
+              }
           };
-          console.log("[Initiate Func] Constructed updatedChat:", updatedChat);
-          console.log("[Initiate Func] Updating chats list and setting current chat...");
+          
+          console.log("[ChatArea Initiate Func] Constructed updatedChat (with fixes):", JSON.stringify(updatedChat, null, 2));
+
+          console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
           setChats(prev => {
               const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
               if (chatIndex > -1) {
@@ -179,15 +220,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                    newList[chatIndex] = updatedChat;
                    return newList;
               } else {
-                  console.warn(`[Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
+                  console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
                   return [updatedChat, ...prev];
               }
           });
           setCurrentChat(updatedChat);
-          console.log(`[Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
+          console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       } catch (error) {
-          console.error('[Initiate Func] Error initiating chat:', error);
+          console.error('[ChatArea Initiate Func] Error initiating chat:', error);
           const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
           const errorChat = { id: chatIdToInitiate, title: "Initiation Error", messages: [errorAssistantMessage] };
           setChats(prev => { 
@@ -200,7 +241,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            });
            setCurrentChat(errorChat);
       } finally {
-          console.log("[Initiate Func] Finalizing initiation attempt.");
+          console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
           setIsLoading(false);
           setIsInitiating(false); 
           textareaRef.current?.focus();

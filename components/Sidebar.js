@@ -52,13 +52,9 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
 
   const handleNewChat = (toolId = null) => {
     const newChat = createNewThread(toolId);
-    console.log('[Sidebar] Created new chat:', { 
-      id: newChat.id, 
-      title: newChat.title, 
-      toolId: newChat.tool_id 
-    });
+    console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
+    console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
     setCurrentChat(newChat);
-    setSelectedTool(toolId);
   };
 
   const handleToolClick = (toolId) => {
