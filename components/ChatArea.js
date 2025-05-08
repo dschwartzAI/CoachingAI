@@ -575,145 +575,264 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) // Ensure content is string
       }));
     }
-    const encodedChatHistory = encodeURIComponent(JSON.stringify(chatHistory));
 
-    console.log(`[SSE Connect] Connecting to /api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}&chatHistory=${encodedChatHistory}`);
-    const es = new EventSource(`/api/n8n-result?chatId=${chatId}&answersData=${encodedAnswers}&chatHistory=${encodedChatHistory}`);
-    eventSourceRef.current = es; // Store the reference
-
-    es.onopen = () => {
-      console.log("[SSE Connect] EventSource connection opened.");
+    // Create the request body as a JSON object instead of URL params
+    const postData = {
+      chatId: chatId,
+      answersData: JSON.parse(decodeURIComponent(encodedAnswers)), // Parse since we already have encoded JSON
+      chatHistory: chatHistory
     };
 
-    // Listen for the specific event from the backend
-    es.addEventListener('n8n_result', async (event) => {
-      console.log("[SSE Connect] Received n8n_result event:", event.data);
-      let resultMessageContent = null; // For immediate JSX display
-      let contentToSaveToDB = null;   // For saving to DB
-      let n8nResultData = null;
-
-      try {
-        const eventData = JSON.parse(event.data);
-        if (eventData.success && eventData.data) {
-          n8nResultData = eventData.data; // Store for later use
-          
-          // 1. Construct JSX for immediate display
-          resultMessageContent = (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 font-medium">
-                 <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
-                 <span>Document generated successfully!</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                 {n8nResultData.pdfWebViewLink && (
-                   <Button variant="outline" size="sm" asChild>
-                      <a href={n8nResultData.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-                      </a>
-                   </Button>
-                 )}
-                 {n8nResultData.pdfDownlaodLink && (
-                   <Button variant="outline" size="sm" asChild>
-                      <a href={n8nResultData.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download>
-                         <Download className="mr-2 h-4 w-4" /> Download PDF
-                      </a>
-                   </Button>
-                 )}
-                 {n8nResultData.googleDocLink && (
-                    <Button variant="outline" size="sm" asChild>
-                       <a href={n8nResultData.googleDocLink} target="_blank" rel="noopener noreferrer">
-                           <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                       </a>
-                    </Button>
-                  )}
-                  {n8nResultData.offerInMd && (
-                       <MarkdownMessage content={n8nResultData.offerInMd} />
-                  )}
-              </div>
-            </div>
-          );
-
-          // 2. Construct Text content for DB saving
-          let dbText = "Document generated successfully.";
-          if (n8nResultData.pdfWebViewLink) dbText += `\nView PDF: ${n8nResultData.pdfWebViewLink}`;
-          if (n8nResultData.pdfDownlaodLink) dbText += `\nDownload PDF: ${n8nResultData.pdfDownlaodLink}`;
-          if (n8nResultData.googleDocLink) dbText += `\nView Google Doc: ${n8nResultData.googleDocLink}`;
-          // Optionally include markdown text if desired in DB
-          // if (n8nResultData.offerInMd) dbText += `\n\n---\n${n8nResultData.offerInMd}`;
-          contentToSaveToDB = dbText;
-
-        } else {
-           throw new Error(eventData.message || 'Received unsuccessful result from server.');
-        }
-      } catch (parseError) {
-        console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
-        resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
-        contentToSaveToDB = "Document generated, but link display failed."; // Save fallback text
-      }
-
-      // 3. Save the text version to DB (if content exists and chat context is still valid)
-      // Ensure we use the correct chatId associated with the currentChat state when saving
-      const finalChatId = currentChat?.id; 
-      if (contentToSaveToDB && finalChatId && finalChatId === chatId) { // Double check chatId hasn't changed
-        try {
-          const messagePayload = {
-            thread_id: finalChatId, // Use the ID from the current chat state
-            role: 'assistant',
-            content: contentToSaveToDB,
-            timestamp: new Date().toISOString()
-          };
-          console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
-          await saveMessage(messagePayload); // Call saveMessage utility
-          console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
-        } catch (dbError) {
-          console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
-          // Optionally inform user or handle error appropriately
-        }
-      } else {
-          console.warn(`[SSE Connect] Did not save n8n result message to DB. Context Changed? chatId=${chatId}, finalChatId=${finalChatId}, contentExists=${!!contentToSaveToDB}`);
-      }
-
-      // 4. Update React state with JSX for immediate display
-      if (resultMessageContent !== null && finalChatId && finalChatId === chatId) { // Use finalChatId for consistency
-          const resultMessageForState = { role: 'assistant', content: resultMessageContent, isJSX: true }; 
-          setCurrentChat(prevChat => {
-              if (!prevChat || prevChat.id !== finalChatId) return prevChat; // Safety check with finalChatId
-              return {...prevChat, messages: [...prevChat.messages, resultMessageForState]};
-          });
-          setChats(prevChats => prevChats.map(c => {
-              if (c.id === finalChatId) {
-                  // Ensure metadata is preserved/updated correctly if needed, though likely not changing here
-                  return {...c, messages: [...c.messages, resultMessageForState]};
-              }
-              return c;
-          }));
-      } else {
-          console.warn("[SSE Connect] Could not add result message to UI state - chat context might have changed or content was null.");
-      }
-
-      // 5. Finalize SSE handling
-      setIsWaitingForN8n(false);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      console.log("[SSE Connect] Closed connection after n8n_result.");
-      textareaRef.current?.focus();
+    console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
+    console.log(`[SSE Connect] POST data:`, {
+      chatId,
+      answersDataFields: Object.keys(postData.answersData),
+      chatHistoryLength: chatHistory.length
     });
 
-    // Handle generic errors
-    es.onerror = (error) => {
-      console.error("[SSE Connect] EventSource error:", error);
+    // We need to use a custom implementation for EventSource with POST
+    // First, make the initial request to establish the connection
+    fetch('/api/n8n-result', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(postData)
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`SSE connection failed with status: ${response.status}`);
+      }
+      
+      // Create a reader for the response body stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      // Track the buffer and last event info
+      let buffer = '';
+      
+      // Function to process SSE events from the buffer
+      const processEvents = (chunk) => {
+        buffer += chunk;
+        
+        // Process each event (separated by double newlines)
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || ''; // Keep the last incomplete event in the buffer
+        
+        events.forEach(eventStr => {
+          if (!eventStr.trim()) return;
+          
+          // Parse the event type and data
+          const eventLines = eventStr.split('\n');
+          let eventType = '';
+          let eventData = '';
+          
+          eventLines.forEach(line => {
+            if (line.startsWith('event:')) {
+              eventType = line.substring(6).trim();
+            } else if (line.startsWith('data:')) {
+              eventData = line.substring(5).trim();
+            }
+          });
+          
+          if (eventType && eventData) {
+            // Handle the event based on its type
+            try {
+              const parsedData = JSON.parse(eventData);
+              
+              if (eventType === 'n8n_result') {
+                handleN8nResult(parsedData);
+              } else if (eventType === 'error') {
+                handleErrorEvent(parsedData);
+              } else {
+                console.warn(`[SSE Connect] Unknown event type: ${eventType}`);
+              }
+            } catch (e) {
+              console.error(`[SSE Connect] Error parsing event data: ${e.message}`);
+            }
+          }
+        });
+      };
+      
+      // Handle n8n_result events (same as the original implementation)
+      const handleN8nResult = (eventData) => {
+        console.log("[SSE Connect] Received n8n_result event:", eventData);
+        let resultMessageContent = null; // For immediate JSX display
+        let contentToSaveToDB = null;   // For saving to DB
+        let n8nResultData = null;
+
+        try {
+          if (eventData.success && eventData.data) {
+            n8nResultData = eventData.data; // Store for later use
+            
+            // 1. Construct JSX for immediate display
+            resultMessageContent = (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 font-medium">
+                   <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                   <span>Document generated successfully!</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                   {n8nResultData.pdfWebViewLink && (
+                     <Button variant="outline" size="sm" asChild>
+                        <a href={n8nResultData.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-2 h-4 w-4" /> View PDF
+                        </a>
+                     </Button>
+                   )}
+                   {n8nResultData.pdfDownlaodLink && (
+                     <Button variant="outline" size="sm" asChild>
+                        <a href={n8nResultData.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download>
+                           <Download className="mr-2 h-4 w-4" /> Download PDF
+                        </a>
+                     </Button>
+                   )}
+                   {n8nResultData.googleDocLink && (
+                      <Button variant="outline" size="sm" asChild>
+                         <a href={n8nResultData.googleDocLink} target="_blank" rel="noopener noreferrer">
+                             <FileText className="mr-2 h-4 w-4" /> View Google Doc
+                         </a>
+                      </Button>
+                    )}
+                    {n8nResultData.offerInMd && (
+                         <MarkdownMessage content={n8nResultData.offerInMd} />
+                    )}
+                </div>
+              </div>
+            );
+
+            // 2. Construct Text content for DB saving
+            let dbText = "Document generated successfully.";
+            if (n8nResultData.pdfWebViewLink) dbText += `\nView PDF: ${n8nResultData.pdfWebViewLink}`;
+            if (n8nResultData.pdfDownlaodLink) dbText += `\nDownload PDF: ${n8nResultData.pdfDownlaodLink}`;
+            if (n8nResultData.googleDocLink) dbText += `\nView Google Doc: ${n8nResultData.googleDocLink}`;
+            contentToSaveToDB = dbText;
+
+          } else {
+            throw new Error(eventData.message || 'Received unsuccessful result from server.');
+          }
+        } catch (parseError) {
+          console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
+          resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
+          contentToSaveToDB = "Document generated, but link display failed."; // Save fallback text
+        }
+
+        // 3. Save the text version to DB (if content exists and chat context is still valid)
+        const finalChatId = currentChat?.id; 
+        if (contentToSaveToDB && finalChatId && finalChatId === chatId) {
+          try {
+            const messagePayload = {
+              thread_id: finalChatId,
+              role: 'assistant',
+              content: contentToSaveToDB,
+              timestamp: new Date().toISOString()
+            };
+            console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
+            saveMessage(messagePayload);
+            console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
+          } catch (dbError) {
+            console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+          }
+        } else {
+          console.warn(`[SSE Connect] Did not save n8n result message to DB. Context Changed? chatId=${chatId}, finalChatId=${finalChatId}, contentExists=${!!contentToSaveToDB}`);
+        }
+
+        // 4. Update React state with JSX for immediate display
+        if (resultMessageContent !== null && finalChatId && finalChatId === chatId) {
+          const resultMessageForState = { role: 'assistant', content: resultMessageContent, isJSX: true }; 
+          setCurrentChat(prevChat => {
+            if (!prevChat || prevChat.id !== finalChatId) return prevChat;
+            return {...prevChat, messages: [...prevChat.messages, resultMessageForState]};
+          });
+          setChats(prevChats => prevChats.map(c => {
+            if (c.id === finalChatId) {
+              return {...c, messages: [...c.messages, resultMessageForState]};
+            }
+            return c;
+          }));
+        } else {
+          console.warn("[SSE Connect] Could not add result message to UI state - chat context might have changed or content was null.");
+        }
+
+        // 5. Finalize SSE handling
+        setIsWaitingForN8n(false);
+        console.log("[SSE Connect] Processed n8n_result successfully.");
+        textareaRef.current?.focus();
+      };
+      
+      // Handle error events
+      const handleErrorEvent = (eventData) => {
+        console.error("[SSE Connect] Received error event:", eventData);
+        
+        // Add an error message to the chat
+        const sseErrorMessage = { 
+          role: 'assistant', 
+          content: eventData.message || "Connection error while generating document. Please try again later.", 
+          isJSX: false
+        }; 
+        
+        if (currentChat?.id === chatId) {
+          setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
+          setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
+        }
+        
+        setIsWaitingForN8n(false);
+        textareaRef.current?.focus();
+      };
+      
+      // Function to read the next chunk
+      const readNextChunk = () => {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            console.log("[SSE Connect] Stream closed by server.");
+            setIsWaitingForN8n(false);
+            return;
+          }
+          
+          const chunk = decoder.decode(value, { stream: true });
+          processEvents(chunk);
+          readNextChunk(); // Continue reading
+        }).catch(error => {
+          console.error("[SSE Connect] Error reading from stream:", error);
+          setIsWaitingForN8n(false);
+          
+          // Add an error message to the chat
+          const streamErrorMessage = { 
+            role: 'assistant', 
+            content: "Error streaming document data. Please try again.", 
+            isJSX: false
+          };
+          
+          if (currentChat?.id === chatId) {
+            setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, streamErrorMessage]} : null);
+            setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, streamErrorMessage]} : c));
+          }
+          
+          textareaRef.current?.focus();
+        });
+      };
+      
+      // Start reading from the stream
+      readNextChunk();
+    })
+    .catch(error => {
+      console.error("[SSE Connect] Fetch error:", error);
       setIsWaitingForN8n(false);
-      // Add an error message (text) to the chat
-      const sseErrorMessage = { role: 'assistant', content: "Connection error while generating document. Please try again later.", isJSX: false }; // Mark as not JSX
-       if (currentChat?.id === chatId) { // Add error only if chat context is still relevant
-            setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
-            setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
-       }
-      es.close();
-      eventSourceRef.current = null;
-    };
+      
+      // Add an error message to the chat
+      const connectionErrorMessage = { 
+        role: 'assistant', 
+        content: `Connection error: ${error.message}. Please try again later.`, 
+        isJSX: false
+      };
+      
+      if (currentChat?.id === chatId) {
+        setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, connectionErrorMessage]} : null);
+        setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, connectionErrorMessage]} : c));
+      }
+      
+      textareaRef.current?.focus();
+    });
   };
 
   const pollForAssistantResponse = async (threadId, runId, chatId, chatWithThinking, updatedMessages) => {
