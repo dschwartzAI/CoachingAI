@@ -524,29 +524,6 @@ export async function POST(request) {
       console.log('[CHAT_API_DEBUG] Preparing to save assistant message to DB.');
       let contentToSaveForDB = determinedAiResponseContent;
 
-      if (tool === 'hybrid-offer') {
-        const MAX_HYBRID_QUESTION_LENGTH = 100;
-        if (contentToSaveForDB.length > MAX_HYBRID_QUESTION_LENGTH) {
-          console.log('[CHAT_API_DEBUG] Hybrid offer rsp too long, truncating for DB:', { len: contentToSaveForDB.length });
-          const qMarkIdx = contentToSaveForDB.indexOf('?');
-          if (qMarkIdx > 0 && qMarkIdx < MAX_HYBRID_QUESTION_LENGTH && contentToSaveForDB.includes(hybridOfferQuestions.find(q => q.key === (toolResponsePayload?.currentQuestionKey || finalNextQuestionKey))?.question?.substring(0,10) || "impossible string")) {
-            // Only truncate if it seems to be a question it's asking
-            contentToSaveForDB = contentToSaveForDB.substring(0, qMarkIdx + 1);
-          } else if (!toolResponsePayload?.isComplete) { // Don't truncate completion messages
-            contentToSaveForDB = contentToSaveForDB.substring(0, MAX_HYBRID_QUESTION_LENGTH) + "...";
-          }
-        }
-        // For conversational AI, prefix removal might be less necessary or could be handled by more nuanced logic
-        // const prefixesToRemove = ["Great! ", "Now, ", "Thank you. ", "Thanks! ", "I see. ", "Understood. ", "Perfect. ", "Excellent. ", "Got it. ", "Next, ", "Okay. ", "OK. "];
-        // for (const prefix of prefixesToRemove) {
-        //   if (contentToSaveForDB.startsWith(prefix)) {
-        //     contentToSaveForDB = contentToSaveForDB.substring(prefix.length);
-        //     console.log('[CHAT_API_DEBUG] Removed prefix for DB save:', { prefix });
-        //     break; 
-        //   }
-        // }
-      }
-
       const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', contentToSaveForDB).eq('role', 'assistant').limit(1);
       if (asstMsgCheckErr) console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
       
