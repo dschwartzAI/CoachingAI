@@ -111,15 +111,40 @@ export default function ChatLayout() {
           threads: threads.map(t => ({
             id: t.id,
             title: t.title,
-            messageCount: t.messages?.length || 0
+            messageCount: t.messages?.length || 0,
+            tool_id: t.tool_id,
+            hasMetadata: !!t.metadata,
+            questionsAnswered: t.metadata?.questionsAnswered || 0
           }))
         });
         
-        // Set threads with isTemporary flag as false for database threads
-        const formattedThreads = threads.map(thread => ({
-          ...thread,
-          isTemporary: false
-        }));
+        // Format threads to ensure metadata is properly preserved
+        const formattedThreads = threads.map(thread => {
+          // Ensure metadata is included and properly structured if it exists
+          let metadata = thread.metadata;
+          if (thread.tool_id === 'hybrid-offer' && metadata) {
+            console.log(`[ChatLayout] Thread ${thread.id} has hybrid-offer metadata:`, {
+              questionsAnswered: metadata.questionsAnswered,
+              currentQuestionKey: metadata.currentQuestionKey,
+              isComplete: metadata.isComplete
+            });
+            
+            // Make sure questionsAnswered is at least the count of collected answers
+            if (metadata.collectedAnswers && typeof metadata.collectedAnswers === 'object') {
+              const answerCount = Object.keys(metadata.collectedAnswers).length;
+              if (!metadata.questionsAnswered || metadata.questionsAnswered < answerCount) {
+                console.log(`[ChatLayout] Fixing questionsAnswered for thread ${thread.id}: ${metadata.questionsAnswered} -> ${answerCount}`);
+                metadata.questionsAnswered = answerCount;
+              }
+            }
+          }
+          
+          return {
+            ...thread,
+            metadata,
+            isTemporary: false
+          };
+        });
         
         // Don't directly overwrite chats - use our safer setter
         setChatsSafely(formattedThreads);

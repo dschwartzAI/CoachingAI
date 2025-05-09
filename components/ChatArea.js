@@ -76,12 +76,24 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     if (hasContextSwitched) {
       console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
       
-      // Reset tool-specific state
-      setCollectedAnswers({});
-      setQuestionsAnswered(0);
-      setCurrentQuestionKey(currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null);
-      setInitiationAttemptedForContext(false);
-      setIsWaitingForN8n(false); // Reset n8n waiting state
+      // Check if the thread has metadata to initialize properly
+      if (currentChat?.metadata) {
+        console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
+        // Initialize state from metadata if available
+        setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null));
+        setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+        setIsWaitingForN8n(false);
+        // If we have metadata, this thread was already initiated in the past
+        setInitiationAttemptedForContext(true);
+      } else {
+        // Reset to default state if no metadata
+        setCollectedAnswers({});
+        setQuestionsAnswered(0);
+        setCurrentQuestionKey(currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null);
+        setIsWaitingForN8n(false);
+        setInitiationAttemptedForContext(false);
+      }
 
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
@@ -129,6 +141,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     console.log(
         `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
         `MsgCount=${currentChat?.messages?.length}, Attempted=${initiationAttemptedForContext}, ` +
+        `QuestionsAnswered=${questionsAnswered}, ` +
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
     if (
@@ -138,7 +151,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         !isLoading &&
         // Ensure it's genuinely a new chat for the tool, or an existing empty one for this tool
         (!currentChat || !currentChat.messages || currentChat.messages.length === 0) &&
-        (!currentChat || currentChat.tool_id === 'hybrid-offer') // Also ensure current chat is for this tool if it exists
+        (!currentChat || currentChat.tool_id === 'hybrid-offer') && // Also ensure current chat is for this tool if it exists
+        // Skip initiation if we have metadata with questions already answered
+        !(currentChat?.metadata?.questionsAnswered > 0)
        ) {
       console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
       setInitiationAttemptedForContext(true); 
@@ -156,6 +171,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     initiationAttemptedForContext,
     isInitiating,
     isLoading,
+    questionsAnswered,
   ]);
 
   // Function to call the API for the first message
