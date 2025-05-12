@@ -1,0 +1,155 @@
+const { NextResponse } = require('next/server');
+
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+
+exports.handler = async function(event, context) {
+  const sseStartTime = Date.now();
+  
+  try {
+    console.log(`\n--- [SSE /api/n8n-result Request Start ${sseStartTime}] ---`);
+    
+    // Validate N8N_WEBHOOK_URL environment variable
+    if (!N8N_WEBHOOK_URL) {
+      console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
+      return {
+        statusCode: 500,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: error\ndata: ${JSON.stringify({error: "Server configuration error: N8N_WEBHOOK_URL not defined", code: "ENV_MISSING"})}\n\n`
+      };
+    }
+
+    // Get data from request body
+    let requestData;
+    try {
+      requestData = JSON.parse(event.body);
+      console.log(`[SSE ${sseStartTime}] Received request data with fields: ${Object.keys(requestData).join(', ')}`);
+    } catch (e) {
+      console.error(`[SSE ${sseStartTime}] Failed to parse request body: ${e.message}`);
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: error\ndata: ${JSON.stringify({error: "Failed to parse request body", code: "INVALID_REQUEST_BODY"})}\n\n`
+      };
+    }
+
+    // Extract data from request body
+    const { chatId, answersData, chatHistory } = requestData;
+
+    if (!chatId) {
+      console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: error\ndata: ${JSON.stringify({error: "Missing chatId in request body", code: "MISSING_CHAT_ID"})}\n\n`
+      };
+    }
+
+    if (!answersData) {
+      console.error(`[SSE ${chatId} ${sseStartTime}] Error: Missing answersData in request body.`);
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: error\ndata: ${JSON.stringify({error: "Missing answersData in request body", code: "MISSING_ANSWERS"})}\n\n`
+      };
+    }
+
+    console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
+    console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
+    
+    if (chatHistory) {
+      console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
+    } else {
+      console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
+    }
+
+    // Call n8n webhook
+    try {
+      console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
+      
+      const requestBody = {
+        chatId: chatId,
+        answers: answersData,
+        conversation: chatHistory || [],
+        timestamp: new Date().toISOString()
+      };
+      
+      const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      const status = n8nResponse.status;
+      console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
+
+      if (!n8nResponse.ok) {
+        let errorBody = 'Could not read error body';
+        try { errorBody = await n8nResponse.text(); } catch (e) { /* ignore */ }
+        throw new Error(`n8n failed (${status}): ${errorBody}`);
+      }
+
+      // Parse JSON response
+      const n8nData = await n8nResponse.json();
+      console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
+
+      // Return success response
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: n8n_result\ndata: ${JSON.stringify({ success: true, data: n8nData })}\n\n`
+      };
+
+    } catch (error) {
+      console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
+      return {
+        statusCode: 500,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: `event: error\ndata: ${JSON.stringify({ 
+          success: false, 
+          message: error.message || 'Failed to process n8n request.',
+          code: "N8N_PROCESSING_ERROR"
+        })}\n\n`
+      };
+    }
+
+  } catch (outerError) {
+    console.error(`[SSE CRITICAL ${sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+      body: `event: error\ndata: ${JSON.stringify({
+        error: "Critical server error", 
+        details: outerError.message, 
+        code: "UNHANDLED_ERROR"
+      })}\n\n`
+    };
+  }
+}; 
