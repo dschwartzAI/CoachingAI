@@ -1,8 +1,25 @@
-const { NextResponse } = require('next/server');
-
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 exports.handler = async function(event, context) {
+  // Set CORS headers
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  };
+
+  // Handle OPTIONS request for CORS
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers,
+      body: ''
+    };
+  }
+
   const sseStartTime = Date.now();
   
   try {
@@ -13,11 +30,7 @@ exports.handler = async function(event, context) {
       console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
       return {
         statusCode: 500,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: error\ndata: ${JSON.stringify({error: "Server configuration error: N8N_WEBHOOK_URL not defined", code: "ENV_MISSING"})}\n\n`
       };
     }
@@ -31,11 +44,7 @@ exports.handler = async function(event, context) {
       console.error(`[SSE ${sseStartTime}] Failed to parse request body: ${e.message}`);
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: error\ndata: ${JSON.stringify({error: "Failed to parse request body", code: "INVALID_REQUEST_BODY"})}\n\n`
       };
     }
@@ -47,11 +56,7 @@ exports.handler = async function(event, context) {
       console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: error\ndata: ${JSON.stringify({error: "Missing chatId in request body", code: "MISSING_CHAT_ID"})}\n\n`
       };
     }
@@ -60,11 +65,7 @@ exports.handler = async function(event, context) {
       console.error(`[SSE ${chatId} ${sseStartTime}] Error: Missing answersData in request body.`);
       return {
         statusCode: 400,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: error\ndata: ${JSON.stringify({error: "Missing answersData in request body", code: "MISSING_ANSWERS"})}\n\n`
       };
     }
@@ -111,11 +112,7 @@ exports.handler = async function(event, context) {
       // Return success response
       return {
         statusCode: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: n8n_result\ndata: ${JSON.stringify({ success: true, data: n8nData })}\n\n`
       };
 
@@ -123,11 +120,7 @@ exports.handler = async function(event, context) {
       console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
       return {
         statusCode: 500,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
+        headers,
         body: `event: error\ndata: ${JSON.stringify({ 
           success: false, 
           message: error.message || 'Failed to process n8n request.',
@@ -140,11 +133,7 @@ exports.handler = async function(event, context) {
     console.error(`[SSE CRITICAL ${sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
+      headers,
       body: `event: error\ndata: ${JSON.stringify({
         error: "Critical server error", 
         details: outerError.message, 
