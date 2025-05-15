@@ -37,6 +37,19 @@ function MarkdownMessage({ content }) {
   );
 }
 
+// Add a utility to extract links from message content
+function extractN8nLinks(content) {
+  if (typeof content !== 'string') return {};
+  const googleDocMatch = content.match(/View Google Doc: (https?:\/\/[^\s]+)/);
+  const pdfWebViewMatch = content.match(/View PDF: (https?:\/\/[^\s]+)/);
+  const pdfDownloadMatch = content.match(/Download PDF: (https?:\/\/[^\s]+)/);
+  return {
+    googleDocLink: googleDocMatch ? googleDocMatch[1] : null,
+    pdfWebViewLink: pdfWebViewMatch ? pdfWebViewMatch[1] : null,
+    pdfDownloadLink: pdfDownloadMatch ? pdfDownloadMatch[1] : null,
+  };
+}
+
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +65,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const scrollAreaRef = useRef(null);
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
+  const { user } = useAuth();
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -595,6 +609,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Create the request body as a JSON object instead of URL params
     const postData = {
       chatId: chatId,
+      userId: user?.id || null,
       answersData: JSON.parse(decodeURIComponent(encodedAnswers)), // Parse since we already have encoded JSON
       chatHistory: chatHistory
     };
@@ -602,6 +617,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
     console.log(`[SSE Connect] POST data:`, {
       chatId,
+      userId: user?.id || null,
       answersDataFields: Object.keys(postData.answersData),
       chatHistoryLength: chatHistory.length
     });
@@ -710,6 +726,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                          </a>
                       </Button>
                     )}
+                    {n8nResultData.docUrl && !n8nResultData.googleDocLink && (
+                      <Button variant="outline" size="sm" asChild>
+                         <a href={n8nResultData.docUrl} target="_blank" rel="noopener noreferrer">
+                             <FileText className="mr-2 h-4 w-4" /> View Google Doc
+                         </a>
+                      </Button>
+                    )}
                     {n8nResultData.offerInMd && (
                          <MarkdownMessage content={n8nResultData.offerInMd} />
                     )}
@@ -744,7 +767,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               timestamp: new Date().toISOString()
             };
             console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
-            saveMessage(messagePayload);
+            saveMessage(messagePayload, user?.id);
             console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
           } catch (dbError) {
             console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
@@ -962,28 +985,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   return (
     <div className="flex-1 flex flex-col h-full relative"> {/* Added relative positioning */}
        {/* --- Status Display --- */}
-       {selectedTool === 'hybrid-offer' && (
-           <div className="fixed top-4 right-4 bg-background border rounded-lg p-3 shadow-md max-w-[200px] z-10">
-                <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Offer Status</h4>
-                <div className="text-xs mb-2 font-medium">{questionsAnswered}/6 Questions Answered</div>
-                <ul className="space-y-1">
-                    {hybridOfferQuestions.map((q, index) => (
-                        <li key={q.key} className="flex items-center gap-2 text-xs">
-                            {collectedAnswers[q.key] ? (
-                                <CheckCircle2 className="h-3 w-3 text-green-500 flex-shrink-0" />
-                            ) : index === questionsAnswered ? (
-                                <HelpCircle className="h-3 w-3 text-blue-500 flex-shrink-0 animate-pulse" />
-                            ) : (
-                                <Circle className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-                            )}
-                            <span className={`${index === questionsAnswered ? 'font-medium' : 'text-muted-foreground'} truncate`} title={q.question}>
-                                {q.question.split(' ').slice(0, 4).join(' ')}...
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-           </div>
-       )}
+       {/* Offer Status box removed as requested */}
        {/* --- End Status Display --- */}
        
 
@@ -1019,13 +1021,55 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   message.role === "user"
                       ? "bg-primary text-primary-foreground whitespace-pre-wrap" // Keep for user text
                       : "bg-muted overflow-auto"
-                  } ${message.isJSX ? '' : (message.role === 'assistant' ? '' : 'whitespace-pre-wrap')}`} // Only whitespace-pre-wrap for non-JSX user messages
+                  } ${message.isJSX ? '' : (message.role === 'assistant' ? '' : 'whitespace-pre-wrap')}`}
               >
                   {/* Render content with markdown for assistant messages, directly for JSX, or as text for user */}
                   {message.isJSX ? (
                     message.content
                   ) : message.role === 'assistant' ? (
-                    <MarkdownMessage content={message.content} />
+                    (() => {
+                      // Check for n8n links in the message content
+                      const { googleDocLink, pdfWebViewLink, pdfDownloadLink } = extractN8nLinks(message.content);
+                      // Also check for links as properties on the message object
+                      const docLink = message.googleDocLink || message.docUrl || googleDocLink;
+                      const pdfView = message.pdfWebViewLink || pdfWebViewLink;
+                      const pdfDownload = message.pdfDownloadLink || pdfDownloadLink;
+                      const hasN8nLinks = docLink || pdfView || pdfDownload;
+                      if (hasN8nLinks) {
+                        return (
+                          <div className="space-y-2">
+                            <div>{/* Always show the main message text (before links) */}
+                              <MarkdownMessage content={message.content.split('\n')[0]} />
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {pdfView && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <a href={pdfView} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="mr-2 h-4 w-4" /> View PDF
+                                  </a>
+                                </Button>
+                              )}
+                              {pdfDownload && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
+                                    <Download className="mr-2 h-4 w-4" /> Download PDF
+                                  </a>
+                                </Button>
+                              )}
+                              {docLink && (
+                                <Button variant="outline" size="sm" asChild>
+                                  <a href={docLink} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="mr-2 h-4 w-4" /> View Google Doc
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        return <MarkdownMessage content={message.content} />;
+                      }
+                    })()
                   ) : (
                     message.content
                   )}

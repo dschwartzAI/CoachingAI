@@ -203,6 +203,7 @@ export default function ChatLayout() {
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
         chats={chats}
+        setChats={setChatsSafely}
         currentChat={currentChat}
         setCurrentChat={setCurrentChatWithTracking}
         isLoading={isLoading}

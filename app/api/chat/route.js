@@ -304,7 +304,7 @@ export async function POST(request) {
             const { data: existingUserMsg, error: msgCheckError } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', lastMessage.content).eq('role', 'user').limit(1);
             if (msgCheckError) console.error('[CHAT_API_DEBUG] Error checking existing user message:', msgCheckError);
             if (!existingUserMsg || existingUserMsg.length === 0) {
-                const { error: saveMsgError } = await supabase.from('messages').insert({ thread_id: chatId, role: lastMessage.role, content: lastMessage.content, timestamp: lastMessage.timestamp || new Date().toISOString() });
+                const { error: saveMsgError } = await supabase.from('messages').insert({ thread_id: chatId, role: lastMessage.role, content: lastMessage.content, timestamp: lastMessage.timestamp || new Date().toISOString(), user_id: userId });
                 if (saveMsgError) console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError); else console.log('[CHAT_API_DEBUG] User message saved.');
             }
         }
@@ -491,8 +491,7 @@ export async function POST(request) {
             const contextMessages = recentMessages.slice(1, 5).reverse();
             if (contextMessages.length > 0) {
               let contextString = "For context, this is our chat history:";
-              contextMessages.forEach(msg => { contextString += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}
-`; });
+              contextMessages.forEach(msg => { contextString += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`; });
               messageWithContext = `${latestUserMessage}${contextString}`;
             }
         }
@@ -513,7 +512,10 @@ export async function POST(request) {
         model: OPENAI_MODEL, messages: messages, temperature: 0.7, max_tokens: 1000,
       });
       determinedAiResponseContent = completion.choices[0].message.content;
-      if (typeof determinedAiResponseContent !== 'string') {
+      // Remove citation/reference notations like 【6:6†source】 from the response
+      if (typeof determinedAiResponseContent === 'string') {
+        determinedAiResponseContent = determinedAiResponseContent.replace(/【\d+:\d+†source】/g, '').replace(/\s{2,}/g, ' ').trim();
+      } else {
         determinedAiResponseContent = JSON.stringify(determinedAiResponseContent);
       }
       console.log('[CHAT_API_DEBUG] Generic tool OpenAI response received.');
@@ -528,7 +530,7 @@ export async function POST(request) {
       if (asstMsgCheckErr) console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
       
       if (!existingAsstMsg || existingAsstMsg.length === 0) {
-        const msgObj = { thread_id: chatId, role: 'assistant', content: contentToSaveForDB, timestamp: new Date().toISOString() };
+        const msgObj = { thread_id: chatId, role: 'assistant', content: contentToSaveForDB, timestamp: new Date().toISOString(), user_id: userId };
         const { data: savedMsg, error: saveError } = await supabase.from('messages').insert(msgObj).select().single();
         if (saveError) console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError); else console.log('[CHAT_API_DEBUG] Asst message saved:', { id: savedMsg?.id });
       } else {

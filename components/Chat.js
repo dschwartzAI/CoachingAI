@@ -143,7 +143,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       const aiResponse = await getAIResponse('', {
         ...thread,
         messages: messages
-      });
+      }, user.id);
 
       if (aiResponse.error) {
         console.error('[Chat] AI Response Error during init:', aiResponse.error);
@@ -162,7 +162,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         timestamp: new Date().toISOString()
       };
       
-      const savedMessage = await saveMessage(assistantMessagePayload);
+      const savedMessage = await saveMessage(assistantMessagePayload, user.id);
 
       console.log('[Chat] Message saved:', { messageId: savedMessage.id });
 
@@ -351,7 +351,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         const response = await getAIResponse(userInput, {
           ...currentThread,
           messages: currentThread.messages
-        });
+        }, user.id);
         
         if (response.error) {
           console.error('[Chat] AI Response Error for first message:', response.error);
@@ -366,7 +366,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         };
         
         console.log('[Chat] Saving assistant message for first conversation turn');
-        const savedAssistantMessage = await saveMessage(assistantMessagePayload);
+        const savedAssistantMessage = await saveMessage(assistantMessagePayload, user.id);
         
         console.log('[Chat] Assistant message saved:', {
           messageId: savedAssistantMessage.id
@@ -411,7 +411,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
 
     try {
       console.log('[Chat] Saving user message to existing thread');
-      const savedUserMessage = await saveMessage(userMessagePayload);
+      const savedUserMessage = await saveMessage(userMessagePayload, user.id);
       console.log('[Chat] User message saved:', {
         messageId: savedUserMessage.id,
         content: savedUserMessage.content.substring(0, 30) + '...'
@@ -436,7 +436,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         currentQuestionKey: currentQuestionKey,
         questionsAnswered: questionsAnswered,
         collectedAnswers: collectedAnswers
-      });
+      }, user.id);
 
       if (response.error) {
         console.error('[Chat] AI Response Error on submit:', response.error);
@@ -452,7 +452,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       };
 
       console.log('[Chat] Saving assistant message');
-      const savedAssistantMessage = await saveMessage(assistantMessagePayload);
+      const savedAssistantMessage = await saveMessage(assistantMessagePayload, user.id);
       console.log('[Chat] Assistant message saved:', {
         messageId: savedAssistantMessage.id,
         content: savedAssistantMessage.content.substring(0, 30) + '...'

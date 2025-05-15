@@ -11,30 +11,36 @@ import {
   Loader2, 
   MessageSquare, 
   Plus,
-  Settings,
   ChevronDown,
+  ChevronUp,
   MessagesSquare,
   PenTool,
   LineChart,
   BrainCog,
   Search,
   Wrench,
-  Users
+  Trash2,
+  FileText,
+  ChevronRight
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
 import { createNewThread } from '@/lib/utils/thread';
+import { deleteThread } from '@/lib/utils/supabase';
 
 // Map tool IDs to icons
 const toolIcons = {
-  'hybrid-offer': <PenTool className="h-4 w-4 mr-2" />,
+  'hybrid-offer': <FileText className="h-4 w-4 mr-2" />,
   'content-repurposer': <BrainCog className="h-4 w-4 mr-2" />,
   'analytics': <LineChart className="h-4 w-4 mr-2" />
 };
 
-export default function Sidebar({ selectedTool, setSelectedTool, chats, currentChat, setCurrentChat, isLoading }) {
+export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading }) {
+  console.log('[Sidebar DEBUG] chats prop:', chats);
   const { user, signOut } = useAuth();
   const router = useRouter();
+  const [expandedChats, setExpandedChats] = useState(false);
+  const INITIAL_CHAT_COUNT = 5;
 
   const tools = Object.values(TOOLS);
 
@@ -63,6 +69,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
 
   // Show all non-temporary chats regardless of the selected tool
   const filteredChats = chats.filter(chat => !chat.isTemporary);
+  
+  // Only show a limited number of chats unless expanded
+  const visibleChats = expandedChats ? filteredChats : filteredChats.slice(0, INITIAL_CHAT_COUNT);
+  const hasMoreChats = filteredChats.length > INITIAL_CHAT_COUNT;
 
   // Get chat tool icon based on tool_id
   const getChatIcon = (chat) => {
@@ -73,6 +83,27 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
     return toolIcons[chat.tool_id] || <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />;
   };
 
+  // Delete chat handler
+  const handleDeleteChat = async (chatId) => {
+    try {
+      console.log('[Sidebar] Attempting to delete chat:', chatId);
+      await deleteThread(chatId);
+      console.log('[Sidebar] Chat deleted successfully:', chatId);
+      
+      // Remove from UI state
+      if (currentChat?.id === chatId) {
+        setCurrentChat(null);
+        setSelectedTool(null);
+      }
+      
+      // Remove from chats list
+      setChats(prev => prev.filter(chat => chat.id !== chatId));
+    } catch (err) {
+      console.error('[Sidebar] Delete chat error:', err);
+      alert('Failed to delete chat. Please try again.');
+    }
+  };
+
   return (
     <div className="w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0">
       {/* Header with logo */}
@@ -81,27 +112,20 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
           <MessageSquare className="h-5 w-5" />
           <span className="font-semibold">Coaching AI</span>
         </div>
-        <div className="ml-auto flex items-center">
-          <Search className="h-4 w-4 text-muted-foreground mr-2" />
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        </div>
       </div>
       
       <div className="flex-grow flex flex-col overflow-hidden">
         {/* Specialized Tools Section */}
         <div className="p-4 border-b">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center mb-3">
             <div className="flex items-center">
               <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
               <h2 className="text-sm font-medium">Specialized Tools</h2>
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat()}>
-              <Plus className="h-4 w-4" />
-            </Button>
           </div>
           <div className="space-y-1 ml-7">
             <Button
-              variant={!selectedTool ? "ghost" : "ghost"}
+              variant={!selectedTool ? "secondary" : "ghost"}
               className="w-full justify-start h-8 text-sm"
               onClick={() => handleNewChat(null)}
             >
@@ -130,9 +154,6 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
               <h2 className="text-sm font-medium">Chats</h2>
             </div>
             <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ChevronDown className="h-4 w-4" />
-              </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(selectedTool)}>
                 <Plus className="h-4 w-4" />
               </Button>
@@ -145,25 +166,46 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 <span className="text-xs">Loading...</span>
               </div>
-            ) : filteredChats.length > 0 ? (
+            ) : visibleChats.length > 0 ? (
               <div className="space-y-1 ml-7">
-                {filteredChats.map((chat) => (
-                  <Button
-                    key={chat.id}
-                    variant={currentChat?.id === chat.id ? "ghost" : "ghost"}
-                    className={`w-full justify-start px-2 h-8 text-sm hover:bg-muted ${
-                      currentChat?.id === chat.id ? "bg-muted" : ""
-                    }`}
-                    onClick={() => {
-                      setCurrentChat(chat);
-                      setSelectedTool(chat.tool_id || null);
-                    }}
-                    title={chat.title}
-                  >
-                    {getChatIcon(chat)}
-                    <span className="truncate">{chat.title}</span>
-                  </Button>
+                {visibleChats.map((chat) => (
+                  <div key={chat.id} className="flex items-center mb-1">
+                    <button 
+                      className="mr-1 p-1 rounded hover:bg-red-100 text-red-600" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChat(chat.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <Button
+                      variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
+                      className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                      onClick={() => {
+                        setCurrentChat(chat);
+                        setSelectedTool(chat.tool_id || null);
+                      }}
+                    >
+                      {getChatIcon(chat)}
+                      <span className="truncate">{chat.title}</span>
+                    </Button>
+                  </div>
                 ))}
+                
+                {hasMoreChats && (
+                  <Button 
+                    variant="ghost" 
+                    className="w-full text-xs text-muted-foreground flex items-center justify-center mt-2"
+                    onClick={() => setExpandedChats(!expandedChats)}
+                  >
+                    {expandedChats ? (
+                      <>Show less <ChevronDown className="h-3 w-3 ml-1" /></>
+                    ) : (
+                      <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronRight className="h-3 w-3 ml-1" /></>
+                    )}
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="text-center p-4 text-muted-foreground ml-7">
@@ -171,13 +213,6 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, currentC
               </div>
             )}
           </ScrollArea>
-          
-          <Button 
-            variant="ghost" 
-            className="w-full justify-start mt-2 text-xs text-muted-foreground ml-7"
-          >
-            View all
-          </Button>
         </div>
       </div>
 

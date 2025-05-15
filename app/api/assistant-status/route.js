@@ -82,7 +82,8 @@ export async function POST(request) {
             thread_id: chatId,
             role: 'assistant',
             content: responseText,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            user_id: userId
           };
           
           const { error: messageError } = await supabase
