@@ -1654,7 +1654,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
       {/* Input area - made responsive for mobile devices */}
       <div className="absolute bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-3 sm:p-4">
-        <form onSubmit={handleSubmit} className="flex flex-col space-y-2">
+        <form onSubmit={handleSubmit} className="flex flex-col space-y-2 mobile-input-wrapper">
           <div className="relative">
             <Textarea
               ref={textareaRef}
@@ -1662,9 +1662,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-sm sm:text-base"
+              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-base font-medium mobile-input"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
+              style={{ fontSize: '16px' }} /* Prevent iOS zoom by ensuring min 16px font */
             />
             <Button
               type="submit"
