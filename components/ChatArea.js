@@ -31,6 +31,17 @@ function MarkdownMessage({ content }) {
     <ReactMarkdown
       //className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
       remarkPlugins={[remarkGfm]}
+      components={{
+        // Allow <a> tags to be rendered properly
+        a: ({ node, ...props }) => (
+          <a 
+            {...props} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-blue-600 hover:underline"
+          />
+        )
+      }}
     >
       {content}
     </ReactMarkdown>
@@ -48,6 +59,127 @@ function extractN8nLinks(content) {
     pdfWebViewLink: pdfWebViewMatch ? pdfWebViewMatch[1] : null,
     pdfDownloadLink: pdfDownloadMatch ? pdfDownloadMatch[1] : null,
   };
+}
+
+// Add a function to check if a message is a document message
+function isDocumentMessage(message) {
+  return (
+    typeof message.content === 'string' && 
+    (message.content.includes('Document generated successfully') || 
+     message.content.includes('generating your document') ||
+     (message.metadata?.documentLinks && Object.values(message.metadata.documentLinks).some(link => link)))
+  );
+}
+
+// Function to render HTML content directly
+function HTMLContent({ content }) {
+  // Parse the content to extract links and render them as proper React components
+  const processContent = () => {
+    if (!content) return '';
+    
+    try {
+      // Create a temporary div to parse the HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = content;
+      
+      // Extract all links
+      const links = [];
+      const linkElements = tempDiv.querySelectorAll('a');
+      linkElements.forEach((link, index) => {
+        const href = link.getAttribute('href');
+        const text = link.textContent;
+        const isDownload = link.hasAttribute('download');
+        
+        links.push({
+          href,
+          text,
+          isDownload,
+          index,
+          outerHTML: link.outerHTML // Store the original HTML for comparison
+        });
+      });
+      
+      // If no links found, just return the content as is
+      if (links.length === 0) {
+        return <span>{content.replace(/<[^>]*>/g, '')}</span>;
+      }
+      
+      // Split content at link positions
+      let remainingContent = content;
+      const fragments = [];
+      
+      links.forEach((link, i) => {
+        const linkIndex = remainingContent.indexOf(link.outerHTML);
+        if (linkIndex >= 0) {
+          // Add text before the link
+          if (linkIndex > 0) {
+            fragments.push({
+              type: 'text',
+              content: remainingContent.substring(0, linkIndex).replace(/<[^>]*>/g, ''),
+              key: `text-${i}`
+            });
+          }
+          
+          // Add the link
+          fragments.push({
+            type: 'link',
+            href: link.href,
+            text: link.text,
+            isDownload: link.isDownload,
+            key: `link-${i}`
+          });
+          
+          // Update remaining content
+          remainingContent = remainingContent.substring(linkIndex + link.outerHTML.length);
+        }
+      });
+      
+      // Add any remaining text
+      if (remainingContent) {
+        fragments.push({
+          type: 'text',
+          content: remainingContent.replace(/<[^>]*>/g, ''),
+          key: `text-final`
+        });
+      }
+      
+      // Render the fragments
+      return (
+        <div className="space-y-2">
+          {fragments.map(fragment => {
+            if (fragment.type === 'text') {
+              return <span key={fragment.key}>{fragment.content}</span>;
+            } else {
+              return (
+                <a 
+                  key={fragment.key}
+                  href={fragment.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={fragment.isDownload}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  {fragment.text}
+                </a>
+              );
+            }
+          })}
+        </div>
+      );
+    } catch (error) {
+      console.error('Error processing HTML content:', error);
+      // Fallback to simply removing HTML tags
+      return <span>{content.replace(/<[^>]*>/g, '')}</span>;
+    }
+  };
+  
+  // If we're in the browser, process the content with React elements
+  if (typeof document !== 'undefined') {
+    return processContent();
+  }
+  
+  // Fallback to dangerouslySetInnerHTML if running on server
+  return <div dangerouslySetInnerHTML={{ __html: content }} />;
 }
 
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
@@ -97,7 +229,50 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null));
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-        setIsWaitingForN8n(false);
+        
+        // Check if this thread has a document being generated
+        if (currentChat.metadata.isGeneratingDocument === true) {
+          console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
+          setIsWaitingForN8n(true);
+          
+          // If document generation is in progress, check if we should reconnect to the stream
+          if (currentChat.metadata.generationStartTime) {
+            const startTime = new Date(currentChat.metadata.generationStartTime);
+            const now = new Date();
+            const elapsedMs = now - startTime;
+            const MAX_GENERATION_TIME = 5 * 60 * 1000; // 5 minutes
+            
+            if (elapsedMs < MAX_GENERATION_TIME) {
+              // Document generation started recently, reconnect to the stream
+              console.log(`[ChatArea Context Change Effect] Document generation in progress (started ${Math.round(elapsedMs/1000)}s ago), reconnecting to stream...`);
+              
+              // Reconnect to the stream if we have the necessary data
+              if (currentChat.metadata.collectedAnswers) {
+                try {
+                  const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
+                  connectToN8nResultStream(currentChat.id, encodedAnswers);
+                  console.log(`[ChatArea Context Change Effect] Reconnected to N8n stream with thread ID: ${currentChat.id}`);
+                } catch (err) {
+                  console.error(`[ChatArea Context Change Effect] Error reconnecting to stream:`, err);
+                  setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+                }
+              } else {
+                console.warn(`[ChatArea Context Change Effect] Cannot reconnect to stream: missing collectedAnswers`);
+                setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+              }
+            } else {
+              // Document generation started a while ago, assume it's still in progress but don't reconnect
+              console.log(`[ChatArea Context Change Effect] Document generation started ${Math.round(elapsedMs/1000)}s ago, showing loading state without reconnecting`);
+              setIsWaitingForN8n(true); // Just set the loading state
+            }
+          } else {
+            // No start time available, just set the loading state
+            setIsWaitingForN8n(true);
+          }
+        } else {
+          setIsWaitingForN8n(false);
+        }
+        
         // If we have metadata, this thread was already initiated in the past
         setInitiationAttemptedForContext(true);
       } else {
@@ -125,7 +300,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
          setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
          setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-         // Avoid resetting isWaitingForN8n here
+         
+         // Check document generation state
+         if (currentChat.metadata.isGeneratingDocument === true) {
+           setIsWaitingForN8n(true);
+         } else if (currentChat.metadata.isGeneratingDocument === false) {
+           setIsWaitingForN8n(false);
+         }
+         // Otherwise don't change isWaitingForN8n
       }
     }
 
@@ -368,15 +550,81 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                chatId: currentChat.id // Explicitly include the chatId
            }),
        });
+
         if (!response.ok) {
            console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
            const errorData = await response.json().catch(() => ({ error: "Request failed with status: " + response.status }));
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
         
-        const data = await response.json();
+       // Check if this is a streaming response (regular chat) or a JSON response (tool chat)
+       const contentType = response.headers.get('Content-Type');
+       let data;
+       
+       if (false && contentType && contentType.includes('text/plain')) {
+           // Handle streaming response for regular chat
+           console.log("[CHAT_DEBUG] Handling text/plain streaming response");
+           const reader = response.body.getReader();
+           const decoder = new TextDecoder();
+           let responseText = '';
+           
+           // Read the streamed response
+           try {
+             while (true) {
+                 const { done, value } = await reader.read();
+                 if (done) break;
+                 const chunk = decoder.decode(value, { stream: true });
+                 console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
+                 responseText += chunk;
+                 
+                 // Update the UI with each chunk as it arrives
+                 const tempAssistantMessage = { role: 'assistant', content: responseText, isStreaming: true };
+                 const updatedChatTemp = {
+                   ...chatToUpdate,
+                   id: response.headers.get('X-Chat-Id') || tempId,
+                   messages: [...updatedMessages, tempAssistantMessage],
+                 };
+                 setCurrentChat(updatedChatTemp);
+             }
+             
+             // Final decoding to flush any remaining bytes
+             const finalText = decoder.decode();
+             if (finalText) responseText += finalText;
+             
+             console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
+           } catch (streamError) {
+             console.error("[CHAT_DEBUG] Stream reading error:", streamError);
+             responseText += "\n\nAn error occurred while reading the response.";
+           }
+           
+           // Create a simple data object that mimics the structure of the JSON response
+           data = {
+               message: responseText,
+               chatId: response.headers.get('X-Chat-Id') || currentChat.id,
+               isTextResponse: true // Flag to indicate this is a plain text response
+           };
+       } else {
+           // Handle JSON response for tool-based chat
+           try {
+               data = await response.json();
+               console.log("[CHAT_DEBUG] JSON response data:", {
+                   chatId: data.chatId,
+                   messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
+               });
+           } catch (error) {
+               console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
+               throw new Error("Failed to parse response from server");
+           }
+       }
+       
         console.log("[CHAT_DEBUG] API response data:", {
-          responseData: JSON.stringify({
+         responseData: data.isTextResponse ? 
+           {
+             chatId: data.chatId,
+             messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : '',
+             isTextResponse: true
+           } : 
+           JSON.stringify({
             chatId: data.chatId,
             messageContent: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
             currentQuestionKey: data.currentQuestionKey,
@@ -422,11 +670,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             ? { role: 'assistant', content: data.message }
             : data.message || { role: 'assistant', content: "I couldn't generate a proper response." };
             
-        // Use returned data
-        const returnedAnswers = data.collectedAnswers || collectedAnswers || {};
-        const nextQuestionKey = data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey;
-        const updatedQuestionsAnswered = data.questionsAnswered !== undefined ? data.questionsAnswered : questionsAnswered;
-        const isComplete = data.isComplete || false;
+        // Use returned data or default values for text responses
+        const returnedAnswers = data.isTextResponse ? {} : (data.collectedAnswers || collectedAnswers || {});
+        const nextQuestionKey = data.isTextResponse ? null : (data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey);
+        const updatedQuestionsAnswered = data.isTextResponse ? 0 : (data.questionsAnswered !== undefined ? data.questionsAnswered : questionsAnswered);
+        const isComplete = data.isTextResponse ? false : (data.isComplete || false);
         const correctChatId = data.chatId; 
 
         if (!correctChatId) {
@@ -436,7 +684,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
         console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
         
-        // Log detailed information about returned answers
+        // Log detailed information about returned answers (skip for text responses)
+        if (!data.isTextResponse) {
         console.log("[CHAT_DEBUG] Processing returned answers:", {
           returnedKeys: Object.keys(returnedAnswers),
           currentKeys: Object.keys(collectedAnswers),
@@ -445,11 +694,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           previousQuestionKey: currentQuestionKey,
           questionsAnswered: updatedQuestionsAnswered
         });
+        }
 
         // Ensure we're preserving all previous answers and adding new ones
+        // Skip state updates for text responses as they don't affect tool state
+        if (!data.isTextResponse) {
         setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
         setQuestionsAnswered(updatedQuestionsAnswered);
+        }
 
         // Construct the updated current chat state with API response data
         const finalCurrentChat = {
@@ -457,26 +710,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           id: correctChatId, // IMPORTANT: Use the ID from the API response
           messages: [...updatedMessages, assistantMessage], // User + assistant messages
           tool_id: selectedTool, // Preserve/ensure tool_id is correct
-          
-          // Update metadata with the new state from the API response
-          metadata: {
-            currentQuestionKey: nextQuestionKey, // from data.currentQuestionKey or data.nextQuestionKey
-            questionsAnswered: updatedQuestionsAnswered, // from data.questionsAnswered
-            collectedAnswers: returnedAnswers,         // from data.collectedAnswers
-            isComplete: isComplete                     // from data.isComplete
-          },
-
-          // Also update top-level convenience properties for immediate UI consistency
+        };
+        
+        // Only add metadata for tool-based chats, not for regular chat text responses
+        if (!data.isTextResponse) {
+          finalCurrentChat.metadata = {
           currentQuestionKey: nextQuestionKey,
           questionsAnswered: updatedQuestionsAnswered,
           collectedAnswers: returnedAnswers,
           isComplete: isComplete
         };
+          
+          // Also update top-level convenience properties for immediate UI consistency
+          finalCurrentChat.currentQuestionKey = nextQuestionKey;
+          finalCurrentChat.questionsAnswered = updatedQuestionsAnswered;
+          finalCurrentChat.collectedAnswers = returnedAnswers;
+          finalCurrentChat.isComplete = isComplete;
+        }
         
         console.log("[CHAT_DEBUG] Final chat state constructed:", {
           finalChatId: finalCurrentChat.id,
           finalMessageCount: finalCurrentChat.messages.length,
-          basedOnChatId: chatToUpdate.id
+          basedOnChatId: chatToUpdate.id,
+          isTextResponse: data.isTextResponse
         });
 
         // Update both the current chat state AND the chats list
@@ -622,6 +878,72 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       chatHistoryLength: chatHistory.length
     });
 
+    // First, save an initial document generation message that will persist across refreshes
+    try {
+      if (user?.id) {
+        // Save both a text message for DB persistence and thread-level metadata to track generation state
+        const initialMessagePayload = {
+          thread_id: chatId,
+          role: 'assistant',
+          content: `
+          <div class="document-generation-status">
+            <p>📝 <strong>I'm generating your document now.</strong> Please wait...</p>
+            <p>This typically takes about 1 minute to complete.</p>
+            <p>You can safely refresh the page - the document will appear here when it's ready.</p>
+          </div>
+          `,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            isGenerating: true,
+            generationStarted: new Date().toISOString()
+          }
+        };
+        console.log('[SSE Connect] Saving initial document generation message to DB:', initialMessagePayload);
+        saveMessage(initialMessagePayload, user.id)
+          .then(() => {
+            console.log('[SSE Connect] Successfully saved initial document message to DB.');
+            // Also update the thread metadata to indicate document generation is in progress
+            return fetch('/api/update-thread-metadata', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                threadId: chatId,
+                metadata: {
+                  ...currentChat?.metadata,
+                  isGeneratingDocument: true,
+                  generationStartTime: new Date().toISOString()
+                }
+              })
+            });
+          })
+          .then(response => {
+            if (!response.ok) {
+              console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
+            } else {
+              console.log('[SSE Connect] Successfully updated thread metadata for document generation');
+            }
+          })
+          .catch(err => console.error('[SSE Connect] Error in document generation setup:', err));
+          
+        // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
+        const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
+        setChats(prevChats => prevChats.map(c => {
+          if (c.id === chatId) {
+            // Make sure we append to the end of the messages array
+            return {...c, messages: [...c.messages, initialMessage]};
+          }
+          return c;
+        }));
+        if (currentChat?.id === chatId) {
+          setCurrentChat(prevChat => ({...prevChat, messages: [...prevChat.messages, initialMessage]}));
+        }
+      } else {
+        console.warn('[SSE Connect] Cannot save initial document message - no user ID');
+      }
+    } catch (initErr) {
+      console.error('[SSE Connect] Error saving initial document message:', initErr);
+    }
+
     // We need to use a custom implementation for EventSource with POST
     // First, make the initial request to establish the connection
     fetch('/api/n8n-result', {
@@ -649,7 +971,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Process each event (separated by double newlines)
         const events = buffer.split('\n\n');
-        buffer = events.pop() || ''; // Keep the last incomplete event in the buffer
+        buffer = events.pop() || '';
         
         events.forEach(eventStr => {
           if (!eventStr.trim()) return;
@@ -686,124 +1008,201 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         });
       };
       
-      // Handle n8n_result events (same as the original implementation)
+      // Handle n8n_result events
       const handleN8nResult = (eventData) => {
-        console.log("[SSE Connect] Received n8n_result event:", eventData);
-        let resultMessageContent = null; // For immediate JSX display
+        console.log("[SSE Connect] Received n8n_result event:", JSON.stringify(eventData, null, 2));
         let contentToSaveToDB = null;   // For saving to DB
         let n8nResultData = null;
 
         try {
           if (eventData.success && eventData.data) {
             n8nResultData = eventData.data; // Store for later use
+            console.log("[SSE Connect] Parsed n8n result data:", JSON.stringify(n8nResultData, null, 2));
             
-            // 1. Construct JSX for immediate display
-            resultMessageContent = (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 font-medium">
-                   <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
-                   <span>Document generated successfully!</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                   {n8nResultData.pdfWebViewLink && (
-                     <Button variant="outline" size="sm" asChild>
-                        <a href={n8nResultData.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-                        </a>
-                     </Button>
-                   )}
-                   {n8nResultData.pdfDownlaodLink && (
-                     <Button variant="outline" size="sm" asChild>
-                        <a href={n8nResultData.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download>
-                           <Download className="mr-2 h-4 w-4" /> Download PDF
-                        </a>
-                     </Button>
-                   )}
-                   {n8nResultData.googleDocLink && (
-                      <Button variant="outline" size="sm" asChild>
-                         <a href={n8nResultData.googleDocLink} target="_blank" rel="noopener noreferrer">
-                             <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                         </a>
-                      </Button>
-                    )}
-                    {n8nResultData.docUrl && !n8nResultData.googleDocLink && (
-                      <Button variant="outline" size="sm" asChild>
-                         <a href={n8nResultData.docUrl} target="_blank" rel="noopener noreferrer">
-                             <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                         </a>
-                      </Button>
-                    )}
-                    {n8nResultData.offerInMd && (
-                         <MarkdownMessage content={n8nResultData.offerInMd} />
-                    )}
-                </div>
-              </div>
-            );
-
-            // 2. Construct Text content for DB saving
-            let dbText = "Document generated successfully.";
-            if (n8nResultData.pdfWebViewLink) dbText += `\nView PDF: ${n8nResultData.pdfWebViewLink}`;
-            if (n8nResultData.pdfDownlaodLink) dbText += `\nDownload PDF: ${n8nResultData.pdfDownlaodLink}`;
-            if (n8nResultData.googleDocLink) dbText += `\nView Google Doc: ${n8nResultData.googleDocLink}`;
+            // Fix any potential typos in keys and ensure all link properties are present
+            if (n8nResultData.pdfDownlaodLink && !n8nResultData.pdfDownloadLink) {
+              n8nResultData.pdfDownloadLink = n8nResultData.pdfDownlaodLink;
+            }
+            
+            // Look for different possible property names for document links
+            const googleDocLink = n8nResultData.googleDocLink || n8nResultData.docUrl || n8nResultData.googleDocURL;
+            const pdfViewLink = n8nResultData.pdfWebViewLink || n8nResultData.pdfViewUrl || n8nResultData.viewPdfUrl;
+            const pdfDownloadLink = n8nResultData.pdfDownloadLink || n8nResultData.pdfDownlaodLink || n8nResultData.downloadPdfUrl;
+            
+            // Log all potential links to debug
+            console.log("[SSE Connect] Document links extracted:", {
+              googleDocLink,
+              pdfViewLink,
+              pdfDownloadLink,
+              rawData: n8nResultData
+            });
+            
+            // Update n8nResultData with normalized links
+            n8nResultData = {
+              ...n8nResultData,
+              googleDocLink: googleDocLink,
+              pdfWebViewLink: pdfViewLink,
+              pdfDownloadLink: pdfDownloadLink
+            };
+            
+            // Construct plain text version with HTML links embedded directly in the content
+            let dbText = "✅ Document generated successfully!\n\n";
+            
+            if (googleDocLink) {
+              dbText += `<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\n`;
+            }
+            
+            if (pdfViewLink) {
+              dbText += `<a href="${pdfViewLink}" target="_blank" rel="noopener noreferrer">View PDF</a>\n\n`;
+            }
+            
+            if (pdfDownloadLink) {
+              dbText += `<a href="${pdfDownloadLink}" target="_blank" rel="noopener noreferrer" download>Download PDF</a>\n\n`;
+            }
+            
+            // Also add plain text links as a fallback
+            dbText += "\n\nLinks:\n";
+            if (googleDocLink) dbText += `Google Doc: ${googleDocLink}\n`;
+            if (pdfViewLink) dbText += `View PDF: ${pdfViewLink}\n`;
+            if (pdfDownloadLink) dbText += `Download PDF: ${pdfDownloadLink}\n`;
+            
             contentToSaveToDB = dbText;
-
           } else {
             throw new Error(eventData.message || 'Received unsuccessful result from server.');
           }
         } catch (parseError) {
           console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
-          resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
-          contentToSaveToDB = "Document generated, but link display failed."; // Save fallback text
+          contentToSaveToDB = "Document generated, but there was an issue displaying the links."; 
         }
 
-        // 3. Save the text version to DB (if content exists and chat context is still valid)
-        const finalChatId = currentChat?.id; 
-        if (contentToSaveToDB && finalChatId && finalChatId === chatId) {
+        // Save the text version to DB (if content exists)
+        if (contentToSaveToDB && user?.id) {
           try {
+            // Create a dedicated links object for better debugging and access
+            const documentLinks = {
+              googleDocLink: n8nResultData?.googleDocLink,
+              pdfWebViewLink: n8nResultData?.pdfWebViewLink,
+              pdfDownloadLink: n8nResultData?.pdfDownloadLink
+            };
+            
+            console.log("[SSE Connect] Document links to save:", documentLinks);
+            
             const messagePayload = {
-              thread_id: finalChatId,
+              thread_id: chatId,
               role: 'assistant',
               content: contentToSaveToDB,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              metadata: {
+                documentLinks: documentLinks,
+                isGenerating: false,
+                generationCompleted: new Date().toISOString()
+              }
             };
-            console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
-            saveMessage(messagePayload, user?.id);
-            console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
+            console.log('[SSE Connect] Saving n8n result message to DB:', JSON.stringify(messagePayload, null, 2));
+            
+            // Update thread metadata to indicate generation is complete
+            fetch('/api/update-thread-metadata', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                threadId: chatId,
+                metadata: {
+                  ...currentChat?.metadata,
+                  isGeneratingDocument: false,
+                  documentGenerated: true,
+                  documentLinks: documentLinks,
+                  generationCompleteTime: new Date().toISOString()
+                }
+              })
+            }).then(response => {
+              if (!response.ok) {
+                console.warn('[SSE Connect] Failed to update thread metadata after completion:', response.status);
+              } else {
+                console.log('[SSE Connect] Successfully updated thread metadata for document completion');
+              }
+            }).catch(err => {
+              console.error('[SSE Connect] Error updating thread metadata:', err);
+            });
+            
+            // Call saveMessage and wait for it to complete
+            saveMessage(messagePayload, user.id)
+              .then(() => {
+                console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', chatId);
+                
+                // Update the UI for other open instances of this chat
+                const documentMessage = { 
+                  role: 'assistant', 
+                  content: contentToSaveToDB,
+                  metadata: {
+                    documentLinks: documentLinks
+                  }
+                };
+                
+                // Remove any "generating document" messages and add the new result message at the end
+                setCurrentChat(prevChat => {
+                  if (!prevChat || prevChat.id !== chatId) return prevChat;
+                  
+                  // Filter out any "generating document" messages first
+                  const filteredMessages = prevChat.messages.filter(m => 
+                    !(typeof m.content === 'string' && (
+                      m.content.includes("generating your document") || 
+                      m.content.includes("document-generation-status"))
+                    )
+                  );
+                  
+                  // Always add the new document message at the end
+                  return {...prevChat, messages: [...filteredMessages, documentMessage]};
+                });
+                
+                setChats(prevChats => prevChats.map(c => {
+                  if (c.id === chatId) {
+                    // Filter out any "generating document" messages
+                    const filteredMessages = c.messages.filter(m => 
+                      !(typeof m.content === 'string' && (
+                        m.content.includes("generating your document") || 
+                        m.content.includes("document-generation-status"))
+                      )
+                    );
+                    
+                    // Always add the new document message at the end
+                    return {...c, messages: [...filteredMessages, documentMessage]};
+                  }
+                  return c;
+                }));
+                
+                // Clear the waiting state
+                setIsWaitingForN8n(false);
+              })
+              .catch(dbError => {
+                console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+              });
           } catch (dbError) {
-            console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+            console.error('[SSE Connect] Error preparing to save n8n result message to DB:', dbError);
           }
         } else {
-          console.warn(`[SSE Connect] Did not save n8n result message to DB. Context Changed? chatId=${chatId}, finalChatId=${finalChatId}, contentExists=${!!contentToSaveToDB}`);
+          console.warn(`[SSE Connect] Did not save n8n result message to DB. No user ID or content. contentExists=${!!contentToSaveToDB}, userId=${!!user?.id}`);
         }
-
-        // 4. Update React state with JSX for immediate display
-        if (resultMessageContent !== null && finalChatId && finalChatId === chatId) {
-          const resultMessageForState = { role: 'assistant', content: resultMessageContent, isJSX: true }; 
-          setCurrentChat(prevChat => {
-            if (!prevChat || prevChat.id !== finalChatId) return prevChat;
-            return {...prevChat, messages: [...prevChat.messages, resultMessageForState]};
-          });
-          setChats(prevChats => prevChats.map(c => {
-            if (c.id === finalChatId) {
-              return {...c, messages: [...c.messages, resultMessageForState]};
-            }
-            return c;
-          }));
-        } else {
-          console.warn("[SSE Connect] Could not add result message to UI state - chat context might have changed or content was null.");
-        }
-
-        // 5. Finalize SSE handling
-        setIsWaitingForN8n(false);
-        console.log("[SSE Connect] Processed n8n_result successfully.");
-        textareaRef.current?.focus();
       };
       
       // Handle error events
       const handleErrorEvent = (eventData) => {
         console.error("[SSE Connect] Received error event:", eventData);
         
-        // Add an error message to the chat
+        // Always save error to DB so it persists through refreshes
+        if (user?.id) {
+          const errorMessagePayload = {
+            thread_id: chatId,
+            role: 'assistant',
+            content: eventData.message || "Connection error while generating document. Please try again later.",
+            timestamp: new Date().toISOString()
+          };
+          
+          saveMessage(errorMessagePayload, user.id)
+            .then(() => console.log('[SSE Connect] Successfully saved error message to DB.'))
+            .catch(err => console.error('[SSE Connect] Error saving error message:', err));
+        }
+        
+        // Add an error message to the chat if we're on the relevant chat
         const sseErrorMessage = { 
           role: 'assistant', 
           content: eventData.message || "Connection error while generating document. Please try again later.", 
@@ -811,8 +1210,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }; 
         
         if (currentChat?.id === chatId) {
-          setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
-          setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
+          setCurrentChat(prevChat => {
+            if (!prevChat) return null;
+            
+            // Remove any "generating document" messages
+            const filteredMessages = prevChat.messages.filter(m => 
+              m.content !== "I'm generating your document now. Please wait..."
+            );
+            
+            return {...prevChat, messages: [...filteredMessages, sseErrorMessage]};
+          });
+          
+          setChats(prevChats => prevChats.map(c => {
+            if (c.id === chatId) {
+              // Remove any "generating document" messages
+              const filteredMessages = c.messages.filter(m => 
+                m.content !== "I'm generating your document now. Please wait..."
+              );
+              return {...c, messages: [...filteredMessages, sseErrorMessage]};
+            }
+            return c;
+          }));
         }
         
         setIsWaitingForN8n(false);
@@ -835,6 +1253,20 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           console.error("[SSE Connect] Error reading from stream:", error);
           setIsWaitingForN8n(false);
           
+          // Save stream error to DB
+          if (user?.id) {
+            const streamErrorPayload = {
+              thread_id: chatId,
+              role: 'assistant',
+              content: "Error streaming document data. Please try again.",
+              timestamp: new Date().toISOString()
+            };
+            
+            saveMessage(streamErrorPayload, user.id)
+              .then(() => console.log('[SSE Connect] Successfully saved stream error message to DB.'))
+              .catch(err => console.error('[SSE Connect] Error saving stream error message:', err));
+          }
+          
           // Add an error message to the chat
           const streamErrorMessage = { 
             role: 'assistant', 
@@ -843,8 +1275,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           };
           
           if (currentChat?.id === chatId) {
-            setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, streamErrorMessage]} : null);
-            setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, streamErrorMessage]} : c));
+            setCurrentChat(prevChat => {
+              if (!prevChat) return null;
+              
+              // Remove any "generating document" messages
+              const filteredMessages = prevChat.messages.filter(m => 
+                m.content !== "I'm generating your document now. Please wait..."
+              );
+              
+              return {...prevChat, messages: [...filteredMessages, streamErrorMessage]};
+            });
+            
+            setChats(prevChats => prevChats.map(c => {
+              if (c.id === chatId) {
+                // Remove any "generating document" messages
+                const filteredMessages = c.messages.filter(m => 
+                  m.content !== "I'm generating your document now. Please wait..."
+                );
+                return {...c, messages: [...filteredMessages, streamErrorMessage]};
+              }
+              return c;
+            }));
           }
           
           textareaRef.current?.focus();
@@ -858,6 +1309,20 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       console.error("[SSE Connect] Fetch error:", error);
       setIsWaitingForN8n(false);
       
+      // Save connection error to DB
+      if (user?.id) {
+        const connectionErrorPayload = {
+          thread_id: chatId,
+          role: 'assistant',
+          content: `Connection error: ${error.message}. Please try again later.`,
+          timestamp: new Date().toISOString()
+        };
+        
+        saveMessage(connectionErrorPayload, user.id)
+          .then(() => console.log('[SSE Connect] Successfully saved connection error message to DB.'))
+          .catch(err => console.error('[SSE Connect] Error saving connection error message:', err));
+      }
+      
       // Add an error message to the chat
       const connectionErrorMessage = { 
         role: 'assistant', 
@@ -866,8 +1331,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       };
       
       if (currentChat?.id === chatId) {
-        setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, connectionErrorMessage]} : null);
-        setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, connectionErrorMessage]} : c));
+        setCurrentChat(prevChat => {
+          if (!prevChat) return null;
+          
+          // Remove any "generating document" messages
+          const filteredMessages = prevChat.messages.filter(m => 
+            m.content !== "I'm generating your document now. Please wait..."
+          );
+          
+          return {...prevChat, messages: [...filteredMessages, connectionErrorMessage]};
+        });
+        
+        setChats(prevChats => prevChats.map(c => {
+          if (c.id === chatId) {
+            // Remove any "generating document" messages
+            const filteredMessages = c.messages.filter(m => 
+              m.content !== "I'm generating your document now. Please wait..."
+            );
+            return {...c, messages: [...filteredMessages, connectionErrorMessage]};
+          }
+          return c;
+        }));
       }
       
       textareaRef.current?.focus();
@@ -1028,42 +1512,74 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                     message.content
                   ) : message.role === 'assistant' ? (
                     (() => {
-                      // Check for n8n links in the message content
-                      const { googleDocLink, pdfWebViewLink, pdfDownloadLink } = extractN8nLinks(message.content);
-                      // Also check for links as properties on the message object
-                      const docLink = message.googleDocLink || message.docUrl || googleDocLink;
-                      const pdfView = message.pdfWebViewLink || pdfWebViewLink;
-                      const pdfDownload = message.pdfDownloadLink || pdfDownloadLink;
-                      const hasN8nLinks = docLink || pdfView || pdfDownload;
-                      if (hasN8nLinks) {
+                      // Check if this is a document message with HTML links
+                      if (isDocumentMessage(message) && 
+                          typeof message.content === 'string' && 
+                          message.content.includes('<a href="')) {
+                        // For document messages with HTML links, render the HTML directly
+                        return <HTMLContent content={message.content} />;
+                      }
+                      
+                      // First check if message has metadata with document links
+                      const documentLinks = message.metadata?.documentLinks;
+                      const hasMetadataLinks = documentLinks && (documentLinks.googleDocLink || documentLinks.pdfWebViewLink || documentLinks.pdfDownloadLink);
+                      
+                      // Then check for n8n links in the message content as a fallback
+                      const extractedLinks = extractN8nLinks(message.content);
+                      const hasExtractedLinks = extractedLinks.googleDocLink || extractedLinks.pdfWebViewLink || extractedLinks.pdfDownloadLink;
+                      
+                      // Combine links, prioritizing metadata links
+                      const docLink = documentLinks?.googleDocLink || extractedLinks.googleDocLink;
+                      const pdfView = documentLinks?.pdfWebViewLink || extractedLinks.pdfWebViewLink;
+                      const pdfDownload = documentLinks?.pdfDownloadLink || extractedLinks.pdfDownloadLink;
+                      
+                      // Debug log for link extraction
+                      if (hasMetadataLinks || hasExtractedLinks) {
+                        console.log('[Message Rendering] Found document links:', {
+                          fromMetadata: hasMetadataLinks ? documentLinks : null,
+                          fromContent: hasExtractedLinks ? extractedLinks : null,
+                          final: { docLink, pdfView, pdfDownload }
+                        });
+                      }
+                      
+                      const hasAnyLinks = docLink || pdfView || pdfDownload;
+                      
+                      // Check if this message is about document generation
+                      const isDocMessage = typeof message.content === 'string' && 
+                        (message.content.includes('Document generated successfully') || 
+                         message.content.includes('generating your document'));
+                         
+                      if (hasAnyLinks || isDocMessage) {
                         return (
                           <div className="space-y-2">
-                            <div>{/* Always show the main message text (before links) */}
+                            <div>{/* Show the message text */}
                               <MarkdownMessage content={message.content.split('\n')[0]} />
                             </div>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {pdfView && (
-                                <Button variant="outline" size="sm" asChild>
-                                  <a href={pdfView} target="_blank" rel="noopener noreferrer">
-                                    <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-                                  </a>
-                                </Button>
-                              )}
-                              {pdfDownload && (
-                                <Button variant="outline" size="sm" asChild>
-                                  <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
-                                    <Download className="mr-2 h-4 w-4" /> Download PDF
-                                  </a>
-                                </Button>
-                              )}
-                              {docLink && (
-                                <Button variant="outline" size="sm" asChild>
-                                  <a href={docLink} target="_blank" rel="noopener noreferrer">
-                                    <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                                  </a>
-                                </Button>
-                              )}
-                            </div>
+                            {hasAnyLinks && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {pdfView && (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <a href={pdfView} target="_blank" rel="noopener noreferrer">
+                                      <ExternalLink className="mr-2 h-4 w-4" /> View PDF
+                                    </a>
+                                  </Button>
+                                )}
+                                {pdfDownload && (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
+                                      <Download className="mr-2 h-4 w-4" /> Download PDF
+                                    </a>
+                                  </Button>
+                                )}
+                                {docLink && (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <a href={docLink} target="_blank" rel="noopener noreferrer">
+                                      <FileText className="mr-2 h-4 w-4" /> View Google Doc
+                                    </a>
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       } else {

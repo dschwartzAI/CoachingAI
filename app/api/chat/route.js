@@ -9,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const OPENAI_MODEL = "gpt-4o-mini";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 // Add your GPT Assistant ID here
 const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
@@ -95,7 +95,6 @@ Return only JSON: { "isValid": boolean, "reason": "explanation if invalid" }`
       model: OPENAI_MODEL,
       messages: validationPrompt,
       temperature: 0.3, // Lower temperature for more consistent validation
-      max_tokens: 150,
       response_format: { type: "json_object" }
     });
 
@@ -480,36 +479,136 @@ export async function POST(request) {
       console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
 
     } else if (!tool) {
-      console.log('[CHAT_API_DEBUG] Using GPT Assistant for regular chat');
+      console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');
       try {
-        const thread = await openai.beta.threads.create();
-        const threadId = thread.id;
-        const latestUserMessage = messages[messages.length - 1].content;
-        let messageWithContext = latestUserMessage;
-        const { data: recentMessages, error: recentMessagesError } = await supabase.from('messages').select('role, content').eq('thread_id', chatId).order('timestamp', { ascending: false }).limit(5);
-        if (!recentMessagesError && recentMessages && recentMessages.length > 1) {
-            const contextMessages = recentMessages.slice(1, 5).reverse();
-            if (contextMessages.length > 0) {
-              let contextString = "For context, this is our chat history:";
-              contextMessages.forEach(msg => { contextString += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`; });
-              messageWithContext = `${latestUserMessage}${contextString}`;
-            }
-        }
-        await openai.beta.threads.messages.create(threadId, { role: "user", content: messageWithContext });
-        const run = await openai.beta.threads.runs.create(threadId, { assistant_id: GPT_ASSISTANT_ID });
-        return NextResponse.json({
-          message: "Your request is being processed. Assistant is thinking...",
-          chatId: chatId, threadId: threadId, runId: run.id, status: "processing", isInitialResponse: true
-        });
-      } catch (error) {
-        console.error('[CHAT_API_DEBUG] GPT Assistant error:', error);
-        return NextResponse.json({ error: `Error with GPT Assistant: ${error.message}`, chatId }, { status: 500 });
-      }
+        // Define system instructions for regular chat
+        const REGULAR_CHAT_SYSTEM_INSTRUCTIONS = `You are James, a direct and incisive AI coach who helps people achieve clarity through targeted questions and brief, powerful insights.
 
+CORE PRINCIPLES:
+1. Keep responses extremely concise (1-2 sentences maximum)
+2. Frequently ask focused questions that get to the heart of what the user needs
+3. Use a direct, confident coaching tone rather than a helpful assistant tone
+4. Draw from your knowledge base when relevant, but prioritize brevity over comprehensiveness
+5. When providing advice, focus on one specific, actionable insight rather than multiple options
+
+CONVERSATION STYLE:
+- Speak directly as if you're having a real coaching conversation
+- Avoid unnecessary preambles like "I understand" or "That's a great question"
+- Always end with a question when possible to keep the conversation moving forward
+- Be challenging and thought-provoking rather than just agreeable
+
+Remember: Your goal is to help users achieve clarity and progress through brief, powerful exchanges rather than comprehensive assistance.`;
+
+        // Convert messages format for Responses API 
+        // The first message is the system message, the rest are conversation messages
+        const formattedMessages = messages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+        
+        // Insert system message at the beginning if not already present
+        if (!formattedMessages.find(msg => msg.role === 'system')) {
+          formattedMessages.unshift({ role: 'system', content: REGULAR_CHAT_SYSTEM_INSTRUCTIONS });
+        }
+        
+        console.log('[CHAT_API_DEBUG] Calling OpenAI Responses API with vector store');
+        
+        // Switch to non-streaming mode for regular chat
+        console.log('[CHAT_API_DEBUG] Using non-streaming mode for regular chat');
+        const completion = await openai.responses.create({
+          model: OPENAI_MODEL,
+          input: formattedMessages,
+          tools: [{
+            type: "file_search",
+            vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
+            max_num_results: 5
+          }],
+          include: ["file_search_call.results"],
+          stream: false
+        });
+
+        // Log complete response for debugging
+        console.log('[CHAT_API_DEBUG] Non-streaming response received:', JSON.stringify({
+          chunks: completion.output ? completion.output.length : 0,
+          types: completion.output ? completion.output.map(item => item.type) : []
+        }));
+
+        // Process the response and extract text
+        let responseText = "";
+        if (completion.output) {
+          for (const item of completion.output) {
+            if (item.type === 'message' && item.content) {
+              console.log('[CHAT_API_DEBUG] Found message with content types:', 
+                item.content.map(c => c.type));
+              
+              for (const contentItem of item.content) {
+                if (contentItem.type === 'output_text' && contentItem.text) {
+                  console.log('[CHAT_API_DEBUG] Found output_text:', contentItem.text.substring(0, 50));
+                  responseText += contentItem.text;
+                }
+              }
+            } else if (item.type === 'text' && item.text) {
+              console.log('[CHAT_API_DEBUG] Found text item:', item.text.substring(0, 50));
+              responseText += item.text;
+            } else if (item.type === 'output_text' && item.text) {
+              console.log('[CHAT_API_DEBUG] Found direct output_text item:', item.text.substring(0, 50));
+              responseText += item.text;
+            }
+          }
+        }
+
+        if (responseText) {
+          console.log('[CHAT_API_DEBUG] Final extracted response text:', responseText.substring(0, 100) + '...');
+        } else {
+          console.error('[CHAT_API_DEBUG] No text extracted from response!');
+          responseText = "I apologize, but I couldn't generate a proper response. Please try again.";
+        }
+
+        // Save the response to the database
+        if (chatId && supabase) {
+          try {
+            const msgObj = { 
+              thread_id: chatId, 
+              role: 'assistant', 
+              content: responseText, 
+              timestamp: new Date().toISOString(), 
+              user_id: userId 
+            };
+            const { data: savedMsg, error: saveError } = await supabase
+              .from('messages')
+              .insert(msgObj)
+              .select()
+              .single();
+              
+            if (saveError) {
+              console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
+            } else {
+              console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
+            }
+          } catch (dbError) {
+            console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
+          }
+        }
+
+        // Return the response directly
+        return NextResponse.json({
+          message: responseText,
+          chatId: chatId
+        });
+
+      } catch (error) {
+        console.error('[CHAT_API_DEBUG] Error with Responses API:', error);
+        return NextResponse.json({ 
+          error: `Sorry, an error occurred: Error with Responses API: ${error.message}`, 
+          chatId 
+        }, { status: 500 });
+      }
     } else { 
       console.log(`[CHAT_API_DEBUG] Calling OpenAI for generic tool: ${tool}`);
       const completion = await openai.chat.completions.create({
-        model: OPENAI_MODEL, messages: messages, temperature: 0.7, max_tokens: 1000,
+        model: OPENAI_MODEL, 
+        messages: messages, 
+        temperature: 0.7
       });
       determinedAiResponseContent = completion.choices[0].message.content;
       // Remove citation/reference notations like 【6:6†source】 from the response
@@ -606,4 +705,41 @@ function isValidUUID(id) {
   // UUID v4 pattern
   const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidV4Pattern.test(id);
+}
+
+// Function to extract text from assistant message
+function extractTextFromAssistantMessage(message) {
+  if (!message || !message.content || !Array.isArray(message.content)) {
+    return null;
+  }
+
+  // Look for text content in the message
+  for (const contentItem of message.content) {
+    if (contentItem.type === "output_text" && contentItem.text) {
+      return contentItem.text;
+    }
+  }
+
+  return null;
+}
+
+// Function to process file search results
+function processFileSearchResults(fileSearchCall) {
+  if (!fileSearchCall || !fileSearchCall.results || !Array.isArray(fileSearchCall.results)) {
+    return [];
+  }
+  
+  // Map the results to extract text and metadata
+  return fileSearchCall.results
+    .map(result => {
+      if (result.text) {
+        return {
+          text: result.text,
+          source: result.file?.name,
+          page: result.file?.page_number
+        };
+      }
+      return null;
+    })
+    .filter(Boolean); // Remove any null results
 } 

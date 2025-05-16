@@ -110,7 +110,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       <div className="p-4 flex items-center border-b">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-5 w-5" />
-          <span className="font-semibold">Coaching AI</span>
+          <span className="font-semibold">Sovereign AI</span>
         </div>
       </div>
       
@@ -130,7 +130,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               onClick={() => handleNewChat(null)}
             >
               <MessagesSquare className="h-4 w-4 mr-2" />
-              Regular Chat
+              JamesBot
             </Button>
             {tools.map((tool) => (
               <Button
@@ -160,7 +160,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
             </div>
           </div>
           
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 h-full pr-4 overflow-visible hover:overflow-auto">
             {isLoading ? (
               <div className="flex items-center justify-center py-4 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />

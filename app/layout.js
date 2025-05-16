@@ -7,7 +7,7 @@ import URLCleaner from "@/components/URLCleaner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Coaching AI",
+  title: "Sovereign AI",
   description: "The AI platform for your coaching business",
 };
 
