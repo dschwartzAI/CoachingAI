@@ -198,7 +198,7 @@ export default function ChatLayout() {
   }
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex h-screen w-full overflow-hidden">
       <Sidebar 
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
@@ -208,7 +208,7 @@ export default function ChatLayout() {
         setCurrentChat={setCurrentChatWithTracking}
         isLoading={isLoading}
       />
-      <div className="ml-[300px] flex-1 overflow-auto h-screen">
+      <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
         <ChatArea 
           selectedTool={selectedTool}
           currentChat={currentChat}

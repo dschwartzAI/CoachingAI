@@ -182,6 +182,57 @@ function HTMLContent({ content }) {
   return <div dangerouslySetInnerHTML={{ __html: content }} />;
 }
 
+// Define the DocumentMessage component
+function DocumentMessage({ message }) {
+  // First check if message has metadata with document links
+  const documentLinks = message.metadata?.documentLinks;
+  const hasMetadataLinks = documentLinks && (documentLinks.googleDocLink || documentLinks.pdfWebViewLink || documentLinks.pdfDownloadLink);
+  
+  // Then check for n8n links in the message content as a fallback
+  const extractedLinks = extractN8nLinks(message.content);
+  const hasExtractedLinks = extractedLinks.googleDocLink || extractedLinks.pdfWebViewLink || extractedLinks.pdfDownloadLink;
+  
+  // Combine links, prioritizing metadata links
+  const docLink = documentLinks?.googleDocLink || extractedLinks.googleDocLink;
+  const pdfView = documentLinks?.pdfWebViewLink || extractedLinks.pdfWebViewLink;
+  const pdfDownload = documentLinks?.pdfDownloadLink || extractedLinks.pdfDownloadLink;
+  
+  const hasAnyLinks = docLink || pdfView || pdfDownload;
+  
+  return (
+    <div className="space-y-2">
+      <div>{/* Show the message text */}
+        <MarkdownMessage content={message.content.split('\n')[0]} />
+      </div>
+      {hasAnyLinks && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {pdfView && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={pdfView} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" /> View PDF
+              </a>
+            </Button>
+          )}
+          {pdfDownload && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
+                <Download className="mr-2 h-4 w-4" /> Download PDF
+              </a>
+            </Button>
+          )}
+          {docLink && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={docLink} target="_blank" rel="noopener noreferrer">
+                <FileText className="mr-2 h-4 w-4" /> View Google Doc
+              </a>
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -198,6 +249,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
+  const lastMessageRef = useRef(null);
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -1467,183 +1519,170 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full relative"> {/* Added relative positioning */}
-       {/* --- Status Display --- */}
-       {/* Offer Status box removed as requested */}
-       {/* --- End Status Display --- */}
-       
+    <div className="flex flex-col h-full max-w-full">
+      {/* Chat header - added responsive padding */}
+      <div className="border-b p-3 sm:p-4 flex items-center justify-between sticky top-0 bg-background z-10">
+        <div className="flex items-center space-x-2">
+          <div className="font-semibold">
+            {currentChat && currentChat.title ? (
+              <span className="text-sm sm:text-base">{currentChat.title}</span>
+            ) : (
+              <span className="text-sm sm:text-base">New Conversation</span>
+            )}
+          </div>
+          {/* Display current question progress for hybrid offer */}
+          {selectedTool === 'hybrid-offer' && !isOfferComplete && (
+            <div className="text-xs bg-muted rounded-full px-2 py-0.5 ml-2 flex items-center space-x-1">
+              <span>
+                {questionsAnswered} / {TOOLS['hybrid-offer'].questions.filter(q => q.required).length}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
 
-      <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 pt-16 gap-4"> {/* Reduced padding-top */}
-          {/* Initial Welcome Message (simplified) */}  
-          {!currentChat?.messages?.length && selectedTool === "hybrid-offer" && (
-              <div className="text-center space-y-2 p-4 bg-muted rounded-lg">
-              <h2 className="text-xl font-semibold">Welcome to Hybrid Offer Creator</h2>
-              <p className="text-muted-foreground text-sm">
-                  Let's gather the details for your offer. I'll ask a few questions.
-              </p>
+      {/* Messages container - updated with responsive spacing */}
+      <ScrollArea 
+        ref={scrollAreaRef} 
+        className="flex-1 overflow-y-auto px-2 sm:px-4"
+      >
+        <div className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
+          {/* First message or empty state when no messages */}
+          {!currentChat?.messages?.length ? (
+            <div className="flex items-center justify-center h-[calc(100vh-10rem)]">
+              <div className="text-center space-y-3 sm:space-y-6 max-w-md px-4">
+                <h3 className="text-lg sm:text-xl font-semibold">
+                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+                </h3>
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  {selectedTool 
+                    ? "I'll guide you through creating a compelling " + TOOLS[selectedTool].name.toLowerCase() + "."
+                    : "Ask anything and get intelligent answers based on your data."}
+                </p>
               </div>
-          )}
-          {!currentChat?.messages?.length && selectedTool !== "hybrid-offer" && (
-              <div className="text-center space-y-2 p-4">
-                  <h2 className="text-xl font-semibold">Start Chatting</h2>
-              </div>
-          )} 
-          
-          {/* Chat Messages */}  
-          {currentChat?.messages?.map((message, i) => (
+            </div>
+          ) : (
+            currentChat.messages.map((message, index) => (
               <div
-              key={`${currentChat.id}-${i}`}
-              className={`flex gap-3 mb-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                key={message.id || `message-${index}`}
+                className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
+                ref={index === currentChat.messages.length - 1 ? lastMessageRef : null}
               >
-              {message.role === "assistant" && (
-                  <Avatar className="flex-shrink-0">
-                  <AvatarImage src="/bot-avatar.png" alt="AI" />
-                  </Avatar>
-              )}
-              <div
-                  className={`rounded-lg p-3 max-w-[80%] text-sm ${
-                  message.role === "user"
-                      ? "bg-primary text-primary-foreground whitespace-pre-wrap" // Keep for user text
-                      : "bg-muted overflow-auto"
-                  } ${message.isJSX ? '' : (message.role === 'assistant' ? '' : 'whitespace-pre-wrap')}`}
-              >
-                  {/* Render content with markdown for assistant messages, directly for JSX, or as text for user */}
-                  {message.isJSX ? (
-                    message.content
-                  ) : message.role === 'assistant' ? (
-                    (() => {
-                      // Check if this is a document message with HTML links
-                      if (isDocumentMessage(message) && 
-                          typeof message.content === 'string' && 
-                          message.content.includes('<a href="')) {
-                        // For document messages with HTML links, render the HTML directly
-                        return <HTMLContent content={message.content} />;
-                      }
-                      
-                      // First check if message has metadata with document links
-                      const documentLinks = message.metadata?.documentLinks;
-                      const hasMetadataLinks = documentLinks && (documentLinks.googleDocLink || documentLinks.pdfWebViewLink || documentLinks.pdfDownloadLink);
-                      
-                      // Then check for n8n links in the message content as a fallback
-                      const extractedLinks = extractN8nLinks(message.content);
-                      const hasExtractedLinks = extractedLinks.googleDocLink || extractedLinks.pdfWebViewLink || extractedLinks.pdfDownloadLink;
-                      
-                      // Combine links, prioritizing metadata links
-                      const docLink = documentLinks?.googleDocLink || extractedLinks.googleDocLink;
-                      const pdfView = documentLinks?.pdfWebViewLink || extractedLinks.pdfWebViewLink;
-                      const pdfDownload = documentLinks?.pdfDownloadLink || extractedLinks.pdfDownloadLink;
-                      
-                      // Debug log for link extraction
-                      if (hasMetadataLinks || hasExtractedLinks) {
-                        console.log('[Message Rendering] Found document links:', {
-                          fromMetadata: hasMetadataLinks ? documentLinks : null,
-                          fromContent: hasExtractedLinks ? extractedLinks : null,
-                          final: { docLink, pdfView, pdfDownload }
-                        });
-                      }
-                      
-                      const hasAnyLinks = docLink || pdfView || pdfDownload;
-                      
-                      // Check if this message is about document generation
-                      const isDocMessage = typeof message.content === 'string' && 
-                        (message.content.includes('Document generated successfully') || 
-                         message.content.includes('generating your document'));
-                         
-                      if (hasAnyLinks || isDocMessage) {
-                        return (
-                          <div className="space-y-2">
-                            <div>{/* Show the message text */}
-                              <MarkdownMessage content={message.content.split('\n')[0]} />
-                            </div>
-                            {hasAnyLinks && (
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {pdfView && (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <a href={pdfView} target="_blank" rel="noopener noreferrer">
-                                      <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-                                    </a>
-                                  </Button>
-                                )}
-                                {pdfDownload && (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
-                                      <Download className="mr-2 h-4 w-4" /> Download PDF
-                                    </a>
-                                  </Button>
-                                )}
-                                {docLink && (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <a href={docLink} target="_blank" rel="noopener noreferrer">
-                                      <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                                    </a>
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      } else {
-                        return <MarkdownMessage content={message.content} />;
-                      }
-                    })()
+                {/* Message bubble - updated with responsive padding */}
+                <div
+                  className={`
+                    flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
+                    ${message.role === "user" ? "flex-row-reverse" : ""}
+                  `}
+                >
+                  {message.role === "user" ? (
+                    <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                      <AvatarImage src="" alt="User" />
+                      <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
+                        {user?.email?.charAt(0).toUpperCase() || "U"}
+                      </div>
+                    </Avatar>
                   ) : (
-                    message.content
+                    <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                      <AvatarImage src="" alt="Assistant" />
+                      <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
+                        J
+                      </div>
+                    </Avatar>
                   )}
+
+                  <div
+                    className={`
+                      relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
+                      ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
+                    `}
+                  >
+                    {message.is_thinking ? (
+                      <LoadingMessage content={message.content} role={message.role} />
+                    ) : (
+                      // Conditional rendering for document message vs. regular message
+                      <>
+                        {isDocumentMessage(message) ? (
+                          <DocumentMessage message={message} />
+                        ) : (
+                          // Check for HTML content
+                          message.content.includes('<a href') ? (
+                            <HTMLContent content={message.content} />
+                          ) : (
+                            <MarkdownMessage content={message.content} />
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              {message.role === "user" && (
-                  <Avatar className="flex-shrink-0">
-                  <AvatarImage src="/user-avatar.png" alt="User" />
-                  </Avatar>
-              )}
-              </div>
-          ))}
-          
-          {/* Loading Message while waiting for response */}
-          {isResponseLoading && (
-            <>
-              <LoadingMessage />
-              {console.log('[CHAT_DEBUG] Rendering LoadingMessage component')}
-            </>
+            ))
           )}
-          
-          {/* N8N Loading Indicator */} 
+
+          {/* Show n8n document generation loader */}
           {isWaitingForN8n && (
-             <div className="flex items-center justify-center m-2 mx-10 gap-2 p-3 bg-muted rounded-lg ring-1 ring-blue-500 bg-gradient-to-t from-blue-500/20 via-transparent to-transparent">
-                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                 <span className="text-sm text-muted-foreground">Generating document... (approx. 1 min)</span>
-             </div>
+            <div className="flex items-center justify-center py-6">
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
+                </div>
+                <p className="text-xs text-muted-foreground max-w-xs text-center">
+                  This may take up to 15-30 seconds. Your document is being created based on your answers.
+                </p>
+              </div>
+            </div>
           )}
-          
-          
+
+          {/* Loading state for AI response */}
+          {isResponseLoading && !isWaitingForN8n && (
+            <div className="flex items-start gap-3">
+              <Avatar className="h-9 w-9 mt-0.5">
+                <AvatarImage src="" alt="Assistant" />
+                <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
+                  J
+                </div>
+              </Avatar>
+              <div className="bg-muted p-4 rounded-lg">
+                <LoadingMessage role="assistant" />
+              </div>
+            </div>
+          )}
+        </div>
       </ScrollArea>
 
-      {/* Input Form */}  
-      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="max-w-2xl mx-auto flex gap-2 items-end">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading || isResponseLoading ? "Waiting for response..." : "Type your message..."}
-            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl hover:border-primary focus-visible:ring-1 focus-visible:ring-primary"
-            rows={1}
-            disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
-          />
-          <Button 
-             type="submit" 
-             disabled={isLoading || isInitiating || !input.trim() || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
-             size="sm"
-             className="rounded-full h-10 w-10"
-          >
-            {isLoading || isInitiating || isWaitingForN8n || isResponseLoading ? 
-             <Loader2 className="h-4 w-4 animate-spin" />
-            : 
-            <ArrowUp className="h-4 w-4" />
-          }
-          </Button>
-        </div>
-      </form>
+      {/* Input area - made responsive for mobile devices */}
+      <div className="absolute bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-3 sm:p-4">
+        <form onSubmit={handleSubmit} className="flex flex-col space-y-2">
+          <div className="relative">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message..."
+              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-sm sm:text-base"
+              rows={1}
+              disabled={isLoading || isResponseLoading || isWaitingForN8n}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
+              disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {selectedTool === 'hybrid-offer' && !isOfferComplete && (
+            <div className="text-xs text-muted-foreground">
+              {TOOLS['hybrid-offer'].questions[questionsAnswered]?.hint || ""}
+            </div>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

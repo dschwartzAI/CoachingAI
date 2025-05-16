@@ -21,7 +21,9 @@ import {
   Wrench,
   Trash2,
   FileText,
-  ChevronRight
+  ChevronRight,
+  Menu,
+  X
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -40,6 +42,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   const { user, signOut } = useAuth();
   const router = useRouter();
   const [expandedChats, setExpandedChats] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const INITIAL_CHAT_COUNT = 5;
 
   const tools = Object.values(TOOLS);
@@ -54,6 +57,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
         firstMessage: currentChat.messages?.[0]?.content?.substring(0, 30)
       });
     }
+  }, [currentChat]);
+
+  // Close sidebar on mobile when navigating
+  useEffect(() => {
+    setIsMobileOpen(false);
   }, [currentChat]);
 
   const handleNewChat = (toolId = null) => {
@@ -104,146 +112,189 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     }
   };
 
+  // Mobile menu toggle button - fixed to top left
+  const MobileMenuButton = () => (
+    <div className="fixed top-4 left-4 z-50 md:hidden">
+      <Button 
+        variant="outline" 
+        size="icon" 
+        className="h-10 w-10 rounded-full bg-background shadow-lg border"
+        onClick={() => setIsMobileOpen(!isMobileOpen)}
+      >
+        {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0">
-      {/* Header with logo */}
-      <div className="p-4 flex items-center border-b">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-5 w-5" />
-          <span className="font-semibold">Sovereign AI</span>
+    <>
+      <MobileMenuButton />
+      
+      <div className={`
+        w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-40
+        transition-transform duration-300 ease-in-out
+        md:translate-x-0 md:shadow-none
+        ${isMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}
+      `}>
+        {/* Header with logo */}
+        <div className="p-4 flex items-center justify-between border-b">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            <span className="font-semibold">Sovereign AI</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="md:hidden"
+            onClick={() => setIsMobileOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <div className="flex-grow flex flex-col overflow-hidden">
+          {/* Specialized Tools Section */}
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center">
+                <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
+                <h2 className="text-sm font-medium">Specialized Tools</h2>
+              </div>
+            </div>
+            <div className="space-y-1 ml-7">
+              <div className="flex items-center justify-between mb-1">
+                <Button
+                  variant={!selectedTool ? "secondary" : "ghost"}
+                  className="w-[85%] justify-start h-8 text-sm"
+                  onClick={() => handleNewChat(null)}
+                >
+                  <MessagesSquare className="h-4 w-4 mr-2" />
+                  JamesBot
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(null)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {tools.map((tool) => (
+                <div key={tool.id} className="flex items-center justify-between mb-1">
+                  <Button
+                    variant={selectedTool === tool.id ? "secondary" : "ghost"}
+                    className="w-[85%] justify-start h-8 text-sm"
+                    onClick={() => handleToolClick(tool.id)}
+                  >
+                    {toolIcons[tool.id] || <MessageSquare className="h-4 w-4 mr-2" />}
+                    {tool.name}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToolClick(tool.id)}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chats/Past Conversations Section */}
+          <div className="p-4 flex flex-col overflow-hidden flex-1">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center">
+                <MessagesSquare className="h-5 w-5 mr-2 text-muted-foreground" />
+                <h2 className="text-sm font-medium">Chats</h2>
+              </div>
+            </div>
+            
+            <ScrollArea className="flex-1 h-full pr-4 overflow-visible hover:overflow-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-4 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-xs">Loading...</span>
+                </div>
+              ) : visibleChats.length > 0 ? (
+                <div className="space-y-1 ml-7">
+                  {visibleChats.map((chat) => (
+                    <div key={chat.id} className="flex items-center mb-1">
+                      <button 
+                        className="mr-1 p-1 rounded hover:bg-red-100 text-red-600" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteChat(chat.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                      <Button
+                        variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
+                        className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                        onClick={() => {
+                          setCurrentChat(chat);
+                          setSelectedTool(chat.tool_id || null);
+                        }}
+                      >
+                        {getChatIcon(chat)}
+                        <span className="truncate">{chat.title}</span>
+                      </Button>
+                    </div>
+                  ))}
+                  
+                  {hasMoreChats && (
+                    <Button 
+                      variant="ghost" 
+                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-2"
+                      onClick={() => setExpandedChats(!expandedChats)}
+                    >
+                      {expandedChats ? (
+                        <>Show less <ChevronDown className="h-3 w-3 ml-1" /></>
+                      ) : (
+                        <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronRight className="h-3 w-3 ml-1" /></>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center p-4 text-muted-foreground ml-7">
+                  <p className="text-xs">No conversations yet</p>
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+        </div>
+
+        {/* User Profile - Styled like the image */}
+        <div className="p-4 border-t mt-auto">
+          {user ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <Avatar className="h-8 w-8 border">
+                  <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
+                  <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium truncate" title={user.email}>
+                    {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate">
+                    {user.email || "example@example.com"}
+                  </span>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button className="w-full" onClick={() => router.push('/login')}>
+              <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
+            </Button>
+          )}
         </div>
       </div>
       
-      <div className="flex-grow flex flex-col overflow-hidden">
-        {/* Specialized Tools Section */}
-        <div className="p-4 border-b">
-          <div className="flex items-center mb-3">
-            <div className="flex items-center">
-              <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
-              <h2 className="text-sm font-medium">Specialized Tools</h2>
-            </div>
-          </div>
-          <div className="space-y-1 ml-7">
-            <Button
-              variant={!selectedTool ? "secondary" : "ghost"}
-              className="w-full justify-start h-8 text-sm"
-              onClick={() => handleNewChat(null)}
-            >
-              <MessagesSquare className="h-4 w-4 mr-2" />
-              JamesBot
-            </Button>
-            {tools.map((tool) => (
-              <Button
-                key={tool.id}
-                variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                className="w-full justify-start h-8 text-sm"
-                onClick={() => handleToolClick(tool.id)}
-              >
-                {toolIcons[tool.id] || <MessageSquare className="h-4 w-4 mr-2" />}
-                {tool.name}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {/* Chats/Past Conversations Section */}
-        <div className="p-4 flex flex-col overflow-hidden flex-1">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center">
-              <MessagesSquare className="h-5 w-5 mr-2 text-muted-foreground" />
-              <h2 className="text-sm font-medium">Chats</h2>
-            </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(selectedTool)}>
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          
-          <ScrollArea className="flex-1 h-full pr-4 overflow-visible hover:overflow-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-4 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                <span className="text-xs">Loading...</span>
-              </div>
-            ) : visibleChats.length > 0 ? (
-              <div className="space-y-1 ml-7">
-                {visibleChats.map((chat) => (
-                  <div key={chat.id} className="flex items-center mb-1">
-                    <button 
-                      className="mr-1 p-1 rounded hover:bg-red-100 text-red-600" 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteChat(chat.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                    <Button
-                      variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                      className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
-                      onClick={() => {
-                        setCurrentChat(chat);
-                        setSelectedTool(chat.tool_id || null);
-                      }}
-                    >
-                      {getChatIcon(chat)}
-                      <span className="truncate">{chat.title}</span>
-                    </Button>
-                  </div>
-                ))}
-                
-                {hasMoreChats && (
-                  <Button 
-                    variant="ghost" 
-                    className="w-full text-xs text-muted-foreground flex items-center justify-center mt-2"
-                    onClick={() => setExpandedChats(!expandedChats)}
-                  >
-                    {expandedChats ? (
-                      <>Show less <ChevronDown className="h-3 w-3 ml-1" /></>
-                    ) : (
-                      <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronRight className="h-3 w-3 ml-1" /></>
-                    )}
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="text-center p-4 text-muted-foreground ml-7">
-                <p className="text-xs">No conversations yet</p>
-              </div>
-            )}
-          </ScrollArea>
-        </div>
-      </div>
-
-      {/* User Profile - Styled like the image */}
-      <div className="p-4 border-t mt-auto">
-        {user ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <Avatar className="h-8 w-8 border">
-                <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
-                <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium truncate" title={user.email}>
-                  {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
-                </span>
-                <span className="text-xs text-muted-foreground truncate">
-                  {user.email || "example@example.com"}
-                </span>
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : (
-          <Button className="w-full" onClick={() => router.push('/login')}>
-            <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
-          </Button>
-        )}
-      </div>
-    </div>
+      {/* Overlay to close sidebar when clicking outside on mobile */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden" 
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+    </>
   );
 } 
