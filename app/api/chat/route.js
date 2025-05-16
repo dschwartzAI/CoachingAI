@@ -60,22 +60,23 @@ async function validateHybridOfferAnswer(questionKey, answer) {
 
   // Create validation prompts based on question type
   const validationCriteria = {
-    offerDescription: "Should describe a product or service with enough detail to understand what it is.",
-    targetAudience: "Should describe who the offering is for - could be demographics, professions, or characteristics.",
-    painPoints: "Should identify problems or challenges that the target audience experiences.",
-    solution: "Should explain how the product/service addresses the pain points in a unique way.",
-    pricing: "Should provide some indication of pricing structure, tiers, or general price range.",
-    clientResult: "Should describe a success story or outcome that a client has achieved."
+    offerDescription: "Should describe a product or service with enough detail to understand what it is. Must focus on WHAT is being offered, not pricing or audience.",
+    targetAudience: "Should describe who the offering is for - demographics, professions, or characteristics. Must focus on WHO the clients are, not what they're charged or the problems they have.",
+    painPoints: "Should identify problems or challenges that the target audience experiences. Must focus on PROBLEMS clients face, not solutions or pricing.",
+    solution: "Should explain how the product/service addresses the pain points in a unique way. Must focus on HOW problems are solved, not pricing or audience.",
+    pricing: "Should provide information about pricing structure, tiers, or general price range. Must focus on COSTS or pricing models, not other aspects.",
+    clientResult: "Should describe success stories or outcomes that clients have achieved. Must focus on RESULTS, not the service itself or pricing."
   };
 
   const validationPrompt = [
     {
       role: "system",
       content: `You are an assistant that validates answers for creating a hybrid offer.
-You should determine if an answer provides sufficient information to proceed with offer creation.
-Be flexible and accommodating - if the answer has ANY useful information, consider it valid.
-Only reject answers that are completely off-topic, nonsensical, or too vague to use.
-IMPORTANT: Err on the side of accepting answers unless they are clearly unusable.`
+You should determine if an answer provides relevant information to the SPECIFIC question being asked.
+Be strict about topic relevance - if someone answers about pricing when asked about solution approach, that's invalid.
+Check that the answer addresses the core of what's being asked, not just tangentially related information.
+If the answer discusses a different aspect of the business than what was asked, mark it as invalid.
+Example of invalid answer: Question about unique solution approach → Answer about pricing structure.`
     },
     {
       role: "user",
@@ -83,9 +84,9 @@ IMPORTANT: Err on the side of accepting answers unless they are clearly unusable
 Validation criteria: ${validationCriteria[questionKey]}
 User's answer: "${answer}"
 
-Is this answer useful enough to proceed with creating a hybrid offer? 
-If not, briefly explain why in 1-2 sentences from a helpful perspective.
-Return only JSON: { "isValid": boolean, "reason": "explanation if invalid" }`
+Is this answer directly relevant to the question category? Does it address what was specifically asked?
+Analyze whether the answer addresses the correct topic or if it's discussing a different aspect of the business.
+Return JSON in this format: { "isValid": boolean, "reason": "explanation if invalid", "topic": "what topic the answer actually addresses" }`
     }
   ];
 
@@ -364,23 +365,30 @@ export async function POST(request) {
       
       // Update the validation criteria to be more balanced
       promptParts.push(`   IMPORTANT - Balanced Validation Criteria: When evaluating if an answer is valid (validAnswer=true):
-         * The answer must be relevant to the current question
+         * The answer MUST be relevant to the current question topic - for example, pricing information is not a valid answer to a question about solution approach
+         * The answer should address the core of what's being asked, not tangential information
+         * Pay special attention to question/answer mismatch - if the currentQuestionKey is "solution" but the user is discussing pricing or audience, the answer is NOT valid
          * Consider the context of previous exchanges - if the user has provided details across multiple messages, consider the cumulative information
-         * If the user asks a question, you cannot consider it an answer. Example: "Do you think SaaS businesses are a good target audience for my offer?" is not an answer. Here you need to say your opinion, and if he then says "ok, let's say SaaS then", that is an answer.
-         * Interpret industry-standard terms and services without requiring excessive explanation (e.g., "Google Ads management" is a known service type)
-         * For each question type, these are SUFFICIENT examples:
-            - offerDescription: "Google Ads management service" or "Social media content creation for small businesses" (basic service description is enough)
-            - targetAudience: "Small business owners who don't have time for marketing" (a general description of who it's for)
-            - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend" (basic problem statement)
-            - solution: "We handle campaign creation, keyword research, and ongoing optimization" (general approach)
-            - pricing: "Monthly retainer of $1000" or "15% of ad spend" (basic pricing model)
-            - clientResult: "Doubled their conversion rate" or "Generated 50 new leads per month" (basic metric)
-         * Only ask for more details if:
-            1. The answer is completely off-topic from the question
-            2. The answer is so vague it could apply to virtually any business (e.g., just saying "it's good")
-            3. After 2-3 exchanges, you still don't have the basic information needed
-         * Pay attention to user frustration - if they've repeated similar information multiple times, consider it valid and move on
-         * When in doubt, ACCEPT the answer rather than frustrating the user with repeated requests`);
+         * If the user asks a question instead of answering, this is NOT a valid answer
+         * If the user's response is completely off-topic or discusses a different aspect of their business than what was asked, mark as invalid and redirect them
+         * For each question type, insufficient answers might look like:
+            - solution question: "I charge 13% upside" (this is pricing, not solution)
+            - painPoints question: "My target audience is small businesses" (this is audience, not pain points)
+            - targetAudience question: "I solve their problems with my amazing service" (this is solution, not audience)
+         * For each question type, these are examples of SUFFICIENT answers:
+            - offerDescription: "Google Ads management service" or "Social media content creation for small businesses"
+            - targetAudience: "Small business owners who don't have time for marketing"
+            - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend"
+            - solution: "We handle campaign creation, keyword research, and ongoing optimization"
+            - pricing: "Monthly retainer of $1000" or "15% of ad spend"
+            - clientResult: "Doubled their conversion rate" or "Generated 50 new leads per month"
+         * When an answer is invalid because it's addressing the wrong topic:
+            1. Clearly but kindly explain that they're discussing a different aspect than what was asked
+            2. Acknowledge what they shared (e.g., "Thanks for sharing about your pricing structure")
+            3. Redirect them to the current question with a more specific prompt
+            4. If needed, explain why understanding this particular aspect is important
+         * If they've attempted to answer the question but provided insufficient details, probe deeper with specific follow-up questions
+         * When in doubt, use follow-up questions rather than automatically moving to the next question`);
       
       promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. If validAnswer is false, this can be an empty string or null.`);
       promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
@@ -390,20 +398,27 @@ export async function POST(request) {
       promptParts.push(`   - If isComplete is true: This can be null.`);
       promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
-      promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Rephrase the request or ask clarifying questions. Avoid accusatory language.`);
+      promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing or why their answer addressed a different topic than what was asked. For example: "I see you're sharing about your pricing structure, which is great information we'll cover soon! Right now though, I'd like to understand more about your unique solution approach - how exactly do you solve the problems your clients face?"`);
       promptParts.push(`   - If isComplete is true: Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
       promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
       
-      // Add the new section on conversational approach
+      // Add the new section on conversational approach and probing questions
+      promptParts.push(`   - IMPORTANT - Probing for Better Answers: When an answer is provided but lacks sufficient detail:
+         1. Ask specific follow-up questions rather than general ones
+         2. For example, instead of "Can you elaborate more?", ask "What specific techniques do you use to solve their lead generation problems?"
+         3. Offer examples of what you're looking for: "For instance, do you use automation software, manual outreach, or some combination?"
+         4. If they seem confused by the question, rephrase it using simpler language
+         5. If they've misunderstood the question topic completely, be direct but kind: "I think we might be talking about different things. I'm asking about [current topic], but you're sharing about [what they're actually talking about]"
+         6. Guide them with "starter phrases" if helpful: "You might start by explaining the main components of your solution..."
+         7. Only move on to the next question when you have a clear, on-topic answer for the current question`);
+      
       promptParts.push(`   - IMPORTANT - Natural Conversation Flow: Your primary goal is to have a natural conversation. When a user responds:
          1. First, genuinely engage with whatever they've shared - comment on it, ask follow-up questions if relevant, or share a brief insight
-         2. Don't rush to get an answer to the next question in every response
-         3. If they're discussing something off-topic, spend time engaging with that topic first
-         4. Only after properly engaging, gently guide the conversation back toward the hybrid offer questions
-         5. It's perfectly fine if it takes multiple exchanges to get back to the structured question flow
-         6. Use phrases like "By the way...", "Speaking of which...", "That reminds me...", or "I'm also curious about..." when transitioning back to the questions
-         7. If the user asks you questions, answer them honestly and thoroughly before gently returning to the offer structure
-         8. Remember that building rapport is more important than rigidly following the question sequence`);
+         2. If they've answered the wrong question, acknowledge what they shared is valuable but kindly redirect them
+         3. If they're discussing something off-topic, spend time engaging with that topic first, then transition back
+         4. Use phrases like "By the way...", "Speaking of which...", "That reminds me...", or "I'm also curious about..." when transitioning
+         5. If the user asks you questions, answer them honestly and thoroughly before gently returning to the offer structure
+         6. Remember that getting good quality, on-topic answers is more important than rushing through all the questions quickly`);
       
       promptParts.push(`---`);
       promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
@@ -427,6 +442,44 @@ export async function POST(request) {
         ...messages 
       ];
 
+      // Add an extra validation step to ensure answers are relevant to the current question
+      // Only do this for non-initial messages (when there's a current question to validate against)
+      if (currentQuestionKey && messages.length > 0 && messages[messages.length - 1].role === 'user') {
+        const latestUserMessage = messages[messages.length - 1].content;
+        console.log(`[CHAT_API_DEBUG] Running additional validation for answer to '${currentQuestionKey}': "${latestUserMessage.substring(0, 50)}..."`);
+        
+        try {
+          // First, validate the answer using our dedicated validation function
+          const validationResult = await validateHybridOfferAnswer(currentQuestionKey, latestUserMessage);
+          
+          if (!validationResult.isValid) {
+            console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
+            
+            // If the answer is completely off-topic, we'll generate a direct but kind response
+            const invalidAnswerResponse = `I notice you're sharing about ${validationResult.topic || 'something different'}, which is valuable information! However, I'm currently asking about your ${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description || currentQuestionKey}. Could you tell me more specifically about that?`;
+            
+            // Create response payload without advancing to next question
+            toolResponsePayload = {
+              message: invalidAnswerResponse,
+              currentQuestionKey: currentQuestionKey, // Stay on current question
+              collectedAnswers: { ...collectedAnswers }, // Keep existing answers
+              questionsAnswered: calculateQuestionsAnswered(collectedAnswers),
+              isComplete: false,
+              chatId: chatId
+            };
+            
+            // Return early with this simple validation response
+            console.log('[CHAT_API_DEBUG] Returning early with validation failure response');
+            return NextResponse.json(toolResponsePayload);
+          } else {
+            console.log(`[CHAT_API_DEBUG] Answer validation passed for '${currentQuestionKey}'`);
+          }
+        } catch (validationError) {
+          console.error('[CHAT_API_DEBUG] Error in answer validation:', validationError);
+          // Continue with normal processing if validation throws an error
+        }
+      }
+      
       console.log('[CHAT_API_DEBUG] Sending analyzing prompt for hybrid-offer (conversational):', analyzingPrompt);
       console.log('[CHAT_API_DEBUG] Messages for OpenAI:', JSON.stringify(messagesForOpenAI.slice(-6))); // Log last few messages sent
 
@@ -434,7 +487,7 @@ export async function POST(request) {
       const analyzingCompletion = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: messagesForOpenAI, // Pass the constructed messages
-        temperature: 0.9, // Slightly higher for more conversational, but still focused
+        temperature: 0.7, // Reduced temperature for more accuracy in validation while maintaining conversational tone
         response_format: { type: "json_object" }
       });
       
