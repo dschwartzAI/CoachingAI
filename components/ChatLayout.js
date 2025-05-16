@@ -8,6 +8,7 @@ import { useAuth } from "./AuthProvider";
 import { getThreads } from "@/lib/utils/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { FullPageLoading } from "./ui/loading";
+import { createNewThread } from "@/lib/utils/thread";
 
 // Helper function to check if an ID is a valid UUID
 const isValidUUID = (id) => {
@@ -83,6 +84,16 @@ export default function ChatLayout() {
     });
   };
 
+  // Create default chat if needed
+  const createDefaultChat = () => {
+    console.log('[ChatLayout] Creating a default chat');
+    const defaultChat = createNewThread(null); // Regular JamesBot chat
+    defaultChat.isTemporary = false; // Make it persistent
+    setChatsSafely([defaultChat]);
+    setCurrentChatWithTracking(defaultChat);
+    return defaultChat;
+  };
+
   // Redirect unauthenticated users to login page
   useEffect(() => {
     if (!authLoading && !user) {
@@ -97,6 +108,11 @@ export default function ChatLayout() {
       if (!user?.id) {
         console.log('[ChatLayout] No user ID available, skipping thread loading');
         setIsLoading(false);
+        
+        // Create a default chat even if no user (for demo/anonymous mode)
+        if (!currentChat) {
+          createDefaultChat();
+        }
         return;
       }
 
@@ -149,12 +165,18 @@ export default function ChatLayout() {
         // Don't directly overwrite chats - use our safer setter
         setChatsSafely(formattedThreads);
         
-        // Only set the current chat if NO chat is currently selected (neither existing nor temporary)
-        if (!currentChat && formattedThreads.length > 0) {
-          console.log('[ChatLayout] No chat selected, setting current chat to the first loaded thread:', formattedThreads[0].id);
-          setCurrentChatWithTracking(formattedThreads[0]);
+        // Set current chat based on history or create a new one
+        if (formattedThreads.length > 0) {
+          if (!currentChat) {
+            console.log('[ChatLayout] Setting current chat to the first loaded thread:', formattedThreads[0].id);
+            setCurrentChatWithTracking(formattedThreads[0]);
+          } else {
+            console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
+          }
         } else {
-          console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
+          // No threads found, create a default chat
+          console.log('[ChatLayout] No threads found, creating a default chat');
+          createDefaultChat();
         }
       } catch (error) {
         console.error('[ChatLayout] Error loading threads:', error);
@@ -163,6 +185,11 @@ export default function ChatLayout() {
           description: "Failed to load your conversations. Please try again.",
           variant: "destructive",
         });
+        
+        // Create a default chat when there's an error loading
+        if (!currentChat) {
+          createDefaultChat();
+        }
       } finally {
         setIsLoading(false);
       }
@@ -170,6 +197,9 @@ export default function ChatLayout() {
 
     if (user?.id) {
       loadThreads();
+    } else if (!isLoading && !currentChat) {
+      // Create a default chat if we're not loading and don't have a current chat
+      createDefaultChat();
     }
   }, [user?.id, toast]);
 

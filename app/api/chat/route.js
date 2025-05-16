@@ -181,6 +181,38 @@ export async function POST(request) {
       );
     }
 
+    // Initialize Supabase client early, before any operations that might use it
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          get(name) { return cookieStore.get(name)?.value; },
+          set(name, value, options) { cookieStore.set({ name, value, ...options }); },
+          remove(name, options) { cookieStore.set({ name, value: '', ...options }); },
+        },
+      }
+    );
+
+    // Get the authenticated user
+    const { data: { user } } = await supabase.auth.getUser();
+    let userId = user?.id;
+
+    // Handle anonymous users more gracefully
+    if (!userId) {
+      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
+        // Generate a consistent anonymous ID based on the chat ID for better tracking
+        userId = 'anon-' + (chatId.substring(0, 8));
+        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
+      } else {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
+    }
+
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
       const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)`;
@@ -253,32 +285,6 @@ export async function POST(request) {
 
       console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
       return NextResponse.json(initResponsePayload);
-    }
-
-    let userId = null;
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        cookies: {
-          get(name) { return cookieStore.get(name)?.value; },
-          set(name, value, options) { cookieStore.set({ name, value, ...options }); },
-          remove(name, options) { cookieStore.set({ name, value: '', ...options }); },
-        },
-      }
-    );
-    
-    if (process.env.NEXT_PUBLIC_SKIP_AUTH !== 'true') {
-      const { data: { session }, error: authError } = await supabase.auth.getSession();
-      if (authError || !session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = session.user.id;
-      console.log('[CHAT_API_DEBUG] Authentication successful:', { userId });
-    } else {
-      userId = 'dev-user-' + (chatId || uuidv4().substring(0, 8));
-      console.log('[CHAT_API_DEBUG] Authentication check SKIPPED, using dev user ID:', userId);
     }
 
     // Save incoming USER message to DB & ensure thread exists
