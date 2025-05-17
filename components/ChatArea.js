@@ -1557,7 +1557,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 <p className="text-sm sm:text-base text-muted-foreground">
                   {selectedTool 
                     ? "I'll guide you through creating a compelling " + TOOLS[selectedTool].name.toLowerCase() + "."
-                    : "Ask anything and get intelligent answers based on your data."}
+                    : "Ask me anything related to your business."}
                 </p>
               </div>
             </div>
