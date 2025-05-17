@@ -258,32 +258,55 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
           </div>
         </div>
 
-        {/* User Profile - Styled like the image */}
-        <div className="p-4 border-t mt-auto">
+        {/* User and Logout section */}
+        <div className="mt-auto border-t">
           {user ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <Avatar className="h-8 w-8 border">
-                  <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
-                  <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
+            <div className="p-3 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-6 w-6">
+                  <AvatarFallback>
+                    {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+                  </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium truncate" title={user.email}>
-                    {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
-                  </span>
-                  <span className="text-xs text-muted-foreground truncate">
-                    {user.email || "example@example.com"}
-                  </span>
-                </div>
+                <span className="text-xs font-medium truncate max-w-[150px]">
+                  {user.email}
+                </span>
               </div>
-              <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
-                <LogOut className="h-4 w-4" />
-              </Button>
+              
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs h-7"
+                  onClick={() => router.push('/settings')}
+                >
+                  <FileText className="h-3 w-3 mr-1" />
+                  Settings
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs h-7"
+                  onClick={signOut}
+                >
+                  <LogOut className="h-3 w-3 mr-1" />
+                  Logout
+                </Button>
+              </div>
             </div>
           ) : (
-            <Button className="w-full" onClick={() => router.push('/login')}>
-              <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
-            </Button>
+            <div className="p-3 flex justify-center">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full"
+                onClick={() => router.push('/login')}
+              >
+                <LogIn className="h-4 w-4 mr-2" />
+                Login
+              </Button>
+            </div>
           )}
         </div>
       </div>

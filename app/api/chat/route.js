@@ -214,6 +214,29 @@ export async function POST(request) {
       }
     }
 
+    // Fetch user profile data for context if available
+    let userProfile = null;
+    if (userId && !userId.startsWith('anon-')) {
+      try {
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+          
+        if (!error && profile) {
+          userProfile = profile;
+          console.log('[CHAT_API_DEBUG] Found user profile for context:', {
+            businessName: profile.business_name,
+            hasBusinessDescription: !!profile.business_description
+          });
+        }
+      } catch (profileError) {
+        console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
+        // Continue without profile context if there's an error
+      }
+    }
+
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
       const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)`;
@@ -541,7 +564,7 @@ export async function POST(request) {
       console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');
       try {
         // Define system instructions for regular chat
-        const REGULAR_CHAT_SYSTEM_INSTRUCTIONS = `You are James, a direct and incisive AI coach who helps people achieve clarity through targeted questions and brief, powerful insights.
+        let REGULAR_CHAT_SYSTEM_INSTRUCTIONS = `You are James, a direct and incisive AI coach who helps people achieve clarity through targeted questions and brief, powerful insights.
 
 CORE PRINCIPLES:
 1. Keep responses extremely concise (1-2 sentences maximum)
@@ -557,6 +580,25 @@ CONVERSATION STYLE:
 - Be challenging and thought-provoking rather than just agreeable
 
 Remember: Your goal is to help users achieve clarity and progress through brief, powerful exchanges rather than comprehensive assistance.`;
+
+        // Add user profile context if available
+        if (userProfile) {
+          const profileContext = `
+USER BUSINESS CONTEXT:
+- Business Name: ${userProfile.business_name || 'Not specified'}
+- Business Type: ${userProfile.business_type || 'Not specified'}
+- Target Audience: ${userProfile.target_audience || 'Not specified'}
+- Business Description: ${userProfile.business_description || 'Not specified'}
+- Business Goals: ${userProfile.goals || 'Not specified'}
+- Business Challenges: ${userProfile.challenges || 'Not specified'}
+
+Use this business context to make your responses more relevant and personalized. Refer to the business by name when appropriate, and tailor your coaching to their specific industry, audience, goals, and challenges.`;
+
+          REGULAR_CHAT_SYSTEM_INSTRUCTIONS += profileContext;
+          console.log('[CHAT_API_DEBUG] Added user profile context to chat prompt');
+        } else {
+          console.log('[CHAT_API_DEBUG] No user profile available for context');
+        }
 
         // Convert messages format for Responses API 
         // The first message is the system message, the rest are conversation messages
