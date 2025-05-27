@@ -14,6 +14,7 @@ import { useAuth } from "./AuthProvider";
 import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/supabase';
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
+import { usePostHog } from '@/hooks/use-posthog';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -250,6 +251,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
+  const { track } = usePostHog();
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {

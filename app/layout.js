@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "@/components/ui/toaster";
 import URLCleaner from "@/components/URLCleaner";
+import { PostHogProvider } from "@/components/PostHogProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,11 +25,13 @@ export default function RootLayout({ children }) {
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
       </head>
       <body className={inter.className}>
-        <AuthProvider>
-          <URLCleaner />
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <PostHogProvider>
+          <AuthProvider>
+            <URLCleaner />
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </PostHogProvider>
       </body>
     </html>
   );

@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
+import { usePostHog } from '@/hooks/use-posthog';
 
 const AuthContext = createContext(undefined);
 
@@ -10,6 +11,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const { identify, reset } = usePostHog();
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -50,6 +52,11 @@ export function AuthProvider({ children }) {
         console.log('[Auth] Initial session:', session ? 'Active' : 'None');
         if (session) {
           console.log('[Auth] User ID:', session.user.id);
+          // Identify user in PostHog on initial load
+          identify(session.user.id, {
+            email: session.user.email,
+            user_id: session.user.id,
+          });
         }
         
         // Listen for auth changes
@@ -59,11 +66,18 @@ export function AuthProvider({ children }) {
           
           if (event === 'SIGNED_IN') {
             console.log('[Auth] User signed in:', session.user.id);
+            // Identify user in PostHog
+            identify(session.user.id, {
+              email: session.user.email,
+              user_id: session.user.id,
+            });
             router.refresh();
           }
           
           if (event === 'SIGNED_OUT') {
             console.log('[Auth] User signed out');
+            // Reset PostHog session
+            reset();
             router.refresh();
           }
         });
@@ -79,7 +93,7 @@ export function AuthProvider({ children }) {
     };
     
     initializeAuth();
-  }, [supabase, router]);
+  }, [supabase, router, identify, reset]);
 
   const value = {
     user,
