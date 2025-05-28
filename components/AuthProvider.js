@@ -42,16 +42,16 @@ export function AuthProvider({ children }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Error getting auth session:', error);
+          if (process.env.NODE_ENV !== "production") console.error('Error getting auth session:', error);
           setLoading(false);
           return;
         }
         
         // Set the user if we have a session
         setUser(session?.user || null);
-        console.log('[Auth] Initial session:', session ? 'Active' : 'None');
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Initial session:', session ? 'Active' : 'None');
         if (session) {
-          console.log('[Auth] User ID:', session.user.id);
+          if (process.env.NODE_ENV !== "production") console.log('[Auth] User ID:', session.user.id);
           // Identify user in PostHog on initial load
           identify(session.user.id, {
             email: session.user.email,
@@ -61,11 +61,11 @@ export function AuthProvider({ children }) {
         
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('[Auth] Auth state change:', event);
+          if (process.env.NODE_ENV !== "production") console.log('[Auth] Auth state change:', event);
           setUser(session?.user ?? null);
           
           if (event === 'SIGNED_IN') {
-            console.log('[Auth] User signed in:', session.user.id);
+            if (process.env.NODE_ENV !== "production") console.log('[Auth] User signed in:', session.user.id);
             // Identify user in PostHog
             identify(session.user.id, {
               email: session.user.email,
@@ -75,7 +75,7 @@ export function AuthProvider({ children }) {
           }
           
           if (event === 'SIGNED_OUT') {
-            console.log('[Auth] User signed out');
+            if (process.env.NODE_ENV !== "production") console.log('[Auth] User signed out');
             // Reset PostHog session
             reset();
             router.refresh();
@@ -87,7 +87,7 @@ export function AuthProvider({ children }) {
           subscription.unsubscribe();
         };
       } catch (err) {
-        console.error('[Auth] Error initializing auth:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Error initializing auth:', err);
         setLoading(false);
       }
     };
@@ -103,9 +103,9 @@ export function AuthProvider({ children }) {
       try {
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
-        console.log('[Auth] User signed out successfully');
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] User signed out successfully');
       } catch (err) {
-        console.error('[Auth] Error signing out:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Error signing out:', err);
         throw err;
       }
     },
@@ -117,13 +117,13 @@ export function AuthProvider({ children }) {
         });
         
         if (error) {
-          console.error('[Auth] Error signing in with email:', error.message);
+          if (process.env.NODE_ENV !== "production") console.error('[Auth] Error signing in with email:', error.message);
           throw error;
         }
         
-        console.log('[Auth] Email sign-in successful');
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Email sign-in successful');
       } catch (err) {
-        console.error('[Auth] Unexpected error during email sign-in:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Unexpected error during email sign-in:', err);
         throw err;
       }
     },
@@ -131,7 +131,7 @@ export function AuthProvider({ children }) {
       try {
         // Get redirect URL using the helper function
         const redirect = getURL();
-        console.log('[Auth] Using redirect URL for email signup:', redirect);
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Using redirect URL for email signup:', redirect);
             
         const { error } = await supabase.auth.signUp({
           email,
@@ -142,14 +142,14 @@ export function AuthProvider({ children }) {
         });
         
         if (error) {
-          console.error('[Auth] Error signing up with email:', error.message);
+          if (process.env.NODE_ENV !== "production") console.error('[Auth] Error signing up with email:', error.message);
           throw error;
         }
         
-        console.log('[Auth] Email sign-up initiated with redirect to:', redirect);
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Email sign-up initiated with redirect to:', redirect);
         return { success: true, message: 'Check your email for confirmation link' };
       } catch (err) {
-        console.error('[Auth] Unexpected error during email sign-up:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Unexpected error during email sign-up:', err);
         throw err;
       }
     },
@@ -159,9 +159,9 @@ export function AuthProvider({ children }) {
         const redirect = getURL();
         
         // Show the exact URL and domain being used
-        console.log('[Auth] Current browser URL:', window.location.href);
-        console.log('[Auth] Current origin:', window.location.origin);
-        console.log('[Auth] Using redirect URL for Google:', redirect);
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Current browser URL:', window.location.href);
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Current origin:', window.location.origin);
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Using redirect URL for Google:', redirect);
         
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -175,16 +175,16 @@ export function AuthProvider({ children }) {
         });
         
         if (error) {
-          console.error('[Auth] Error signing in with Google:', error.message);
+          if (process.env.NODE_ENV !== "production") console.error('[Auth] Error signing in with Google:', error.message);
           throw error;
         }
         
-        console.log('[Auth] Google sign-in initiated');
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Google sign-in initiated');
         if (data?.url) {
-          console.log('[Auth] OAuth URL:', data.url.substring(0, 100) + '...');
+          if (process.env.NODE_ENV !== "production") console.log('[Auth] OAuth URL:', data.url.substring(0, 100) + '...');
         }
       } catch (err) {
-        console.error('[Auth] Unexpected error during Google sign-in:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Unexpected error during Google sign-in:', err);
         throw err;
       }
     },

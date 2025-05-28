@@ -23,11 +23,11 @@ exports.handler = async function(event, context) {
   const sseStartTime = Date.now();
   
   try {
-    console.log(`\n--- [SSE /api/n8n-result Request Start ${sseStartTime}] ---`);
+    if (process.env.NODE_ENV !== "production") console.log(`\n--- [SSE /api/n8n-result Request Start ${sseStartTime}] ---`);
     
     // Validate N8N_WEBHOOK_URL environment variable
     if (!N8N_WEBHOOK_URL) {
-      console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
       return {
         statusCode: 500,
         headers,
@@ -39,9 +39,9 @@ exports.handler = async function(event, context) {
     let requestData;
     try {
       requestData = JSON.parse(event.body);
-      console.log(`[SSE ${sseStartTime}] Received request data with fields: ${Object.keys(requestData).join(', ')}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${sseStartTime}] Received request data with fields: ${Object.keys(requestData).join(', ')}`);
     } catch (e) {
-      console.error(`[SSE ${sseStartTime}] Failed to parse request body: ${e.message}`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Failed to parse request body: ${e.message}`);
       return {
         statusCode: 400,
         headers,
@@ -53,7 +53,7 @@ exports.handler = async function(event, context) {
     const { chatId, answersData, chatHistory } = requestData;
 
     if (!chatId) {
-      console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
       return {
         statusCode: 400,
         headers,
@@ -62,7 +62,7 @@ exports.handler = async function(event, context) {
     }
 
     if (!answersData) {
-      console.error(`[SSE ${chatId} ${sseStartTime}] Error: Missing answersData in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId} ${sseStartTime}] Error: Missing answersData in request body.`);
       return {
         statusCode: 400,
         headers,
@@ -70,18 +70,18 @@ exports.handler = async function(event, context) {
       };
     }
 
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
     
     if (chatHistory) {
-      console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
     } else {
-      console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
     }
 
     // Call n8n webhook
     try {
-      console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
       
       const requestBody = {
         chatId: chatId,
@@ -97,7 +97,7 @@ exports.handler = async function(event, context) {
       });
 
       const status = n8nResponse.status;
-      console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
 
       if (!n8nResponse.ok) {
         let errorBody = 'Could not read error body';
@@ -107,7 +107,7 @@ exports.handler = async function(event, context) {
 
       // Parse JSON response
       const n8nData = await n8nResponse.json();
-      console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
 
       // Return success response
       return {
@@ -117,7 +117,7 @@ exports.handler = async function(event, context) {
       };
 
     } catch (error) {
-      console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
       return {
         statusCode: 500,
         headers,
@@ -130,7 +130,7 @@ exports.handler = async function(event, context) {
     }
 
   } catch (outerError) {
-    console.error(`[SSE CRITICAL ${sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
+    if (process.env.NODE_ENV !== "production") console.error(`[SSE CRITICAL ${sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
     return {
       statusCode: 500,
       headers,

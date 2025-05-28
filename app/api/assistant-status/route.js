@@ -20,7 +20,7 @@ export async function POST(request) {
       );
     }
 
-    console.log(`[Assistant Status] Checking run status: ${runId} for thread: ${threadId}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[Assistant Status] Checking run status: ${runId} for thread: ${threadId}`);
     
     // Setup Supabase client
     const cookieStore = cookies();
@@ -45,11 +45,11 @@ export async function POST(request) {
     // Check the run status
     const runStatus = await openai.beta.threads.runs.retrieve(threadId, runId);
     
-    console.log(`[Assistant Status] Current status: ${runStatus.status}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[Assistant Status] Current status: ${runStatus.status}`);
     
     if (runStatus.status === "completed") {
       // Get the assistant's response
-      console.log(`[Assistant Status] Run completed, retrieving messages`);
+      if (process.env.NODE_ENV !== "production") console.log(`[Assistant Status] Run completed, retrieving messages`);
       const threadMessages = await openai.beta.threads.messages.list(threadId);
       
       // Filter for assistant messages and get the most recent one
@@ -71,12 +71,12 @@ export async function POST(request) {
         }
       }
       
-      console.log(`[Assistant Status] Response received, length: ${responseText.length}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[Assistant Status] Response received, length: ${responseText.length}`);
       
       // Save the assistant's response to the database if we have a chatId
       if (chatId) {
         try {
-          console.log('[Assistant Status] Saving assistant response to database');
+          if (process.env.NODE_ENV !== "production") console.log('[Assistant Status] Saving assistant response to database');
           
           const messageObj = {
             thread_id: chatId,
@@ -91,12 +91,12 @@ export async function POST(request) {
             .insert(messageObj);
             
           if (messageError) {
-            console.error('[Assistant Status] Error saving message:', messageError);
+            if (process.env.NODE_ENV !== "production") console.error('[Assistant Status] Error saving message:', messageError);
           } else {
-            console.log('[Assistant Status] Message saved successfully');
+            if (process.env.NODE_ENV !== "production") console.log('[Assistant Status] Message saved successfully');
           }
         } catch (dbError) {
-          console.error('[Assistant Status] Database error:', dbError);
+          if (process.env.NODE_ENV !== "production") console.error('[Assistant Status] Database error:', dbError);
           // Continue even if database operations fail
         }
       }
@@ -107,7 +107,7 @@ export async function POST(request) {
         chatId
       });
     } else if (runStatus.status === "failed" || runStatus.status === "cancelled") {
-      console.error(`[Assistant Status] Run failed with status: ${runStatus.status}`);
+      if (process.env.NODE_ENV !== "production") console.error(`[Assistant Status] Run failed with status: ${runStatus.status}`);
       return NextResponse.json({
         status: runStatus.status,
         error: `Assistant run ${runStatus.status}: ${runStatus.last_error?.message || "Unknown error"}`,
@@ -122,7 +122,7 @@ export async function POST(request) {
       });
     }
   } catch (error) {
-    console.error('[Assistant Status] Error:', error);
+    if (process.env.NODE_ENV !== "production") console.error('[Assistant Status] Error:', error);
     return NextResponse.json(
       { error: error.message || 'An error occurred while checking status' },
       { status: 500 }

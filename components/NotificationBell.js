@@ -27,7 +27,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           }));
           setNotifications(notificationsWithDates);
         } catch (error) {
-          console.error('Error parsing saved notifications:', error);
+          if (process.env.NODE_ENV !== "production") console.error('Error parsing saved notifications:', error);
         }
       }
 
@@ -38,7 +38,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           const parsed = JSON.parse(savedProcessedChats);
           setProcessedChats(new Set(parsed));
         } catch (error) {
-          console.error('Error parsing saved processed chats:', error);
+          if (process.env.NODE_ENV !== "production") console.error('Error parsing saved processed chats:', error);
         }
       }
     }

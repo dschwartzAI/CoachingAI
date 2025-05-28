@@ -69,7 +69,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       const { data } = await getSession();
       const session = data?.session;
       
-      console.log('[Chat] Auth check:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Auth check:', {
         hasSession: !!session,
         userId: session?.user?.id,
         userIdFromContext: user?.id,
@@ -80,7 +80,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       
       // Alert if no session or user ID - this is critical for saving threads
       if (!session || !session.user?.id) {
-        console.error('[Chat] CRITICAL: No authenticated session. Threads cannot be saved!');
+        if (process.env.NODE_ENV !== "production") console.error('[Chat] CRITICAL: No authenticated session. Threads cannot be saved!');
         toast({
           title: "Authentication Warning",
           description: "You appear to be using the app without being logged in. Your chats may not be saved.",
@@ -94,7 +94,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
 
   // Update local thread state when prop changes
   useEffect(() => {
-    console.log('[Chat] Thread prop updated:', {
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Thread prop updated:', {
       threadId: initialThread?.id,
       toolId: initialThread?.tool_id,
       messagesCount: initialThread?.messages?.length,
@@ -116,7 +116,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       !hasAttemptedInit &&
       (!messages || messages.length === 0);
 
-    console.log('[Chat] Checking tool initialization:', {
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Checking tool initialization:', {
       toolId: currentTool?.id,
       hasAttemptedInit,
       threadMessages: messages?.length,
@@ -129,7 +129,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   }, [thread?.id, thread?.tool_id, hasAttemptedInit, messages]);
 
   const handleToolInit = async () => {
-    console.log('[Chat] Starting tool initialization', {
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Starting tool initialization', {
       threadId: thread?.id,
       toolId: tool?.id,
       isTemporary: thread?.isTemporary,
@@ -139,22 +139,22 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       setHasAttemptedInit(true);
       setIsLoading(true);
 
-      console.log('[Chat] Getting initial AI response');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Getting initial AI response');
       const aiResponse = await getAIResponse('', {
         ...thread,
         messages: messages
       }, user.id);
 
       if (aiResponse.error) {
-        console.error('[Chat] AI Response Error during init:', aiResponse.error);
+        if (process.env.NODE_ENV !== "production") console.error('[Chat] AI Response Error during init:', aiResponse.error);
         throw new Error(aiResponse.error);
       }
 
-      console.log('[Chat] Received AI response:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Received AI response:', {
         responseContent: aiResponse.content ? `${aiResponse.content.substring(0, 30)}...` : '(empty)'
       });
 
-      console.log('[Chat] Saving assistant message');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Saving assistant message');
       const assistantMessagePayload = {
         thread_id: thread.id,
         role: 'assistant',
@@ -164,7 +164,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       
       const savedMessage = await saveMessage(assistantMessagePayload, user.id);
 
-      console.log('[Chat] Message saved:', { messageId: savedMessage.id });
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Message saved:', { messageId: savedMessage.id });
 
       setMessages(prev => [...prev, savedMessage]);
       if (onThreadUpdate) {
@@ -172,7 +172,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       }
 
     } catch (error) {
-      console.error('[Chat] Error in tool initialization:', error);
+      if (process.env.NODE_ENV !== "production") console.error('[Chat] Error in tool initialization:', error);
       toast({
         title: "Error",
         description: `Failed to start the conversation: ${error.message}`,
@@ -181,7 +181,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       setError(error.message);
     } finally {
       setIsLoading(false);
-      console.log('[Chat] Tool initialization completed');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Tool initialization completed');
     }
   };
 
@@ -192,34 +192,34 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   // Add a separate effect to scroll when loading state changes
   useEffect(() => {
     if (isLoading) {
-      console.log('[Chat] Loading state changed, scrolling to bottom');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Loading state changed, scrolling to bottom');
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [isLoading]);
 
   useEffect(() => {
     if (!thread?.id || thread?.isTemporary) {
-      console.log('[Chat] Skipping subscription setup - no thread ID or thread is temporary', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Skipping subscription setup - no thread ID or thread is temporary', {
         threadId: thread?.id,
         isTemporary: thread?.isTemporary
       });
       return;
     }
 
-    console.log('[Chat] Setting up thread subscription', { threadId: thread.id });
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Setting up thread subscription', { threadId: thread.id });
     const channel = subscribeToThread(thread.id, (payload) => {
-      console.log('[Chat] Realtime message received:', payload);
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Realtime message received:', payload);
       const newMessage = payload.new;
       setMessages(prev => {
         if (prev.some(msg => msg.id === newMessage.id)) {
-          console.log('[Chat] Message already exists in state, skipping', { messageId: newMessage.id });
+          if (process.env.NODE_ENV !== "production") console.log('[Chat] Message already exists in state, skipping', { messageId: newMessage.id });
           return prev;
         }
-        console.log('[Chat] Adding new message to state', { messageId: newMessage.id });
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Adding new message to state', { messageId: newMessage.id });
         return [...prev, newMessage];
       });
       if (onThreadUpdate) {
-        console.log('[Chat] Notifying parent of thread update');
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Notifying parent of thread update');
         onThreadUpdate({...thread, messages: [...messages, newMessage]});
       }
     });
@@ -227,13 +227,13 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     return () => {
       if (channel) {
         channel.unsubscribe();
-        console.log('[Chat] Unsubscribed from realtime channel for thread:', thread.id);
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Unsubscribed from realtime channel for thread:', thread.id);
       }
     };
   }, [thread?.id, thread?.isTemporary]);
 
   const initializeNewThread = async (userInput) => {
-    console.log('[Chat] Initializing new thread for first message:', {
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Initializing new thread for first message:', {
       userInput: userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput,
       userId: user?.id,
       toolId: thread?.tool_id
@@ -248,7 +248,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       
       // Check for user ID
       if (!userId) {
-        console.error('[Chat] Cannot initialize thread - no user ID!');
+        if (process.env.NODE_ENV !== "production") console.error('[Chat] Cannot initialize thread - no user ID!');
         throw new Error('User ID is missing - are you logged in?');
       }
       
@@ -261,7 +261,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       };
       
       // Pass the complete userInput as the first message
-      console.log('[Chat] Passing user input to initializeThread:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Passing user input to initializeThread:', {
         inputLength: userInput.length,
         threadTitle: '(will be generated from message)',
         toolId: thread?.tool_id,
@@ -271,7 +271,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       const newThread = await initializeThread(threadData, userInput, userId);
       
       // Verify that the thread title was set correctly
-      console.log('[Chat] New thread initialized:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] New thread initialized:', {
         threadId: newThread.id,
         title: newThread.title,
         expectedTitle: !thread?.tool_id ? (userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput) : threadData.title,
@@ -284,13 +284,13 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       setMessages(newThread.messages || []);
       
       if (onThreadUpdate) {
-        console.log('[Chat] Notifying parent of new thread');
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Notifying parent of new thread');
         onThreadUpdate(newThread);
       }
       
       return newThread;
     } catch (error) {
-      console.error('[Chat] Error initializing new thread:', error);
+      if (process.env.NODE_ENV !== "production") console.error('[Chat] Error initializing new thread:', error);
       toast({
         title: "Error",
         description: `Failed to start a new chat: ${error.message}`,
@@ -307,7 +307,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     e.preventDefault();
     const userInput = inputRef.current.value.trim();
     if (!userInput || isLoading || isResponseLoading) {
-      console.log('[Chat] Submit prevented:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Submit prevented:', {
         hasInput: !!userInput,
         isLoading,
         isResponseLoading
@@ -315,7 +315,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       return;
     }
 
-    console.log('[Chat] Preparing to submit message:', {
+    if (process.env.NODE_ENV !== "production") console.log('[Chat] Preparing to submit message:', {
       userInput: userInput.length > 30 ? userInput.substring(0, 30) + '...' : userInput,
       threadId: thread?.id,
       toolId: thread?.tool_id,
@@ -331,30 +331,30 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     // Handle the case where no thread exists yet
     let currentThread = thread;
     if (!currentThread?.id) {
-      console.log('[Chat] No thread ID found, initializing new thread');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] No thread ID found, initializing new thread');
       currentThread = await initializeNewThread(userInput);
       if (!currentThread) {
-        console.log('[Chat] Failed to initialize thread, aborting message submission');
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Failed to initialize thread, aborting message submission');
         setIsLoading(false);
         setIsResponseLoading(false);
         return;
       }
 
       // At this point, the message has already been saved as part of thread initialization
-      console.log('[Chat] User message already saved during thread initialization');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] User message already saved during thread initialization');
       inputRef.current.value = '';
       setError(null);
 
       // Need to get AI response for the first message
       try {
-        console.log('[Chat] Getting AI response for first message');
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Getting AI response for first message');
         const response = await getAIResponse(userInput, {
           ...currentThread,
           messages: currentThread.messages
         }, user.id);
         
         if (response.error) {
-          console.error('[Chat] AI Response Error for first message:', response.error);
+          if (process.env.NODE_ENV !== "production") console.error('[Chat] AI Response Error for first message:', response.error);
           throw new Error(response.error);
         }
         
@@ -365,21 +365,21 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           timestamp: new Date().toISOString()
         };
         
-        console.log('[Chat] Saving assistant message for first conversation turn');
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Saving assistant message for first conversation turn');
         const savedAssistantMessage = await saveMessage(assistantMessagePayload, user.id);
         
-        console.log('[Chat] Assistant message saved:', {
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Assistant message saved:', {
           messageId: savedAssistantMessage.id
         });
         
         setMessages(prev => [...prev, savedAssistantMessage]);
         
         if (onThreadUpdate) {
-          console.log('[Chat] Notifying parent of thread update after first AI response');
+          if (process.env.NODE_ENV !== "production") console.log('[Chat] Notifying parent of thread update after first AI response');
           onThreadUpdate({...currentThread, messages: [...currentThread.messages, savedAssistantMessage]});
         }
       } catch (err) {
-        console.error('[Chat] Error getting first AI response:', err);
+        if (process.env.NODE_ENV !== "production") console.error('[Chat] Error getting first AI response:', err);
         setError(err.message);
         toast({
           variant: "destructive",
@@ -410,9 +410,9 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     setError(null);
 
     try {
-      console.log('[Chat] Saving user message to existing thread');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Saving user message to existing thread');
       const savedUserMessage = await saveMessage(userMessagePayload, user.id);
-      console.log('[Chat] User message saved:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] User message saved:', {
         messageId: savedUserMessage.id,
         content: savedUserMessage.content.substring(0, 30) + '...'
       });
@@ -420,9 +420,9 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       // Replace temp message with saved message
       setMessages(prev => prev.map(msg => msg.id === tempId ? savedUserMessage : msg));
 
-      console.log('[Chat] handleSubmit: Preparing to call getAIResponse. Thread ID:', currentThread?.id);
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] handleSubmit: Preparing to call getAIResponse. Thread ID:', currentThread?.id);
       if (!currentThread?.id) {
-         console.error('[Chat] handleSubmit: CRITICAL - currentThread.id is missing before calling getAIResponse!');
+         if (process.env.NODE_ENV !== "production") console.error('[Chat] handleSubmit: CRITICAL - currentThread.id is missing before calling getAIResponse!');
       }
       
       // Make sure loading is still set to true before AI response
@@ -439,7 +439,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       }, user.id);
 
       if (response.error) {
-        console.error('[Chat] AI Response Error on submit:', response.error);
+        if (process.env.NODE_ENV !== "production") console.error('[Chat] AI Response Error on submit:', response.error);
         throw new Error(response.error);
       }
 
@@ -451,9 +451,9 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         timestamp: assistantTimestamp
       };
 
-      console.log('[Chat] Saving assistant message');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Saving assistant message');
       const savedAssistantMessage = await saveMessage(assistantMessagePayload, user.id);
-      console.log('[Chat] Assistant message saved:', {
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Assistant message saved:', {
         messageId: savedAssistantMessage.id,
         content: savedAssistantMessage.content.substring(0, 30) + '...'
       });
@@ -484,7 +484,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       };
 
       if (onThreadUpdate) {
-        console.log('[Chat] Notifying parent of thread update with tool data:', {
+        if (process.env.NODE_ENV !== "production") console.log('[Chat] Notifying parent of thread update with tool data:', {
           currentQuestionKey: updatedThread.currentQuestionKey,
           questionsAnswered: updatedThread.questionsAnswered,
           answersCount: Object.keys(updatedThread.collectedAnswers || {}).length
@@ -493,7 +493,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       }
 
     } catch (err) {
-      console.error('[Chat] Error in handleSubmit:', err);
+      if (process.env.NODE_ENV !== "production") console.error('[Chat] Error in handleSubmit:', err);
       setError(err.message);
       toast({
         variant: "destructive",
@@ -503,7 +503,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     } finally {
       setIsLoading(false);
       setIsResponseLoading(false);
-      console.log('[Chat] Message submission completed');
+      if (process.env.NODE_ENV !== "production") console.log('[Chat] Message submission completed');
     }
   };
 
@@ -570,7 +570,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           {isResponseLoading && (
             <>
               <LoadingMessage />
-              {console.log('[Chat] Rendering LoadingMessage component')}
+              {if (process.env.NODE_ENV !== "production") console.log('[Chat] Rendering LoadingMessage component')}
             </>
           )}
           
