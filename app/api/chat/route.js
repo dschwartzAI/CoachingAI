@@ -1,7 +1,6 @@
 import { OpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
@@ -1155,18 +1154,7 @@ export async function POST(request) {
     }
 
     // Initialize Supabase client early, before any operations that might use it
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        cookies: {
-          get(name) { return cookieStore.get(name)?.value; },
-          set(name, value, options) { cookieStore.set({ name, value, ...options }); },
-          remove(name, options) { cookieStore.set({ name, value: '', ...options }); },
-        },
-      }
-    );
+    const supabase = createClient();
 
     // Get the authenticated user
     const { data: { user } } = await supabase.auth.getUser();

@@ -1,5 +1,4 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { OpenAI } from 'openai';
 
@@ -23,24 +22,11 @@ export async function POST(request) {
     console.log(`[Assistant Status] Checking run status: ${runId} for thread: ${threadId}`);
     
     // Setup Supabase client
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        cookies: {
-          get(name) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name, value, options) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name, options) {
-            cookieStore.set({ name, value: '', ...options });
-          },
-        },
-      }
-    );
+    const supabase = createClient();
+
+    // Get the authenticated user so we can attribute the message
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
     
     // Check the run status
     const runStatus = await openai.beta.threads.runs.retrieve(threadId, runId);
