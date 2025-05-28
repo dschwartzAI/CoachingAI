@@ -32,7 +32,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Thread ID is required' }, { status: 400 });
     }
     
-    console.log('[Update Thread Metadata] Updating thread:', threadId, 'with metadata:', metadata);
+    if (process.env.NODE_ENV !== "production") console.log('[Update Thread Metadata] Updating thread:', threadId, 'with metadata:', metadata);
     
     const supabase = createSupabaseClient();
     
@@ -44,13 +44,13 @@ export async function POST(request) {
       .single();
     
     if (findError && findError.code !== 'PGRST116') {
-      console.error('[Update Thread Metadata] Error finding thread:', findError);
+      if (process.env.NODE_ENV !== "production") console.error('[Update Thread Metadata] Error finding thread:', findError);
       return NextResponse.json({ error: 'Failed to find thread' }, { status: 500 });
     }
     
     if (!existingThread) {
-      console.log('[Update Thread Metadata] Thread not found, cannot create thread without required fields (title, user_id)');
-      console.log('[Update Thread Metadata] This suggests the thread should have been created earlier in the process');
+      if (process.env.NODE_ENV !== "production") console.log('[Update Thread Metadata] Thread not found, cannot create thread without required fields (title, user_id)');
+      if (process.env.NODE_ENV !== "production") console.log('[Update Thread Metadata] This suggests the thread should have been created earlier in the process');
       return NextResponse.json({ 
         error: 'Thread not found and cannot be created without required fields',
         details: 'Thread should be created during the chat initialization process'
@@ -72,15 +72,15 @@ export async function POST(request) {
       .single();
     
     if (error) {
-      console.error('[Update Thread Metadata] Error updating thread metadata:', error);
+      if (process.env.NODE_ENV !== "production") console.error('[Update Thread Metadata] Error updating thread metadata:', error);
       return NextResponse.json({ error: 'Failed to update thread metadata' }, { status: 500 });
     }
     
-    console.log('[Update Thread Metadata] Thread metadata updated successfully:', data.id);
+    if (process.env.NODE_ENV !== "production") console.log('[Update Thread Metadata] Thread metadata updated successfully:', data.id);
     return NextResponse.json({ success: true, thread: data });
     
   } catch (error) {
-    console.error('[Update Thread Metadata] Unexpected error:', error);
+    if (process.env.NODE_ENV !== "production") console.error('[Update Thread Metadata] Unexpected error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 } 

@@ -42,7 +42,7 @@ export default function SignUpPage() {
       const result = await signUpWithEmail(email, password);
       setSuccess(result.message || 'Sign up successful! Check your email to confirm your account.');
     } catch (err) {
-      console.error("Email signup error:", err);
+      if (process.env.NODE_ENV !== 'production') console.error("Email signup error:", err);
       setError(err.message || 'Failed to sign up with email.');
     } finally {
       setLoading(false);
@@ -55,7 +55,7 @@ export default function SignUpPage() {
     try {
       await signInWithGoogle();
     } catch (err) {
-      console.error("Google login error:", err);
+      if (process.env.NODE_ENV !== 'production') console.error("Google login error:", err);
       setError(err.message || 'Failed to initiate Google sign up.');
       setLoading(false);
     }

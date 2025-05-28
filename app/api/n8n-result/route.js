@@ -8,11 +8,11 @@ export async function POST(request) {
   let chatId;
 
   try {
-    console.log(`\n--- [SSE /api/n8n-result POST Request Start ${sseStartTime}] ---`);
+    if (process.env.NODE_ENV !== "production") console.log(`\n--- [SSE /api/n8n-result POST Request Start ${sseStartTime}] ---`);
     
     // Validate N8N_WEBHOOK_URL environment variable
     if (!N8N_WEBHOOK_URL) {
-      console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Server configuration error: N8N_WEBHOOK_URL not defined", code: "ENV_MISSING"})}\n\n`,
         { 
@@ -31,9 +31,9 @@ export async function POST(request) {
     try {
       requestData = await request.json();
       chatId = requestData.chatId;
-      console.log(`[SSE ${chatId || sseStartTime}] Received POST data with fields: ${Object.keys(requestData).join(', ')}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId || sseStartTime}] Received POST data with fields: ${Object.keys(requestData).join(', ')}`);
     } catch (e) {
-      console.error(`[SSE ${sseStartTime}] Failed to parse POST body: ${e.message}`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Failed to parse POST body: ${e.message}`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Failed to parse request body", code: "INVALID_REQUEST_BODY"})}\n\n`,
         { 
@@ -51,7 +51,7 @@ export async function POST(request) {
     const { answersData, chatHistory } = requestData;
 
     if (!chatId) {
-      console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Missing chatId in request body", code: "MISSING_CHAT_ID"})}\n\n`,
         { 
@@ -66,7 +66,7 @@ export async function POST(request) {
     }
     
     if (!answersData) {
-      console.error(`[SSE ${chatId}] Error: Missing answersData in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error: Missing answersData in request body.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Missing answersData in request body", code: "MISSING_ANSWERS"})}\n\n`,
         { 
@@ -80,13 +80,13 @@ export async function POST(request) {
       );
     }
     
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
     
     if (chatHistory) {
-      console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
     } else {
-      console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
     }
 
     // Create a streaming response
@@ -97,7 +97,7 @@ export async function POST(request) {
             const payload = JSON.stringify(data);
             controller.enqueue(`event: ${event}\ndata: ${payload}\n\n`);
           } catch (error) {
-            console.error(`[SSE ${chatId}] Error sending event '${event}':`, error);
+            if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error sending event '${event}':`, error);
           }
         };
 
@@ -106,11 +106,11 @@ export async function POST(request) {
           status: 'pending', 
           message: "Your document is being generated. This may take 1-3 minutes..." 
         });
-        console.log(`[SSE ${chatId}] Sent initial 'processing' event.`);
+        if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent initial 'processing' event.`);
 
         // Call n8n webhook directly (synchronous approach)
         try {
-          console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
           
           const requestBody = {
             chatId: chatId,
@@ -126,21 +126,21 @@ export async function POST(request) {
           });
 
           const status = n8nResponse.status;
-          console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
 
           if (!n8nResponse.ok) {
             let errorBody = 'Could not read error body';
             try { 
               errorBody = await n8nResponse.text(); 
             } catch (e) { 
-              console.error(`[SSE ${chatId}] Could not read error body:`, e);
+              if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Could not read error body:`, e);
             }
             throw new Error(`n8n failed (${status}): ${errorBody}`);
           }
 
           // Parse JSON response
           const n8nData = await n8nResponse.json();
-          console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
 
           // Save the document URL as a regular chat message
           if (n8nData.googleDocLink) {
@@ -162,45 +162,45 @@ export async function POST(request) {
               });
 
               if (saveResponse.ok) {
-                console.log(`[SSE ${chatId}] Successfully saved document URL as chat message.`);
+                if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Successfully saved document URL as chat message.`);
               } else {
-                console.error(`[SSE ${chatId}] Failed to save document URL as chat message:`, await saveResponse.text());
+                if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Failed to save document URL as chat message:`, await saveResponse.text());
               }
             } catch (saveError) {
-              console.error(`[SSE ${chatId}] Error saving document URL as chat message:`, saveError);
+              if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error saving document URL as chat message:`, saveError);
             }
           }
 
           // Send success response
           sendEvent('n8n_result', { success: true, data: n8nData });
-          console.log(`[SSE ${chatId}] Sent success result to client.`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent success result to client.`);
 
         } catch (error) {
-          console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
+          if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
           sendEvent('error', { 
             success: false, 
             message: error.message || 'Failed to process n8n request.',
             code: "N8N_PROCESSING_ERROR"
           });
-          console.log(`[SSE ${chatId}] Sent error event to client.`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent error event to client.`);
         }
 
         // Close the connection
         try {
           controller.close();
-          console.log(`[SSE ${chatId}] Connection closed successfully.`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Connection closed successfully.`);
         } catch (error) {
-          console.error(`[SSE ${chatId}] Error closing connection:`, error);
+          if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error closing connection:`, error);
         }
       },
       cancel() {
-        console.log(`[SSE ${chatId || sseStartTime}] Connection closed by client.`);
+        if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId || sseStartTime}] Connection closed by client.`);
       }
     });
 
     // Return the stream
-    console.log(`[SSE ${chatId}] Returning SSE stream response.`);
-    console.log(`--- [SSE /api/n8n-result POST Request End ${sseStartTime} - Took ${Date.now() - sseStartTime}ms to establish stream] ---`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Returning SSE stream response.`);
+    if (process.env.NODE_ENV !== "production") console.log(`--- [SSE /api/n8n-result POST Request End ${sseStartTime} - Took ${Date.now() - sseStartTime}ms to establish stream] ---`);
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -210,7 +210,7 @@ export async function POST(request) {
     });
     
   } catch (outerError) {
-    console.error(`[SSE CRITICAL ${chatId || sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
+    if (process.env.NODE_ENV !== "production") console.error(`[SSE CRITICAL ${chatId || sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
     const errorChatId = chatId || 'unknown_chat_id';
     return new Response(
       `event: error\ndata: ${JSON.stringify({error: "Critical server error", details: outerError.message, code: "UNHANDLED_ERROR", chatId: errorChatId})}\n\n`,
@@ -229,8 +229,8 @@ export async function POST(request) {
 // Keep GET method for backward compatibility
 export async function GET(request) {
   const sseStartTime = Date.now();
-  console.log(`\n--- [SSE /api/n8n-result GET Request Deprecated ${sseStartTime}] ---`);
-  console.log(`[SSE ${sseStartTime}] Warning: GET method is deprecated. Please use POST instead.`);
+  if (process.env.NODE_ENV !== "production") console.log(`\n--- [SSE /api/n8n-result GET Request Deprecated ${sseStartTime}] ---`);
+  if (process.env.NODE_ENV !== "production") console.log(`[SSE ${sseStartTime}] Warning: GET method is deprecated. Please use POST instead.`);
   
   return new Response(
     `event: error\ndata: ${JSON.stringify({error: "GET method is deprecated for this endpoint. Please use POST method.", code: "GET_DEPRECATED"})}\n\n`,

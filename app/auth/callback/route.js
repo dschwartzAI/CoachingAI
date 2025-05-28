@@ -7,10 +7,10 @@ export async function GET(request) {
   const code = requestUrl.searchParams.get('code')
   const provider = requestUrl.searchParams.get('provider')
   
-  console.log(`[Auth Callback] Request URL: ${requestUrl.toString()}`);
-  console.log(`[Auth Callback] Origin: ${requestUrl.origin}`);
-  console.log(`[Auth Callback] Auth provider: ${provider || 'email'}`);
-  console.log(`[Auth Callback] Has code: ${!!code}`);
+  if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Request URL: ${requestUrl.toString()}`);
+  if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Origin: ${requestUrl.origin}`);
+  if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Auth provider: ${provider || 'email'}`);
+  if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Has code: ${!!code}`);
 
   if (code) {
     const cookieStore = cookies()
@@ -32,19 +32,19 @@ export async function GET(request) {
       }
     )
     
-    console.log(`[Auth Callback] Exchanging code for session`);
+    if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Exchanging code for session`);
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (error) {
-      console.error(`[Auth Callback] Error exchanging code: ${error.message}`);
+      if (process.env.NODE_ENV !== 'production') console.error(`[Auth Callback] Error exchanging code: ${error.message}`);
     } else {
-      console.log(`[Auth Callback] Successfully exchanged code for session`);
+      if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Successfully exchanged code for session`);
     }
   }
 
   // URL to redirect to after sign in process completes
   // Explicitly use the current origin without any query parameters
   const redirectUrl = requestUrl.origin;
-  console.log(`[Auth Callback] Redirecting to clean URL: ${redirectUrl}`);
+  if (process.env.NODE_ENV !== 'production') console.log(`[Auth Callback] Redirecting to clean URL: ${redirectUrl}`);
   return NextResponse.redirect(redirectUrl)
 } 

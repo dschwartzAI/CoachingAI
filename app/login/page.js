@@ -29,7 +29,7 @@ export default function LoginPage() {
     try {
       await signInWithEmail(email, password);
     } catch (err) {
-      console.error("Email login error:", err);
+      if (process.env.NODE_ENV !== 'production') console.error("Email login error:", err);
       setError(err.message || 'Failed to log in with email.');
     } finally {
       setLoading(false);
