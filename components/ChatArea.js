@@ -15,6 +15,7 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
+import useChatSSE from "@/hooks/use-chat-sse";
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -438,7 +439,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
-  const eventSourceRef = useRef(null);
+  const { eventSourceRef, closeConnection } = useChatSSE();
   const textareaRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const prevChatIdRef = useRef();
@@ -446,6 +447,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
+
+  // Clean up SSE connection on unmount
+  useEffect(() => {
+    return () => {
+      closeConnection();
+    };
+  }, []);
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -548,8 +556,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
           if (process.env.NODE_ENV !== "production") console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
-          eventSourceRef.current.close(); // Close any previous connection
-          eventSourceRef.current = null;
+          closeConnection();
       }
     } else {
       // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
@@ -1185,7 +1192,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const connectToN8nResultStream = (chatId, encodedAnswers) => {
     if (eventSourceRef.current) {
       if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Closing existing EventSource before creating new one.");
-      eventSourceRef.current.close(); // Close any previous connection
+      closeConnection();
     }
 
     // Get the last 30 messages from the current chat
