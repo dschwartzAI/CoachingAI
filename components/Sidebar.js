@@ -34,8 +34,7 @@ import { deleteThread } from '@/lib/utils/supabase';
 // Map tool IDs to icons
 const toolIcons = {
   'hybrid-offer': <FileText className="h-4 w-4 mr-2" />,
-  'content-repurposer': <BrainCog className="h-4 w-4 mr-2" />,
-  'analytics': <LineChart className="h-4 w-4 mr-2" />
+  'workshop-generator': <span className="mr-2">💻</span>
 };
 
 export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading }) {

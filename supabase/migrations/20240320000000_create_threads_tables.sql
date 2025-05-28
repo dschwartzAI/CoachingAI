@@ -9,7 +9,7 @@ create table public.threads (
     -- Ensure tool_id matches valid tools
     constraint valid_tool_id check (
         tool_id is null or 
-        tool_id in ('hybrid-offer')  -- Add new tools here
+        tool_id in ('hybrid-offer', 'workshop-generator')  -- Add new tools here
     )
 );
 

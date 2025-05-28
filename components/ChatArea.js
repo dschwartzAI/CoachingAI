@@ -26,6 +26,16 @@ const hybridOfferQuestions = [
   { key: 'clientResult', question: "Finally, what's your biggest client result?" }
 ];
 
+// Define workshop generator questions
+const workshopQuestions = [
+  { key: 'participantOutcomes', question: "What specific outcomes will participants achieve?" },
+  { key: 'targetAudience', question: "Who is your ideal workshop participant?" },
+  { key: 'problemAddressed', question: "What problem does your workshop solve?" },
+  { key: 'workshopDuration', question: "How long will your workshop be?" },
+  { key: 'topicsAndActivities', question: "What topics and activities will you cover?" },
+  { key: 'resourcesProvided', question: "What resources will participants receive?" }
+];
+
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
   return (
@@ -286,6 +296,138 @@ function DocumentMessage({ message }) {
   );
 }
 
+// Add a component for rendering HTML landing pages
+function LandingPageMessage({ content }) {
+  const [showPreview, setShowPreview] = useState(false);
+  const [copied, setCopied] = useState(false);
+  
+  // Extract HTML code from the message content
+  const extractHTMLCode = (text) => {
+    // Look for HTML code blocks or complete HTML documents
+    const htmlMatch = text.match(/```html\n([\s\S]*?)\n```/) || 
+                     text.match(/```\n(<!DOCTYPE html[\s\S]*?<\/html>)\n```/) ||
+                     text.match(/(<!DOCTYPE html[\s\S]*?<\/html>)/);
+    
+    return htmlMatch ? htmlMatch[1] : null;
+  };
+
+  const htmlCode = extractHTMLCode(content);
+  
+  const copyToClipboard = async () => {
+    if (htmlCode) {
+      try {
+        await navigator.clipboard.writeText(htmlCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    }
+  };
+
+  const downloadHTML = () => {
+    if (htmlCode) {
+      const blob = new Blob([htmlCode], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'landing-page.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  if (!htmlCode) {
+    // If no HTML code found, render as regular markdown
+    return <MarkdownMessage content={content} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Regular message content without the HTML code block */}
+      <div>
+        <MarkdownMessage content={content.replace(/```html\n[\s\S]*?\n```/g, '').replace(/```\n<!DOCTYPE html[\s\S]*?<\/html>\n```/g, '').replace(/<!DOCTYPE html[\s\S]*?<\/html>/g, '').trim()} />
+      </div>
+      
+      {/* HTML Code Section */}
+      <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-sm">Landing Page HTML</h4>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+              className="text-xs"
+            >
+              {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyToClipboard}
+              className="text-xs"
+            >
+              {copied ? 'Copied!' : 'Copy HTML'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadHTML}
+              className="text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Download
+            </Button>
+          </div>
+        </div>
+        
+        {showPreview && (
+          <div className="mb-4">
+            <div className="border rounded bg-white" style={{ height: '400px' }}>
+              <iframe
+                srcDoc={htmlCode}
+                className="w-full h-full rounded"
+                title="Landing Page Preview"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        )}
+        
+        <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+          <pre className="whitespace-pre-wrap">{htmlCode}</pre>
+        </div>
+        
+        <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+          <p><strong>Instructions:</strong></p>
+          <ol className="list-decimal list-inside space-y-1 mt-1">
+            <li>Copy the HTML code above</li>
+            <li>In HighLevel, go to Sites → Pages → Create New Page</li>
+            <li>Choose "Custom Code" or "Blank Page"</li>
+            <li>Paste the HTML code into the custom code section</li>
+            <li>Save and publish your landing page</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Add a function to check if a message contains landing page HTML
+function isLandingPageMessage(message) {
+  if (typeof message.content !== 'string') return false;
+  
+  // Check if the message contains HTML code blocks or complete HTML documents
+  const hasHTMLCode = message.content.includes('```html') || 
+                     message.content.includes('<!DOCTYPE html') ||
+                     (message.content.includes('<html') && message.content.includes('</html>'));
+  
+  return hasHTMLCode;
+}
+
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -333,7 +475,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
         // Initialize state from metadata if available
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null));
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
         
         // Check document generation state
@@ -396,7 +539,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // Reset to default state if no metadata
         setCollectedAnswers({});
         setQuestionsAnswered(0);
-        setCurrentQuestionKey(currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null);
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(questionsArray[0]?.key);
         setIsWaitingForN8n(false);
         setInitiationAttemptedForContext(false);
       }
@@ -411,11 +555,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
       // Re-apply state from metadata if available to ensure consistency
       console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
-      if (currentSelectedTool === 'hybrid-offer' && currentChat?.metadata && typeof currentChat.metadata === 'object') {
+      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
          // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
          console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
+         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0].key));
          setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
          
          // Check document generation state
@@ -438,18 +583,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // This effect might be redundant if the above effect correctly initializes from metadata.
   // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
-      if (selectedTool === 'hybrid-offer' && currentChat?.messages?.length > 0) {
+      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && currentChat?.messages?.length > 0) {
           // A more robust way would be to persist/load answers+key with the chat 
           // For now, just don't reset to first key if history exists
           if (!currentQuestionKey) {
-              setCurrentQuestionKey(hybridOfferQuestions[questionsAnswered]?.key || hybridOfferQuestions[0].key); // Use questions answered to determine key
+              const questionsArray = selectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+              setCurrentQuestionKey(questionsArray[questionsAnswered]?.key || questionsArray[0].key); // Use questions answered to determine key
           }
       } else if (selectedTool === 'hybrid-offer') {
           setCurrentQuestionKey(hybridOfferQuestions[0].key);
+      } else if (selectedTool === 'workshop-generator') {
+          setCurrentQuestionKey(workshopQuestions[0].key);
       }
   }, [currentChat?.id, currentChat?.messages?.length, selectedTool, questionsAnswered]); // Re-run if chat loads or questions answered changes
 
-  // Effect to initiate chat for Hybrid Offer tool
+  // Effect to initiate chat for tool-based chats
   useEffect(() => {
     console.log(
         `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
@@ -458,13 +606,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
     if (
-        selectedTool === 'hybrid-offer' &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
         !initiationAttemptedForContext && 
         !isInitiating &&
         !isLoading &&
         // Ensure it's genuinely a new chat for the tool, or an existing empty one for this tool
         (!currentChat || !currentChat.messages || currentChat.messages.length === 0) &&
-        (!currentChat || currentChat.tool_id === 'hybrid-offer') && // Also ensure current chat is for this tool if it exists
+        (!currentChat || currentChat.tool_id === selectedTool) && // Also ensure current chat is for this tool if it exists
         // Skip initiation if we have metadata with questions already answered
         !(currentChat?.metadata?.questionsAnswered > 0)
        ) {
@@ -475,7 +623,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       if (!currentChat) {
           console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
       }
-      initiateHybridOfferChat(chatIdToUse); 
+      initiateToolChat(chatIdToUse, selectedTool); 
     }
   }, [
     selectedTool,
@@ -488,14 +636,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   ]);
 
   // Function to call the API for the first message
-  const initiateHybridOfferChat = async (chatIdToInitiate) => {
+  const initiateToolChat = async (chatIdToInitiate, tool) => {
       console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
       setIsLoading(true);
       // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
       
       const requestBody = {
         messages: [], // For init, messages should be empty
-        tool: 'hybrid-offer',
+        tool: tool,
         isToolInit: true,
         chatId: chatIdToInitiate, // Use the passed chatId, which could be temp or real
         // Ensure collectedAnswers and currentQuestionKey are not sent or are explicitly empty for a true init
@@ -530,7 +678,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           
           // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
           const returnedAnswers = data.collectedAnswers || {};
-          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? hybridOfferQuestions[0].key : null);
+          const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? questionsArray[0].key : null);
           const initialQuestionsAnswered = data.questionsAnswered || 0;
           const initialIsComplete = data.isComplete || false;
 
@@ -912,13 +1061,17 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           return result;
         });
 
-        // If the offer is complete, initiate SSE connection
-        console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
-        if (isComplete && correctChatId) {
-            console.log(`[CHAT_DEBUG] Offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
+        // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
+        console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
+        if (isComplete && correctChatId && selectedTool === 'hybrid-offer') {
+            console.log(`[CHAT_DEBUG] Hybrid offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
             setIsWaitingForN8n(true);
             const encodedAnswers = encodeURIComponent(JSON.stringify(returnedAnswers || {}));
             connectToN8nResultStream(correctChatId, encodedAnswers);
+        } else if (isComplete && correctChatId && selectedTool === 'workshop-generator') {
+            console.log(`[CHAT_DEBUG] Workshop generator complete for chatId: ${correctChatId}. HTML should be displayed directly in the message.`);
+            // Workshop generator completion is handled by the HTML generation in the API response
+            // No need to trigger n8n document generation
         }
 
         // Trigger scroll after message updates
@@ -1677,7 +1830,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 </h3>
                 <p className="text-sm sm:text-base text-muted-foreground">
                   {selectedTool 
-                    ? "I'll guide you through creating a compelling " + TOOLS[selectedTool].name.toLowerCase() + "."
+                    ? TOOLS[selectedTool].description
                     : "Ask me anything related to your business."}
                 </p>
               </div>
@@ -1750,10 +1903,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                         {message.is_thinking ? (
                           <LoadingMessage content={message.content} role={message.role} />
                         ) : (
-                          // Conditional rendering for document message vs. regular message
+                          // Conditional rendering for different message types
                           <>
                             {isDocumentMessage(message) ? (
                               <DocumentMessage message={message} />
+                            ) : isLandingPageMessage(message) ? (
+                              <LandingPageMessage content={message.content} />
                             ) : (
                               // Check for HTML content
                               message.content.includes('<a href') ? (

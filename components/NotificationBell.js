@@ -10,9 +10,10 @@ import { useAuth } from "./AuthProvider";
 export default function NotificationBell({ chats, setCurrentChat, currentChat }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [processedChats, setProcessedChats] = useState(new Set());
   const { user } = useAuth();
 
-  // Load notifications from localStorage on mount
+  // Load notifications and processed chats from localStorage on mount
   useEffect(() => {
     if (user?.id) {
       const savedNotifications = localStorage.getItem(`notifications_${user.id}`);
@@ -29,6 +30,17 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           console.error('Error parsing saved notifications:', error);
         }
       }
+
+      // Load processed chats tracking
+      const savedProcessedChats = localStorage.getItem(`processedChats_${user.id}`);
+      if (savedProcessedChats) {
+        try {
+          const parsed = JSON.parse(savedProcessedChats);
+          setProcessedChats(new Set(parsed));
+        } catch (error) {
+          console.error('Error parsing saved processed chats:', error);
+        }
+      }
     }
   }, [user?.id]);
 
@@ -39,14 +51,25 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
     }
   }, [notifications, user?.id]);
 
+  // Save processed chats to localStorage whenever they change
+  useEffect(() => {
+    if (user?.id && processedChats.size > 0) {
+      localStorage.setItem(`processedChats_${user.id}`, JSON.stringify([...processedChats]));
+    }
+  }, [processedChats, user?.id]);
+
   // Check for new document completions
   useEffect(() => {
     if (!chats || !user) return;
 
     const newNotifications = [];
+    const newProcessedChats = new Set(processedChats);
     
     chats.forEach(chat => {
-      // Check if this chat has a completed document that we haven't notified about
+      // Skip if we've already processed this chat for notifications
+      if (processedChats.has(chat.id)) return;
+
+      // Check if this chat has a completed document
       const hasDocumentMessage = chat.messages?.some(message => 
         message.role === 'assistant' && 
         (message.content?.includes('Document generated successfully') ||
@@ -60,26 +83,30 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
                                    chat.metadata?.documentLinks?.googleDocLink;
       
       if (hasDocumentMessage || hasDocumentInMetadata) {
-        // Check if we've already shown a notification for this chat
-        const existingNotification = notifications.find(n => n.chatId === chat.id);
-        if (!existingNotification) {
-          newNotifications.push({
-            id: `doc-ready-${chat.id}-${Date.now()}`,
-            chatId: chat.id,
-            chatTitle: chat.title || 'Hybrid Offer',
-            message: 'Your document is ready!',
-            timestamp: new Date(),
-            type: 'document_ready',
-            read: false
-          });
-        }
+        // Mark this chat as processed
+        newProcessedChats.add(chat.id);
+        
+        // Create notification
+        newNotifications.push({
+          id: `doc-ready-${chat.id}-${Date.now()}`,
+          chatId: chat.id,
+          chatTitle: chat.title || 'Hybrid Offer',
+          message: 'Your document is ready!',
+          timestamp: new Date(),
+          type: 'document_ready',
+          read: false
+        });
       }
     });
 
     if (newNotifications.length > 0) {
       setNotifications(prev => [...newNotifications, ...prev]);
     }
-  }, [chats, user]);
+
+    if (newProcessedChats.size > processedChats.size) {
+      setProcessedChats(newProcessedChats);
+    }
+  }, [chats, user, processedChats]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -109,6 +136,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
     if (user?.id) {
       localStorage.removeItem(`notifications_${user.id}`);
     }
+    // Note: We don't clear processedChats here - this prevents notifications from reappearing
   };
 
   return (
