@@ -1718,40 +1718,63 @@ export async function POST(request) {
       if (isDesignChangeRequest) {
         console.log('[CHAT_API_DEBUG] Detected design change request for completed workshop');
         
-        // Create a prompt for design modifications
-        const designModificationPrompt = `You are helping a user modify the design of their workshop landing page. They have completed all the workshop questions and now want to make design changes.
+        // Get the original HTML from the last assistant message that contains HTML
+        let originalHTML = null;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'assistant' && messages[i].content.includes('<!DOCTYPE html>')) {
+            const htmlMatch = messages[i].content.match(/```html\n([\s\S]*?)\n```/);
+            if (htmlMatch) {
+              originalHTML = htmlMatch[1];
+              break;
+            }
+          }
+        }
 
-Original Workshop Information:
-${Object.entries(collectedAnswers).map(([key, value]) => `- ${key}: ${value}`).join('\n')}
+        if (!originalHTML) {
+          // Fallback: generate original HTML first
+          console.log('[CHAT_API_DEBUG] No original HTML found, generating base template');
+          originalHTML = await generateWorkshopHTML(collectedAnswers);
+        }
 
-User's Design Change Request: "${latestUserMessage}"
+        // Create a targeted design modification prompt that preserves structure
+        const designModificationPrompt = `You are helping modify the design of an existing workshop landing page. The user wants to make specific design changes while preserving the overall structure and content.
 
-Your task is to:
-1. Acknowledge their design request
-2. Generate updated HTML with their requested changes
-3. Provide the new HTML in a code block
+IMPORTANT: You must preserve the exact same content, structure, and layout. Only modify the visual styling (colors, fonts, spacing) as requested.
 
-Guidelines for design changes:
-- If they mention colors, update the CSS color schemes accordingly
-- If they mention layout changes, modify the structure
-- If they mention text changes, update the copy while maintaining the professional tone
-- If they mention making it "more professional/modern/bold", enhance the styling accordingly
-- Always maintain the core functionality and structure
-- Keep the responsive design intact
+Original HTML:
+${originalHTML}
 
-Respond with:
-1. A brief acknowledgment of their request
-2. The updated HTML code in a markdown code block
-3. A summary of what changes were made
+User's Design Request: "${latestUserMessage}"
 
-Generate the complete updated HTML now.`;
+Your task:
+1. Analyze the user's specific design request
+2. Modify ONLY the CSS styling in the <style> section to implement their changes
+3. Keep all content, structure, and functionality exactly the same
+4. Preserve all text, headings, sections, and layout
+
+Common modifications:
+- Color changes: Update CSS color values, gradients, backgrounds
+- Background changes: Modify body background, section backgrounds
+- Spacing changes: Adjust padding, margins
+- Font changes: Update font-family, font-size, font-weight
+- Theme changes: Apply professional/modern/bold styling
+
+Rules:
+- DO NOT change any text content or copy
+- DO NOT change the HTML structure or layout
+- DO NOT remove or add sections
+- ONLY modify CSS properties in the <style> section
+- Preserve all responsive design and functionality
+- Keep the same conversion-optimized layout
+
+Return the complete modified HTML with only the CSS styling changes applied.`;
 
         try {
-          // Use Claude Opus for design modifications
+          // Use Claude Opus for targeted design modifications
           const designMessage = await anthropic.messages.create({
             model: "claude-3-opus-20240229",
             max_tokens: 4000,
-            temperature: 0.8,
+            temperature: 0.3, // Lower temperature for more precise modifications
             messages: [
               {
                 role: "user",
@@ -1762,31 +1785,89 @@ Generate the complete updated HTML now.`;
 
           const designResponse = designMessage.content[0].text;
           
-          // If the response doesn't contain HTML, generate it using the original function with modifications
-          if (!designResponse.includes('<!DOCTYPE html>')) {
-            console.log('[CHAT_API_DEBUG] Claude response lacks HTML, generating with modifications');
-            
-            // Create a modified version of the collected answers based on the user request
-            const modifiedAnswers = { ...collectedAnswers };
-            
-            // Apply simple modifications based on common requests
-            if (latestUserMessage.toLowerCase().includes('professional')) {
-              modifiedAnswers._designTheme = 'professional';
-            } else if (latestUserMessage.toLowerCase().includes('modern')) {
-              modifiedAnswers._designTheme = 'modern';
-            } else if (latestUserMessage.toLowerCase().includes('bold')) {
-              modifiedAnswers._designTheme = 'bold';
+          // Extract HTML from Claude's response
+          let modifiedHTML = designResponse;
+          const htmlMatch = designResponse.match(/```html\n([\s\S]*?)\n```/);
+          if (htmlMatch) {
+            modifiedHTML = htmlMatch[1];
+          } else if (designResponse.includes('<!DOCTYPE html>')) {
+            // If HTML is not in code blocks, extract it directly
+            const htmlStart = designResponse.indexOf('<!DOCTYPE html>');
+            const htmlEnd = designResponse.lastIndexOf('</html>') + 7;
+            if (htmlStart !== -1 && htmlEnd !== -1) {
+              modifiedHTML = designResponse.substring(htmlStart, htmlEnd);
             }
-            
-            // Add the user's specific request as a design instruction
-            modifiedAnswers._designInstructions = latestUserMessage;
-            
-            const updatedHTML = await generateWorkshopHTML(modifiedAnswers);
-            
-            determinedAiResponseContent = `I've updated your workshop landing page based on your request: "${latestUserMessage}"\n\nHere's your updated HTML:\n\n\`\`\`html\n${updatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\nThe design has been updated according to your request. Feel free to ask for any additional changes!`;
           } else {
-            determinedAiResponseContent = designResponse;
+            // Fallback: if no HTML found, use original with simple modifications
+            console.log('[CHAT_API_DEBUG] No HTML in Claude response, applying simple modifications');
+            modifiedHTML = originalHTML;
+            
+            // Apply simple CSS modifications based on common requests
+            if (latestUserMessage.toLowerCase().includes('dark') && latestUserMessage.toLowerCase().includes('grey')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #374151 0%, #4b5563 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('dark') && latestUserMessage.toLowerCase().includes('gray')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #374151 0%, #4b5563 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('blue')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('green')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #059669 0%, #047857 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('red')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('purple')) {
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, [^)]+\);/g,
+                'background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);'
+              );
+            } else if (latestUserMessage.toLowerCase().includes('darker')) {
+              // Make existing colors darker
+              modifiedHTML = modifiedHTML.replace(
+                /background: linear-gradient\(135deg, #([a-fA-F0-9]{6}) 0%, #([a-fA-F0-9]{6}) 100%\);/g,
+                (match, color1, color2) => {
+                  // Convert hex to darker version (simple approach)
+                  const darkerColor1 = '#' + color1.replace(/./g, (c) => Math.max(0, parseInt(c, 16) - 2).toString(16));
+                  const darkerColor2 = '#' + color2.replace(/./g, (c) => Math.max(0, parseInt(c, 16) - 2).toString(16));
+                  return `background: linear-gradient(135deg, ${darkerColor1} 0%, ${darkerColor2} 100%);`;
+                }
+              );
+            }
           }
+          
+          determinedAiResponseContent = `Acknowledged! I've updated the design based on your request: "${latestUserMessage}"
+
+Updated HTML:
+
+\`\`\`html
+${modifiedHTML}
+\`\`\`
+
+**Changes made:**
+- Applied your requested design modifications
+- Preserved all original content and structure
+- Maintained responsive design and functionality
+
+**Instructions:**
+1. Copy the HTML code above
+2. In HighLevel, go to Sites → Pages → Create New Page
+3. Choose "Custom Code" or "Blank Page"
+4. Paste the HTML code into the custom code section
+5. Save and publish your landing page
+
+Feel free to request any additional design changes!`;
           
           toolResponsePayload = {
             message: determinedAiResponseContent,
