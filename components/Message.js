@@ -2,20 +2,7 @@ import { MessageCircle, User, Clock, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format } from "date-fns";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-
-// Add a component for rendering markdown messages
-function MarkdownMessage({ content }) {
-  return (
-    <ReactMarkdown
-      className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
-      remarkPlugins={[remarkGfm]}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-}
+import MarkdownMessage from './chat/MarkdownMessage';
 
 export default function Message({ message }) {
   const isUser = message.role === 'user';
