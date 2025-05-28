@@ -7,14 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from '@/components/AuthProvider';
-import { Chrome } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithGoogle, signInWithEmail, user } = useAuth();
+  const { signInWithEmail, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -30,21 +29,9 @@ export default function LoginPage() {
     try {
       await signInWithEmail(email, password);
     } catch (err) {
-      console.error("Email login error:", err);
+      if (process.env.NODE_ENV !== 'production') console.error("Email login error:", err);
       setError(err.message || 'Failed to log in with email.');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await signInWithGoogle();
-    } catch (err) {
-      console.error("Google login error:", err);
-      setError(err.message || 'Failed to initiate Google login.');
       setLoading(false);
     }
   };
@@ -55,7 +42,7 @@ export default function LoginPage() {
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl">Login</CardTitle>
           <CardDescription>
-            Enter your email below to login or use Google
+            Enter your email below to login
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -88,22 +75,6 @@ export default function LoginPage() {
                 {loading ? 'Logging in...' : 'Login with Email'}
               </Button>
           </form>
-
-          <div className="relative my-2">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={loading}>
-            <Chrome className="mr-2 h-4 w-4" />
-            Google
-          </Button>
         </CardContent>
          <CardFooter className="text-center text-sm text-muted-foreground">
            <div className="w-full text-center">

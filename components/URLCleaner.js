@@ -20,7 +20,7 @@ export default function URLCleaner() {
       searchParams.has('provider')
     ) {
       // Log what we're removing
-      console.log('[URLCleaner] Cleaning auth-related URL parameters');
+      if (process.env.NODE_ENV !== "production") console.log('[URLCleaner] Cleaning auth-related URL parameters');
       
       // Use history API to replace the current URL without refreshing the page
       const cleanURL = window.location.origin + pathname;

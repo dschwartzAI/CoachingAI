@@ -1,0 +1,446 @@
+export const HIGHLEVEL_LANDING_PAGE_TEMPLATE = (data) => {
+  const {
+    title = "Get Clients In 24 Hours Without Getting On The Phone",
+    headerSubtitle = "For Coaches, Consultants and Agency Owners Who Sell High Ticket Services:",
+    headline = "Get Clients In 24 Hours Without Getting On The Phone :",
+    subheadline = "234 coaches and consultants are using this method to sell $2000-$25,000 offers without sales calls.",
+    benefits = [
+      "Step by Step training on the 5 factors an offer must have to convert.",
+      "A peak behind the scenes into my Hybrid Offer that generated <strong>$290,000 in 60 days.</strong>",
+      "The exact template that sold a $15,000 year long mastermind without a single call.",
+      "The 'laws of pricing' and why breaking them will kill your offer dead.",
+      "<strong>Bonus:</strong> Fill-in-the-blanks Template for you to create your own offer in minutes"
+    ],
+    presenter = "James Kemp",
+    price = "$9",
+    ctaText = "YES I WANT IMMEDIATE ACCESS FOR JUST $9",
+    ctaSubtext = "CLICK HERE TO GET THE TEMPLATE AND START WATCHING in THE next 2 minutes",
+    guaranteeTitle = "100% Lifetime Guarantee",
+    guaranteeText = "If you do not get value from this training and templates you can claim a full refund at any time for any reason. Simply email your receipt and you will be refunded inside 3 working days.",
+    faqs = [
+      {
+        question: "What exactly am I getting for only $9?",
+        answer: "Your purchase includes a 121 minute recording plus accompanying resources in a Google Doc. It also includes a Google Doc template you can modify and use for yourself to generate sales for your product or service."
+      },
+      {
+        question: "Who is this suited for?",
+        answer: "My clients are coaches, consultants, mentors, agency owners and service providers selling and delivering high value services both remotely and in-person. If you have a high value service between $2000 and $25000 you currently sell via phone calls or proposals then this is for you."
+      },
+      {
+        question: "What if I'm not satisfied?",
+        answer: "There is a 100% money back guarantee for this product. If you aren't satisfied or don't feel it's suitable for you after purchase you can request a refund at any time."
+      }
+    ],
+    companyName = "James Kemp. Kempire PTE Ltd",
+    accentColor = "#28a745",
+    accentHover = "#218838"
+  } = data;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f8f9fa;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0;
+            padding: 0 40px;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            padding: 15px 0;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .header-subtitle {
+            color: #333;
+            font-size: 1.1rem;
+            margin-bottom: 0;
+            opacity: 0.8;
+        }
+        
+        /* Hero Section */
+        .hero {
+            background: white;
+            padding: 40px 0;
+            text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            line-height: 1.2;
+            color: #333;
+        }
+        
+        .hero .subheadline {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            color: #333;
+            font-weight: bold;
+            opacity: 0.9;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: ${accentColor};
+            color: white;
+            padding: 18px 40px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .cta-button:hover {
+            background: ${accentHover};
+            transform: translateY(-2px);
+        }
+        
+        /* What You'll Learn Section */
+        .benefits {
+            padding: 40px 0;
+            background: white;
+        }
+        
+        .benefits h2 {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        
+        .benefits-list {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: left;
+        }
+        
+        .benefits-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .benefits-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 1.05rem;
+            position: relative;
+            padding-left: 30px;
+            color: #333;
+        }
+        
+        .benefits-list li:before {
+            content: "•";
+            color: ${accentColor};
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+            font-size: 1.5rem;
+        }
+        
+        .benefits-list li:last-child {
+            border-bottom: none;
+        }
+        
+        /* Presenter Section */
+        .presenter {
+            padding: 30px 0;
+            background: #f8f9fa;
+            text-align: center;
+        }
+        
+        .presenter h3 {
+            font-size: 1.4rem;
+            margin-bottom: 0;
+            color: #333;
+        }
+        
+        /* Form Section */
+        .form-section {
+            padding: 40px 0;
+            background: white;
+            text-align: center;
+        }
+        
+        .form-section h3 {
+            font-size: 1.6rem;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        
+        .form-section .emoji {
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+        }
+        
+        .form-container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid ${accentColor};
+        }
+        
+        .form-container input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            background: white;
+            color: #333;
+        }
+        
+        .price-highlight {
+            background: ${accentColor};
+            color: white;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+        
+        /* FAQ Section */
+        .faq {
+            padding: 40px 0;
+            background: #f8f9fa;
+        }
+        
+        .faq h2 {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        
+        .faq-item {
+            background: white;
+            margin-bottom: 15px;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid ${accentColor};
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            margin-bottom: 15px;
+        }
+        
+        .faq-question {
+            font-weight: bold;
+            font-size: 1.05rem;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        
+        .faq-answer {
+            color: #333;
+            line-height: 1.6;
+            opacity: 0.8;
+        }
+        
+        /* Guarantee Section */
+        .guarantee {
+            padding: 40px 0;
+            background: white;
+            text-align: center;
+        }
+        
+        .guarantee h3 {
+            font-size: 1.6rem;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .guarantee p {
+            max-width: 800px;
+            margin: 0 auto;
+            color: #333;
+            line-height: 1.6;
+            opacity: 0.8;
+        }
+        
+        /* Footer */
+        .footer {
+            padding: 30px 0;
+            background: #333;
+            color: white;
+            text-align: center;
+        }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .hero .subheadline {
+                font-size: 1.1rem;
+            }
+            
+            .container {
+                padding: 0 20px;
+            }
+            
+            .form-container {
+                margin: 0 20px;
+                padding: 30px 20px;
+            }
+            
+            .benefits-list, .faq-item, .guarantee p {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <section class="header">
+        <div class="container">
+            <p class="header-subtitle">${headerSubtitle}</p>
+        </div>
+    </section>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1><strong>${headline}</strong></h1>
+            <p class="subheadline"><strong>${subheadline}</strong></p>
+        </div>
+    </section>
+
+    <!-- Benefits Section -->
+    <section class="benefits">
+        <div class="container">
+            <h2>What you will learn:</h2>
+            <div class="benefits-list">
+                <ul>
+                    ${benefits.map(benefit => `<li>${benefit}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Presenter Section -->
+    <section class="presenter">
+        <div class="container">
+            <h3>Presented by ${presenter}</h3>
+        </div>
+    </section>
+
+    <!-- Form Section -->
+    <section class="form-section">
+        <div class="container">
+            <h3>Enter Your Email Now. <span class="emoji">👇</span></h3>
+            
+            <div class="form-container">
+                <div class="price-highlight">
+                    ${ctaText}
+                </div>
+                
+                <p style="margin-bottom: 20px; font-weight: bold;">${ctaSubtext}</p>
+                
+                <form>
+                    <input type="email" placeholder="Enter your email address" required>
+                    <a href="#purchase" class="cta-button" style="display: block; text-align: center;">Provide Your Details</a>
+                </form>
+                
+                <p style="margin-top: 20px; font-size: 0.9rem; color: #666;">
+                    Complete Your Purchase<br>
+                    Go To Step #2
+                </p>
+                
+                <p style="margin-top: 20px; font-size: 0.8rem; color: #999;">
+                    We Respect Your Privacy & Information.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Guarantee Section -->
+    <section class="guarantee">
+        <div class="container">
+            <h3><strong>${guaranteeTitle}</strong></h3>
+            <p>${guaranteeText}</p>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq">
+        <div class="container">
+            ${faqs.map(faq => `
+                <div class="faq-item">
+                    <div class="faq-question">${faq.question}</div>
+                    <div class="faq-answer">${faq.answer}</div>
+                </div>
+            `).join('')}
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="form-section">
+        <div class="container">
+            <div class="form-container">
+                <div class="price-highlight">
+                    ${ctaText}
+                </div>
+                
+                <p style="margin-bottom: 20px; font-weight: bold;">${ctaSubtext}</p>
+                
+                <form>
+                    <input type="email" placeholder="Enter your email address" required>
+                    <a href="#purchase" class="cta-button" style="display: block; text-align: center;">Provide Your Details</a>
+                </form>
+                
+                <p style="margin-top: 20px; font-size: 0.9rem; color: #666;">
+                    Complete Your Purchase<br>
+                    Go To Step #2
+                </p>
+                
+                <p style="margin-top: 20px; font-size: 0.8rem; color: #999;">
+                    We Respect Your Privacy & Information.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; ${companyName} All rights reserved.</p>
+            <p style="font-size: 0.8rem; margin-top: 10px; color: #999;">
+                ${companyName.split('.')[0]} is an education and training company. We do not sell a business opportunity, "get rich quick" program or money-making system. We do not guarantee success in our training.
+            </p>
+        </div>
+    </footer>
+
+</body>
+</html>`;
+}; 

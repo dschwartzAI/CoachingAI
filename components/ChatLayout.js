@@ -8,6 +8,7 @@ import { useAuth } from "./AuthProvider";
 import { getThreads } from "@/lib/utils/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { FullPageLoading } from "./ui/loading";
+import { createNewThread } from "@/lib/utils/thread";
 
 // Helper function to check if an ID is a valid UUID
 const isValidUUID = (id) => {
@@ -30,7 +31,7 @@ export default function ChatLayout() {
 
   // Use a more robust chat setter that handles ID changes
   const setCurrentChatWithTracking = (chat) => {
-    console.log('[ChatLayout] Setting current chat:', {
+    if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat:', {
       chatId: chat?.id,
       isValidUUID: chat?.id ? isValidUUID(chat.id) : false,
       messageCount: chat?.messages?.length
@@ -42,7 +43,7 @@ export default function ChatLayout() {
       const newIsValid = chat.id && isValidUUID(chat.id);
       
       if (prevIsTemp && newIsValid) {
-        console.log('[ChatLayout] Tracking ID change:', { 
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Tracking ID change:', { 
           from: currentChat.id, 
           to: chat.id 
         });
@@ -73,7 +74,7 @@ export default function ChatLayout() {
       
       // Log if we deduplicated anything
       if (deduplicatedChats.length !== updatedChats.length) {
-        console.log('[ChatLayout] Deduplicated chats:', {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Deduplicated chats:', {
           before: updatedChats.length,
           after: deduplicatedChats.length
         });
@@ -83,10 +84,20 @@ export default function ChatLayout() {
     });
   };
 
+  // Create default chat if needed
+  const createDefaultChat = () => {
+    if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Creating a default chat');
+    const defaultChat = createNewThread(null); // Regular JamesBot chat
+    defaultChat.isTemporary = false; // Make it persistent
+    setChatsSafely([defaultChat]);
+    setCurrentChatWithTracking(defaultChat);
+    return defaultChat;
+  };
+
   // Redirect unauthenticated users to login page
   useEffect(() => {
     if (!authLoading && !user) {
-      console.log('[ChatLayout] No authenticated user, redirecting to login page');
+      if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No authenticated user, redirecting to login page');
       router.replace('/login');
     }
   }, [user, authLoading, router]);
@@ -95,18 +106,23 @@ export default function ChatLayout() {
   useEffect(() => {
     const loadThreads = async () => {
       if (!user?.id) {
-        console.log('[ChatLayout] No user ID available, skipping thread loading');
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No user ID available, skipping thread loading');
         setIsLoading(false);
+        
+        // Create a default chat even if no user (for demo/anonymous mode)
+        if (!currentChat) {
+          createDefaultChat();
+        }
         return;
       }
 
       try {
-        console.log('[ChatLayout] Loading threads for user:', user.id);
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Loading threads for user:', user.id);
         setIsLoading(true);
         
         const threads = await getThreads(user.id);
         
-        console.log('[ChatLayout] Threads loaded successfully:', {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Threads loaded successfully:', {
           count: threads.length,
           threads: threads.map(t => ({
             id: t.id,
@@ -123,7 +139,7 @@ export default function ChatLayout() {
           // Ensure metadata is included and properly structured if it exists
           let metadata = thread.metadata;
           if (thread.tool_id === 'hybrid-offer' && metadata) {
-            console.log(`[ChatLayout] Thread ${thread.id} has hybrid-offer metadata:`, {
+            if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Thread ${thread.id} has hybrid-offer metadata:`, {
               questionsAnswered: metadata.questionsAnswered,
               currentQuestionKey: metadata.currentQuestionKey,
               isComplete: metadata.isComplete
@@ -133,7 +149,7 @@ export default function ChatLayout() {
             if (metadata.collectedAnswers && typeof metadata.collectedAnswers === 'object') {
               const answerCount = Object.keys(metadata.collectedAnswers).length;
               if (!metadata.questionsAnswered || metadata.questionsAnswered < answerCount) {
-                console.log(`[ChatLayout] Fixing questionsAnswered for thread ${thread.id}: ${metadata.questionsAnswered} -> ${answerCount}`);
+                if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Fixing questionsAnswered for thread ${thread.id}: ${metadata.questionsAnswered} -> ${answerCount}`);
                 metadata.questionsAnswered = answerCount;
               }
             }
@@ -149,20 +165,31 @@ export default function ChatLayout() {
         // Don't directly overwrite chats - use our safer setter
         setChatsSafely(formattedThreads);
         
-        // Only set the current chat if NO chat is currently selected (neither existing nor temporary)
-        if (!currentChat && formattedThreads.length > 0) {
-          console.log('[ChatLayout] No chat selected, setting current chat to the first loaded thread:', formattedThreads[0].id);
-          setCurrentChatWithTracking(formattedThreads[0]);
+        // Set current chat based on history or create a new one
+        if (formattedThreads.length > 0) {
+          if (!currentChat) {
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to the first loaded thread:', formattedThreads[0].id);
+            setCurrentChatWithTracking(formattedThreads[0]);
+          } else {
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
+          }
         } else {
-          console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
+          // No threads found, create a default chat
+          if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No threads found, creating a default chat');
+          createDefaultChat();
         }
       } catch (error) {
-        console.error('[ChatLayout] Error loading threads:', error);
+        if (process.env.NODE_ENV !== "production") console.error('[ChatLayout] Error loading threads:', error);
         toast({
           title: "Error",
           description: "Failed to load your conversations. Please try again.",
           variant: "destructive",
         });
+        
+        // Create a default chat when there's an error loading
+        if (!currentChat) {
+          createDefaultChat();
+        }
       } finally {
         setIsLoading(false);
       }
@@ -170,20 +197,23 @@ export default function ChatLayout() {
 
     if (user?.id) {
       loadThreads();
+    } else if (!isLoading && !currentChat) {
+      // Create a default chat if we're not loading and don't have a current chat
+      createDefaultChat();
     }
   }, [user?.id, toast]);
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {
-    console.log('[ChatLayout] useEffect for selectedTool sync triggered. currentChat:', currentChat ? { id: currentChat.id, tool_id: currentChat.tool_id, title: currentChat.title } : null);
+    if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] useEffect for selectedTool sync triggered. currentChat:', currentChat ? { id: currentChat.id, tool_id: currentChat.tool_id, title: currentChat.title } : null);
     if (currentChat && currentChat.tool_id) {
-      console.log(`[ChatLayout] Syncing selectedTool. Current: ${selectedTool}, New: ${currentChat.tool_id}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Syncing selectedTool. Current: ${selectedTool}, New: ${currentChat.tool_id}`);
       setSelectedTool(currentChat.tool_id);
     } else if (currentChat && !currentChat.tool_id) {
-      console.log(`[ChatLayout] Current chat has no tool_id. Current selectedTool: ${selectedTool}, Setting to null.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Current chat has no tool_id. Current selectedTool: ${selectedTool}, Setting to null.`);
       setSelectedTool(null);
     } else if (!currentChat) {
-      console.log(`[ChatLayout] No current chat. Current selectedTool: ${selectedTool}, Setting to null.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] No current chat. Current selectedTool: ${selectedTool}, Setting to null.`);
       setSelectedTool(null);
     }
   }, [currentChat]); // This effect runs when currentChat changes
@@ -198,16 +228,17 @@ export default function ChatLayout() {
   }
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex h-screen w-full overflow-hidden">
       <Sidebar 
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
         chats={chats}
+        setChats={setChatsSafely}
         currentChat={currentChat}
         setCurrentChat={setCurrentChatWithTracking}
         isLoading={isLoading}
       />
-      <div className="ml-[300px] flex-1 overflow-auto h-screen">
+      <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
         <ChatArea 
           selectedTool={selectedTool}
           currentChat={currentChat}

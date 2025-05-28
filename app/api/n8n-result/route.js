@@ -1,80 +1,116 @@
 import { NextResponse } from 'next/server';
-// No longer need tempStore
-// import { retrieveTaskData, removeTaskData } from '@/lib/tempStore'; 
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
 // Update to support both GET and POST methods
 export async function POST(request) {
   const sseStartTime = Date.now();
-  
+  let chatId;
+
   try {
-    console.log(`\n--- [SSE /api/n8n-result POST Request Start ${sseStartTime}] ---`);
+    if (process.env.NODE_ENV !== "production") console.log(`\n--- [SSE /api/n8n-result POST Request Start ${sseStartTime}] ---`);
     
     // Validate N8N_WEBHOOK_URL environment variable
     if (!N8N_WEBHOOK_URL) {
-      console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] N8N_WEBHOOK_URL environment variable is not defined.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Server configuration error: N8N_WEBHOOK_URL not defined", code: "ENV_MISSING"})}\n\n`,
-        { headers: { 'Content-Type': 'text/event-stream' }, status: 500 }
+        { 
+          headers: { 
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          }, 
+          status: 500 
+        }
       );
     }
 
-    // Get data from POST body instead of URL params
+    // Get data from POST body
     let requestData;
     try {
       requestData = await request.json();
-      console.log(`[SSE ${sseStartTime}] Received POST data with fields: ${Object.keys(requestData).join(', ')}`);
+      chatId = requestData.chatId;
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId || sseStartTime}] Received POST data with fields: ${Object.keys(requestData).join(', ')}`);
     } catch (e) {
-      console.error(`[SSE ${sseStartTime}] Failed to parse POST body: ${e.message}`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Failed to parse POST body: ${e.message}`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Failed to parse request body", code: "INVALID_REQUEST_BODY"})}\n\n`,
-        { headers: { 'Content-Type': 'text/event-stream' }, status: 400 }
+        { 
+          headers: { 
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          }, 
+          status: 400 
+        }
       );
     }
 
     // Extract data from request body
-    const { chatId, answersData, chatHistory } = requestData;
+    const { answersData, chatHistory } = requestData;
 
     if (!chatId) {
-      console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Missing chatId in request body", code: "MISSING_CHAT_ID"})}\n\n`,
-        { headers: { 'Content-Type': 'text/event-stream' }, status: 400 }
+        { 
+          headers: { 
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          }, 
+          status: 400 
+        }
       );
     }
+    
     if (!answersData) {
-      console.error(`[SSE ${chatId} ${sseStartTime}] Error: Missing answersData in request body.`);
+      if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error: Missing answersData in request body.`);
       return new Response(
         `event: error\ndata: ${JSON.stringify({error: "Missing answersData in request body", code: "MISSING_ANSWERS"})}\n\n`,
-        { headers: { 'Content-Type': 'text/event-stream' }, status: 400 }
+        { 
+          headers: { 
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          }, 
+          status: 400 
+        }
       );
     }
     
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
-    console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
     
     if (chatHistory) {
-      console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
     } else {
-      console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
     }
 
     // Create a streaming response
     const stream = new ReadableStream({
       async start(controller) {
         const sendEvent = (event, data) => {
-          const payload = JSON.stringify(data);
-          controller.enqueue(`event: ${event}\ndata: ${payload}\n\n`);
+          try {
+            const payload = JSON.stringify(data);
+            controller.enqueue(`event: ${event}\ndata: ${payload}\n\n`);
+          } catch (error) {
+            if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error sending event '${event}':`, error);
+          }
         };
 
+        // Send initial processing message
+        sendEvent('processing', { 
+          status: 'pending', 
+          message: "Your document is being generated. This may take 1-3 minutes..." 
+        });
+        if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent initial 'processing' event.`);
+
+        // Call n8n webhook directly (synchronous approach)
         try {
-          console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
-          console.log(`[SSE ${chatId} ${sseStartTime}] Payload for n8n:`, {
-            chatId,
-            answersCount: Object.keys(answersData).length, 
-            conversationCount: chatHistory ? chatHistory.length : 0
-          });
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Calling n8n webhook at: ${N8N_WEBHOOK_URL}`);
           
           const requestBody = {
             chatId: chatId,
@@ -90,49 +126,81 @@ export async function POST(request) {
           });
 
           const status = n8nResponse.status;
-          console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received n8n response status: ${status}`);
 
           if (!n8nResponse.ok) {
             let errorBody = 'Could not read error body';
-            try { errorBody = await n8nResponse.text(); } catch (e) { /* ignore */ }
+            try { 
+              errorBody = await n8nResponse.text(); 
+            } catch (e) { 
+              if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Could not read error body:`, e);
+            }
             throw new Error(`n8n failed (${status}): ${errorBody}`);
           }
 
-          // Attempt to parse JSON
-          let n8nData;
-          try {
-            n8nData = await n8nResponse.json();
-            console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
-          } catch (parseError) {
-            console.warn(`[SSE ${chatId} ${sseStartTime}] Failed to parse n8n response as JSON:`, parseError.message);
-            // Potentially try reading as text or just send an error/raw data
-            throw new Error(`n8n returned non-JSON response.`); 
+          // Parse JSON response
+          const n8nData = await n8nResponse.json();
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Parsed n8n JSON response successfully.`);
+
+          // Save the document URL as a regular chat message
+          if (n8nData.googleDocLink) {
+            try {
+              const messageContent = `🎉 **Your hybrid offer document is ready!**\n\n📄 **Google Doc:** ${n8nData.googleDocLink}\n\nYou can view, edit, and share this document directly. The link will remain accessible in your chat history.`;
+              
+              // Save assistant message to database
+              const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  messages: [
+                    { role: 'assistant', content: messageContent }
+                  ],
+                  chatId: chatId,
+                  tool: 'hybrid-offer',
+                  isDocumentResult: true
+                })
+              });
+
+              if (saveResponse.ok) {
+                if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Successfully saved document URL as chat message.`);
+              } else {
+                if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Failed to save document URL as chat message:`, await saveResponse.text());
+              }
+            } catch (saveError) {
+              if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error saving document URL as chat message:`, saveError);
+            }
           }
 
-          // Send the successful result back to the client
+          // Send success response
           sendEvent('n8n_result', { success: true, data: n8nData });
-          console.log(`[SSE ${chatId} ${sseStartTime}] Sent n8n_result event to client.`);
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent success result to client.`);
 
         } catch (error) {
-          console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
-          // Send an error event to the client
+          if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId} ${sseStartTime}] Error during n8n call/processing:`, error);
           sendEvent('error', { 
             success: false, 
             message: error.message || 'Failed to process n8n request.',
             code: "N8N_PROCESSING_ERROR"
           });
-          console.log(`[SSE ${chatId} ${sseStartTime}] Sent error event to client.`);
-        
-        } finally {
-          console.log(`[SSE ${chatId} ${sseStartTime}] Closing connection.`);
-          controller.close();
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sent error event to client.`);
         }
+
+        // Close the connection
+        try {
+          controller.close();
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Connection closed successfully.`);
+        } catch (error) {
+          if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error closing connection:`, error);
+        }
+      },
+      cancel() {
+        if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId || sseStartTime}] Connection closed by client.`);
       }
     });
 
     // Return the stream
-    console.log(`[SSE ${chatId} ${sseStartTime}] Returning SSE stream response.`);
-    console.log(`--- [SSE /api/n8n-result POST Request End ${sseStartTime} - Took ${Date.now() - sseStartTime}ms] ---`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Returning SSE stream response.`);
+    if (process.env.NODE_ENV !== "production") console.log(`--- [SSE /api/n8n-result POST Request End ${sseStartTime} - Took ${Date.now() - sseStartTime}ms to establish stream] ---`);
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -142,23 +210,37 @@ export async function POST(request) {
     });
     
   } catch (outerError) {
-    // This is a global catch-all for any unexpected errors in the main handler
-    console.error(`[SSE CRITICAL ${sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
+    if (process.env.NODE_ENV !== "production") console.error(`[SSE CRITICAL ${chatId || sseStartTime}] Unhandled error in n8n-result handler:`, outerError);
+    const errorChatId = chatId || 'unknown_chat_id';
     return new Response(
-      `event: error\ndata: ${JSON.stringify({error: "Critical server error", details: outerError.message, code: "UNHANDLED_ERROR"})}\n\n`,
-      { headers: { 'Content-Type': 'text/event-stream' }, status: 500 }
+      `event: error\ndata: ${JSON.stringify({error: "Critical server error", details: outerError.message, code: "UNHANDLED_ERROR", chatId: errorChatId})}\n\n`,
+      { 
+        headers: { 
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        }, 
+        status: 500 
+      }
     );
   }
 }
 
-// Keep GET method for backward compatibility and testing
+// Keep GET method for backward compatibility
 export async function GET(request) {
   const sseStartTime = Date.now();
-  console.log(`\n--- [SSE /api/n8n-result GET Request Deprecated ${sseStartTime}] ---`);
-  console.log(`[SSE ${sseStartTime}] Warning: GET method is deprecated. Please use POST instead.`);
+  if (process.env.NODE_ENV !== "production") console.log(`\n--- [SSE /api/n8n-result GET Request Deprecated ${sseStartTime}] ---`);
+  if (process.env.NODE_ENV !== "production") console.log(`[SSE ${sseStartTime}] Warning: GET method is deprecated. Please use POST instead.`);
   
   return new Response(
-    `event: error\ndata: ${JSON.stringify({error: "GET method is deprecated for this endpoint due to URL length limitations. Please use POST method.", code: "GET_DEPRECATED"})}\n\n`,
-    { headers: { 'Content-Type': 'text/event-stream' }, status: 400 }
+    `event: error\ndata: ${JSON.stringify({error: "GET method is deprecated for this endpoint. Please use POST method.", code: "GET_DEPRECATED"})}\n\n`,
+    { 
+      headers: { 
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      }, 
+      status: 405 
+    }
   );
 } 

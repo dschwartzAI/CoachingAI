@@ -14,7 +14,7 @@ export async function GET(request) {
     try {
         await supabase.auth.exchangeCodeForSession(code)
     } catch (error) {
-        console.error("Error exchanging code for session:", error);
+        if (process.env.NODE_ENV !== "production") console.error("Error exchanging code for session:", error);
         // Handle error appropriately, maybe redirect to an error page
         return NextResponse.redirect(`${requestUrl.origin}/auth-error`);
     }

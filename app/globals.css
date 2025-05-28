@@ -73,4 +73,39 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Fix mobile zoom issues */
+  input, 
+  textarea {
+    font-size: 16px !important; /* Prevent iOS zoom */
+  }
+  
+  /* Disable auto zoom on focus for mobile */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    font-size: 16px !important;
+  }
+  
+  /* Apply this class to mobile-specific inputs */
+  .mobile-input {
+    -webkit-appearance: none; /* Remove default styling */
+    appearance: none;
+    font-size: 16px !important; /* Must be 16px or larger to prevent zoom */
+    transform: translateZ(0); /* Forces hardware acceleration, smoother scrolling */
+  }
+  
+  /* Prevent content shift when virtual keyboard appears */
+  @media (max-width: 767px) {
+    body, html {
+      height: 100%;
+      overflow-y: auto;
+      width: 100%;
+      -webkit-overflow-scrolling: touch; /* Enable momentum scrolling on iOS */
+    }
+    .mobile-input-wrapper {
+      position: relative;
+      z-index: 50;
+    }
+  }
 }

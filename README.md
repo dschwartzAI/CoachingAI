@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# CoachingAI
 
-## Getting Started
+CoachingAI is a Next.js application that integrates with Supabase and n8n. The project uses Netlify for deployment.
 
-First, run the development server:
+## Environment Variables
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Create a `.env.local` file in the project root and define the following variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL` – URL of your Supabase instance
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` – anonymous API key from Supabase
+- `NEXT_PUBLIC_SKIP_AUTH` – set to `true` to bypass authentication when developing
+- `N8N_WEBHOOK_URL` – serverless functions send data to this n8n webhook
+- `NEXT_PUBLIC_N8N_WEBHOOK_URL` – client side webhook for the hybrid offer tool
+- `NEXT_PUBLIC_N8N_WORKSHOP_WEBHOOK_URL` – webhook used by the workshop generator
+
+Example:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+N8N_WEBHOOK_URL=https://n8n.example.com/webhook/abc123
+NEXT_PUBLIC_N8N_WEBHOOK_URL=https://n8n.example.com/webhook/hybrid
+NEXT_PUBLIC_N8N_WORKSHOP_WEBHOOK_URL=https://n8n.example.com/webhook/workshop
+NEXT_PUBLIC_SKIP_AUTH=true
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Running Locally
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Install dependencies and start the development server:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+The app runs on [http://localhost:3000](http://localhost:3000).
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The repository includes a `netlify.toml` configuration for Netlify.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Push the project to your Git provider.
+2. Create a new site on Netlify and link it to the repository.
+3. Add the environment variables listed above in the Netlify dashboard.
+4. Netlify will execute `npm run build` and publish the `.next` directory.
 
-## Deploy on Vercel
+## Tests
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+A few scripts help verify your setup:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `node check-env.js` – prints the current Supabase environment variables.
+- `node test-supabase.js` – attempts a simple database write using your Supabase credentials.
+- With the dev server running you can test the n8n integration:
+  ```bash
+  curl -X POST http://localhost:3000/api/test-n8n
+  ```
+

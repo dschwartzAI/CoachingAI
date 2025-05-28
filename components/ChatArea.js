@@ -14,6 +14,8 @@ import { useAuth } from "./AuthProvider";
 import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/supabase';
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
+import { usePostHog } from '@/hooks/use-posthog';
+import useChatSSE from "@/hooks/use-chat-sse";
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -25,16 +27,406 @@ const hybridOfferQuestions = [
   { key: 'clientResult', question: "Finally, what's your biggest client result?" }
 ];
 
+// Define workshop generator questions
+const workshopQuestions = [
+  { key: 'participantOutcomes', question: "What specific outcomes will participants achieve?" },
+  { key: 'targetAudience', question: "Who is your ideal workshop participant?" },
+  { key: 'problemAddressed', question: "What problem does your workshop solve?" },
+  { key: 'workshopDuration', question: "How long will your workshop be?" },
+  { key: 'topicsAndActivities', question: "What topics and activities will you cover?" },
+  { key: 'resourcesProvided', question: "What resources will participants receive?" }
+];
+
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
   return (
     <ReactMarkdown
       //className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
       remarkPlugins={[remarkGfm]}
+      components={{
+        // Allow <a> tags to be rendered properly
+        a: ({ node, ...props }) => (
+          <a 
+            {...props} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-blue-600 hover:underline"
+          />
+        )
+      }}
     >
       {content}
     </ReactMarkdown>
   );
+}
+
+// Add a utility to extract links from message content
+function extractN8nLinks(content) {
+  if (typeof content !== 'string') return {};
+  const googleDocMatch = content.match(/View Google Doc: (https?:\/\/[^\s]+)/);
+  const pdfWebViewMatch = content.match(/View PDF: (https?:\/\/[^\s]+)/);
+  const pdfDownloadMatch = content.match(/Download PDF: (https?:\/\/[^\s]+)/);
+  return {
+    googleDocLink: googleDocMatch ? googleDocMatch[1] : null,
+    pdfWebViewLink: pdfWebViewMatch ? pdfWebViewMatch[1] : null,
+    pdfDownloadLink: pdfDownloadMatch ? pdfDownloadMatch[1] : null,
+  };
+}
+
+// Add a function to check if a message is a document message
+function isDocumentMessage(message) {
+  const hasDocumentContent = typeof message.content === 'string' && 
+    (message.content.includes('Document generated successfully') || 
+     message.content.includes('generating your document') ||
+     message.content.includes('View Google Doc') ||
+     message.content.includes('document-generation-status'));
+  
+  const hasDocumentMetadata = message.metadata?.documentLinks && 
+    Object.values(message.metadata.documentLinks).some(link => link);
+  
+  const result = hasDocumentContent || hasDocumentMetadata;
+  
+  if (process.env.NODE_ENV !== "production") console.log('[isDocumentMessage] Checking message:', {
+    messageId: message.id,
+    hasDocumentContent,
+    hasDocumentMetadata,
+    contentPreview: typeof message.content === 'string' ? message.content.substring(0, 100) + '...' : 'non-string',
+    metadata: message.metadata,
+    result
+  });
+  
+  return result;
+}
+
+// Function to render HTML content directly
+function HTMLContent({ content }) {
+  // Clean up content by removing redundant "Link:" text that follows HTML links
+  const cleanContent = (rawContent) => {
+    if (!rawContent) return '';
+    
+    // Remove "Link: [URL]" patterns that appear after HTML links
+    let cleaned = rawContent.replace(/\n\nLink:\s*https?:\/\/[^\s]+/g, '');
+    
+    // Also remove just "Link:" followed by URL on same line
+    cleaned = cleaned.replace(/Link:\s*https?:\/\/[^\s]+/g, '');
+    
+    return cleaned.trim();
+  };
+  
+  // Parse the content to extract links and render them as proper React components
+  const processContent = () => {
+    const cleanedContent = cleanContent(content);
+    if (!cleanedContent) return '';
+    
+    try {
+      // Create a temporary div to parse the HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = cleanedContent;
+      
+      // Extract all links
+      const links = [];
+      const linkElements = tempDiv.querySelectorAll('a');
+      linkElements.forEach((link, index) => {
+        const href = link.getAttribute('href');
+        const text = link.textContent;
+        const isDownload = link.hasAttribute('download');
+        
+        links.push({
+          href,
+          text,
+          isDownload,
+          index,
+          outerHTML: link.outerHTML // Store the original HTML for comparison
+        });
+      });
+      
+      // If no links found, just return the content as is
+      if (links.length === 0) {
+        return <span>{cleanedContent.replace(/<[^>]*>/g, '')}</span>;
+      }
+      
+      // Split content at link positions
+      let remainingContent = cleanedContent;
+      const fragments = [];
+      
+      links.forEach((link, i) => {
+        const linkIndex = remainingContent.indexOf(link.outerHTML);
+        if (linkIndex >= 0) {
+          // Add text before the link
+          if (linkIndex > 0) {
+            fragments.push({
+              type: 'text',
+              content: remainingContent.substring(0, linkIndex).replace(/<[^>]*>/g, ''),
+              key: `text-${i}`
+            });
+          }
+          
+          // Add the link
+          fragments.push({
+            type: 'link',
+            href: link.href,
+            text: link.text,
+            isDownload: link.isDownload,
+            key: `link-${i}`
+          });
+          
+          // Update remaining content
+          remainingContent = remainingContent.substring(linkIndex + link.outerHTML.length);
+        }
+      });
+      
+      // Add any remaining text
+      if (remainingContent) {
+        fragments.push({
+          type: 'text',
+          content: remainingContent.replace(/<[^>]*>/g, ''),
+          key: `text-final`
+        });
+      }
+      
+      // Render the fragments
+      return (
+        <div className="space-y-2">
+          {fragments.map(fragment => {
+            if (fragment.type === 'text') {
+              return <span key={fragment.key}>{fragment.content}</span>;
+            } else {
+              return (
+                <a 
+                  key={fragment.key}
+                  href={fragment.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={fragment.isDownload}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  {fragment.text}
+                </a>
+              );
+            }
+          })}
+        </div>
+      );
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") console.error('Error processing HTML content:', error);
+      // Fallback to simply removing HTML tags
+      return <span>{cleanContent(content).replace(/<[^>]*>/g, '')}</span>;
+    }
+  };
+  
+  // If we're in the browser, process the content with React elements
+  if (typeof document !== 'undefined') {
+    return processContent();
+  }
+  
+  // Fallback to dangerouslySetInnerHTML if running on server
+  return <div dangerouslySetInnerHTML={{ __html: cleanContent(content) }} />;
+}
+
+// Define the DocumentMessage component
+function DocumentMessage({ message }) {
+  // Check if this is a document generation status message
+  const isGenerationStatus = typeof message.content === 'string' && 
+    message.content.includes('document-generation-status');
+  
+  // If it's a generation status message, show a proper loading UI
+  if (isGenerationStatus) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground font-medium">I'm generating your document now</span>
+          </div>
+          <p className="text-xs text-muted-foreground max-w-xs text-center">
+            This typically takes about 1 minute to complete.
+          </p>
+          <p className="text-xs text-muted-foreground max-w-xs text-center">
+            You'll receive a notification and the document will appear here when it's ready.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  // First check if message has metadata with document links
+  const documentLinks = message.metadata?.documentLinks;
+  const hasMetadataLinks = documentLinks && documentLinks.googleDocLink;
+  
+  // Then check for n8n links in the message content as a fallback
+  const extractedLinks = extractN8nLinks(message.content);
+  const hasExtractedLinks = extractedLinks.googleDocLink;
+  
+  // Check if the content already contains HTML links
+  const contentHasHtmlLinks = typeof message.content === 'string' && message.content.includes('<a href');
+  
+  // Get the Google Doc link, prioritizing metadata links
+  const docLink = documentLinks?.googleDocLink || extractedLinks.googleDocLink;
+  
+  return (
+    <div className="space-y-3">
+      <div>
+        {/* Check if content contains HTML and render appropriately */}
+        {message.content.includes('<a href') ? (
+          <HTMLContent content={message.content} />
+        ) : (
+          <MarkdownMessage content={message.content} />
+        )}
+      </div>
+      {/* Only show the separate link section if content doesn't already have HTML links */}
+      {docLink && !contentHasHtmlLinks && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+          <div className="flex items-center gap-2 text-green-800 font-medium">
+            <CheckCircle2 className="h-5 w-5" />
+            Your document is ready!
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <FileText className="h-4 w-4 text-green-600" />
+            <a 
+              href={docLink} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline break-all"
+            >
+              View Google Doc
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Add a component for rendering HTML landing pages
+function LandingPageMessage({ content }) {
+  const [showPreview, setShowPreview] = useState(false);
+  const [copied, setCopied] = useState(false);
+  
+  // Extract HTML code from the message content
+  const extractHTMLCode = (text) => {
+    // Look for HTML code blocks or complete HTML documents
+    const htmlMatch = text.match(/```html\n([\s\S]*?)\n```/) || 
+                     text.match(/```\n(<!DOCTYPE html[\s\S]*?<\/html>)\n```/) ||
+                     text.match(/(<!DOCTYPE html[\s\S]*?<\/html>)/);
+    
+    return htmlMatch ? htmlMatch[1] : null;
+  };
+
+  const htmlCode = extractHTMLCode(content);
+  
+  const copyToClipboard = async () => {
+    if (htmlCode) {
+      try {
+        await navigator.clipboard.writeText(htmlCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") console.error('Failed to copy:', err);
+      }
+    }
+  };
+
+  const downloadHTML = () => {
+    if (htmlCode) {
+      const blob = new Blob([htmlCode], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'landing-page.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  if (!htmlCode) {
+    // If no HTML code found, render as regular markdown
+    return <MarkdownMessage content={content} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Regular message content without the HTML code block */}
+      <div>
+        <MarkdownMessage content={content.replace(/```html\n[\s\S]*?\n```/g, '').replace(/```\n<!DOCTYPE html[\s\S]*?<\/html>\n```/g, '').replace(/<!DOCTYPE html[\s\S]*?<\/html>/g, '').trim()} />
+      </div>
+      
+      {/* HTML Code Section */}
+      <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-sm">Landing Page HTML</h4>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+              className="text-xs"
+            >
+              {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyToClipboard}
+              className="text-xs"
+            >
+              {copied ? 'Copied!' : 'Copy HTML'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadHTML}
+              className="text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Download
+            </Button>
+          </div>
+        </div>
+        
+        {showPreview && (
+          <div className="mb-4">
+            <div className="border rounded bg-white" style={{ height: '400px' }}>
+              <iframe
+                srcDoc={htmlCode}
+                className="w-full h-full rounded"
+                title="Landing Page Preview"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        )}
+        
+        <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+          <pre className="whitespace-pre-wrap">{htmlCode}</pre>
+        </div>
+        
+        <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+          <p><strong>Instructions:</strong></p>
+          <ol className="list-decimal list-inside space-y-1 mt-1">
+            <li>Copy the HTML code above</li>
+            <li>In HighLevel, go to Sites → Pages → Create New Page</li>
+            <li>Choose "Custom Code" or "Blank Page"</li>
+            <li>Paste the HTML code into the custom code section</li>
+            <li>Save and publish your landing page</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Add a function to check if a message contains landing page HTML
+function isLandingPageMessage(message) {
+  if (typeof message.content !== 'string') return false;
+  
+  // Check if the message contains HTML code blocks or complete HTML documents
+  const hasHTMLCode = message.content.includes('```html') || 
+                     message.content.includes('<!DOCTYPE html') ||
+                     (message.content.includes('<html') && message.content.includes('</html>'));
+  
+  return hasHTMLCode;
 }
 
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
@@ -47,15 +439,25 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
-  const eventSourceRef = useRef(null);
+  const { eventSourceRef, closeConnection } = useChatSSE();
   const textareaRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
+  const { user } = useAuth();
+  const lastMessageRef = useRef(null);
+  const { track } = usePostHog();
+
+  // Clean up SSE connection on unmount
+  useEffect(() => {
+    return () => {
+      closeConnection();
+    };
+  }, []);
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
-    console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
   }, [isWaitingForN8n]);
 
   // Reset state when chat or tool changes (Refactored Logic)
@@ -69,49 +471,112 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     const hasToolSwitched = currentSelectedTool !== previousSelectedTool;
     const hasContextSwitched = hasChatSwitched || hasToolSwitched;
 
-    console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
-    console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
+    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
 
     // Only reset state and close SSE if the actual chat or tool context has changed
     if (hasContextSwitched) {
-      console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
       
       // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
-        console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
+        if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
         // Initialize state from metadata if available
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null));
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-        setIsWaitingForN8n(false);
+        
+        // Check document generation state
+        if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
+          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
+          setIsWaitingForN8n(true);
+          
+          // If document generation is in progress, check if we should reconnect to the stream
+          if (currentChat.metadata.generationStartTime) {
+            const startTime = new Date(currentChat.metadata.generationStartTime);
+            const now = new Date();
+            const elapsedMs = now - startTime;
+            const MAX_GENERATION_TIME = 5 * 60 * 1000; // 5 minutes
+            
+            if (elapsedMs < MAX_GENERATION_TIME) {
+              // Document generation started recently, reconnect to the stream
+              if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation in progress (started ${Math.round(elapsedMs/1000)}s ago), reconnecting to stream...`);
+              
+              // Reconnect to the stream if we have the necessary data
+              if (currentChat.metadata.collectedAnswers) {
+                try {
+                  const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
+                  connectToN8nResultStream(currentChat.id, encodedAnswers);
+                  if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Reconnected to N8n stream with thread ID: ${currentChat.id}`);
+                } catch (err) {
+                  if (process.env.NODE_ENV !== "production") console.error(`[ChatArea Context Change Effect] Error reconnecting to stream:`, err);
+                  setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+                }
+              } else {
+                if (process.env.NODE_ENV !== "production") console.warn(`[ChatArea Context Change Effect] Cannot reconnect to stream: missing collectedAnswers`);
+                setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+              }
+            } else {
+              // Document generation started a while ago, assume it's still in progress but don't reconnect
+              if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation started ${Math.round(elapsedMs/1000)}s ago, showing loading state without reconnecting`);
+              setIsWaitingForN8n(true); // Just set the loading state
+            }
+          } else {
+            // No start time available, just set the loading state
+            setIsWaitingForN8n(true);
+          }
+        } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
+          // Document generation is complete or not in progress
+          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation complete or not in progress, clearing loading state`);
+          setIsWaitingForN8n(false);
+        } else {
+          // Check if there are already document messages in the chat
+          const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
+          if (hasDocumentMessages) {
+            if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
+            setIsWaitingForN8n(false);
+          } else {
+            setIsWaitingForN8n(false);
+          }
+        }
+        
         // If we have metadata, this thread was already initiated in the past
         setInitiationAttemptedForContext(true);
       } else {
         // Reset to default state if no metadata
         setCollectedAnswers({});
         setQuestionsAnswered(0);
-        setCurrentQuestionKey(currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null);
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(questionsArray[0]?.key);
         setIsWaitingForN8n(false);
         setInitiationAttemptedForContext(false);
       }
 
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
-          console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
+          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
+          closeConnection();
       }
     } else {
       // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
       // Re-apply state from metadata if available to ensure consistency
-      console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
-      if (currentSelectedTool === 'hybrid-offer' && currentChat?.metadata && typeof currentChat.metadata === 'object') {
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
+      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
          // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
-         console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
+         if (process.env.NODE_ENV !== "production") console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : hybridOfferQuestions[0].key));
+         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0].key));
          setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-         // Avoid resetting isWaitingForN8n here
+         
+         // Check document generation state
+         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
+           setIsWaitingForN8n(true);
+         } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
+           setIsWaitingForN8n(false);
+         }
+         // Otherwise don't change isWaitingForN8n
       }
     }
 
@@ -125,44 +590,47 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // This effect might be redundant if the above effect correctly initializes from metadata.
   // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
-      if (selectedTool === 'hybrid-offer' && currentChat?.messages?.length > 0) {
+      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && currentChat?.messages?.length > 0) {
           // A more robust way would be to persist/load answers+key with the chat 
           // For now, just don't reset to first key if history exists
           if (!currentQuestionKey) {
-              setCurrentQuestionKey(hybridOfferQuestions[questionsAnswered]?.key || hybridOfferQuestions[0].key); // Use questions answered to determine key
+              const questionsArray = selectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+              setCurrentQuestionKey(questionsArray[questionsAnswered]?.key || questionsArray[0].key); // Use questions answered to determine key
           }
       } else if (selectedTool === 'hybrid-offer') {
           setCurrentQuestionKey(hybridOfferQuestions[0].key);
+      } else if (selectedTool === 'workshop-generator') {
+          setCurrentQuestionKey(workshopQuestions[0].key);
       }
   }, [currentChat?.id, currentChat?.messages?.length, selectedTool, questionsAnswered]); // Re-run if chat loads or questions answered changes
 
-  // Effect to initiate chat for Hybrid Offer tool
+  // Effect to initiate chat for tool-based chats
   useEffect(() => {
-    console.log(
+    if (process.env.NODE_ENV !== "production") console.log(
         `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
         `MsgCount=${currentChat?.messages?.length}, Attempted=${initiationAttemptedForContext}, ` +
         `QuestionsAnswered=${questionsAnswered}, ` +
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
     if (
-        selectedTool === 'hybrid-offer' &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
         !initiationAttemptedForContext && 
         !isInitiating &&
         !isLoading &&
         // Ensure it's genuinely a new chat for the tool, or an existing empty one for this tool
         (!currentChat || !currentChat.messages || currentChat.messages.length === 0) &&
-        (!currentChat || currentChat.tool_id === 'hybrid-offer') && // Also ensure current chat is for this tool if it exists
+        (!currentChat || currentChat.tool_id === selectedTool) && // Also ensure current chat is for this tool if it exists
         // Skip initiation if we have metadata with questions already answered
         !(currentChat?.metadata?.questionsAnswered > 0)
        ) {
-      console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
       setInitiationAttemptedForContext(true); 
       setIsInitiating(true);
       const chatIdToUse = currentChat?.id || Date.now().toString() + "-temp";
       if (!currentChat) {
-          console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
+          if (process.env.NODE_ENV !== "production") console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
       }
-      initiateHybridOfferChat(chatIdToUse); 
+      initiateToolChat(chatIdToUse, selectedTool); 
     }
   }, [
     selectedTool,
@@ -175,21 +643,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   ]);
 
   // Function to call the API for the first message
-  const initiateHybridOfferChat = async (chatIdToInitiate) => {
-      console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
+  const initiateToolChat = async (chatIdToInitiate, tool) => {
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
       setIsLoading(true);
       // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
       
       const requestBody = {
         messages: [], // For init, messages should be empty
-        tool: 'hybrid-offer',
+        tool: tool,
         isToolInit: true,
         chatId: chatIdToInitiate, // Use the passed chatId, which could be temp or real
         // Ensure collectedAnswers and currentQuestionKey are not sent or are explicitly empty for a true init
         collectedAnswers: {}, 
         currentQuestionKey: null 
       };
-      console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
 
       try {
           const response = await fetch('/api/chat', {
@@ -198,13 +666,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               body: JSON.stringify(requestBody),
           });
 
-          console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
+          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
           if (!response.ok) {
               const errorText = await response.text(); 
               throw new Error(`API failed (${response.status}): ${errorText}`);
           }
           const data = await response.json();
-          console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
+          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
           
           const assistantMessage = { 
               role: "assistant", 
@@ -217,7 +685,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           
           // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
           const returnedAnswers = data.collectedAnswers || {};
-          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? hybridOfferQuestions[0].key : null);
+          const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? questionsArray[0].key : null);
           const initialQuestionsAnswered = data.questionsAnswered || 0;
           const initialIsComplete = data.isComplete || false;
 
@@ -236,9 +705,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               }
           };
           
-          console.log("[ChatArea Initiate Func] Constructed updatedChat (with fixes):", JSON.stringify(updatedChat, null, 2));
+          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Constructed updatedChat (with fixes):", JSON.stringify(updatedChat, null, 2));
 
-          console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
+          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
           setChats(prev => {
               const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
               if (chatIndex > -1) {
@@ -246,15 +715,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                    newList[chatIndex] = updatedChat;
                    return newList;
               } else {
-                  console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
+                  if (process.env.NODE_ENV !== "production") console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
                   return [updatedChat, ...prev];
               }
           });
           setCurrentChat(updatedChat);
-          console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
+          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       } catch (error) {
-          console.error('[ChatArea Initiate Func] Error initiating chat:', error);
+          if (process.env.NODE_ENV !== "production") console.error('[ChatArea Initiate Func] Error initiating chat:', error);
           const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
           const errorChat = { id: chatIdToInitiate, title: "Initiation Error", messages: [errorAssistantMessage] };
           setChats(prev => { 
@@ -267,7 +736,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            });
            setCurrentChat(errorChat);
       } finally {
-          console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
+          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
           setIsLoading(false);
           setIsInitiating(false); 
           textareaRef.current?.focus();
@@ -280,18 +749,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
     // Add a check here for currentChat right at the start
     if (!currentChat) {
-        console.error("handleSubmit aborted: currentChat is null or undefined.");
+        if (process.env.NODE_ENV !== "production") console.error("handleSubmit aborted: currentChat is null or undefined.");
         alert("Cannot send message: No active chat selected."); // User feedback
         return;
     }
     
     // Prevent submission if loading
     if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
-      console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
       return;
     }
 
-    console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
+    if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
       currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
       chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
       inputLength: trimmedInput.length
@@ -310,7 +779,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     const updatedMessages = [...chatToUpdate.messages, newMessage];
     const optimisticChat = { ...chatToUpdate, messages: updatedMessages };
 
-    console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
+    if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
       optimisticChatId: optimisticChat.id,
       optimisticMessageCount: optimisticChat.messages.length
     });
@@ -319,14 +788,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setCurrentChat(optimisticChat);
     setChats(prev => {
       const updated = prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat);
-      console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
+      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
         updatedChatIds: updated.map(c => c.id)
       });
       return updated;
     });
 
     try {
-       console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
+       if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
          threadId: currentChat.id,
          messageCount: updatedMessages.length,
          existingMessages: currentChat.messages.length,
@@ -354,15 +823,81 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                chatId: currentChat.id // Explicitly include the chatId
            }),
        });
+
         if (!response.ok) {
-           console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
+           if (process.env.NODE_ENV !== "production") console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
            const errorData = await response.json().catch(() => ({ error: "Request failed with status: " + response.status }));
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
         
-        const data = await response.json();
-        console.log("[CHAT_DEBUG] API response data:", {
-          responseData: JSON.stringify({
+       // Check if this is a streaming response (regular chat) or a JSON response (tool chat)
+       const contentType = response.headers.get('Content-Type');
+       let data;
+       
+       if (false && contentType && contentType.includes('text/plain')) {
+           // Handle streaming response for regular chat
+           if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Handling text/plain streaming response");
+           const reader = response.body.getReader();
+           const decoder = new TextDecoder();
+           let responseText = '';
+           
+           // Read the streamed response
+           try {
+             while (true) {
+                 const { done, value } = await reader.read();
+                 if (done) break;
+                 const chunk = decoder.decode(value, { stream: true });
+                 if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
+                 responseText += chunk;
+                 
+                 // Update the UI with each chunk as it arrives
+                 const tempAssistantMessage = { role: 'assistant', content: responseText, isStreaming: true };
+                 const updatedChatTemp = {
+                   ...chatToUpdate,
+                   id: response.headers.get('X-Chat-Id') || tempId,
+                   messages: [...updatedMessages, tempAssistantMessage],
+                 };
+                 setCurrentChat(updatedChatTemp);
+             }
+             
+             // Final decoding to flush any remaining bytes
+             const finalText = decoder.decode();
+             if (finalText) responseText += finalText;
+             
+             if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
+           } catch (streamError) {
+             if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Stream reading error:", streamError);
+             responseText += "\n\nAn error occurred while reading the response.";
+           }
+           
+           // Create a simple data object that mimics the structure of the JSON response
+           data = {
+               message: responseText,
+               chatId: response.headers.get('X-Chat-Id') || currentChat.id,
+               isTextResponse: true // Flag to indicate this is a plain text response
+           };
+       } else {
+           // Handle JSON response for tool-based chat
+           try {
+               data = await response.json();
+               if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] JSON response data:", {
+                   chatId: data.chatId,
+                   messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
+               });
+           } catch (error) {
+               if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
+               throw new Error("Failed to parse response from server");
+           }
+       }
+       
+        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] API response data:", {
+         responseData: data.isTextResponse ? 
+           {
+             chatId: data.chatId,
+             messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : '',
+             isTextResponse: true
+           } : 
+           JSON.stringify({
             chatId: data.chatId,
             messageContent: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
             currentQuestionKey: data.currentQuestionKey,
@@ -374,7 +909,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Check if this is an initial response that needs polling
         if (data.isInitialResponse && data.status === "processing" && data.threadId && data.runId) {
-          console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
+          if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
             threadId: data.threadId,
             runId: data.runId
           });
@@ -408,22 +943,23 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             ? { role: 'assistant', content: data.message }
             : data.message || { role: 'assistant', content: "I couldn't generate a proper response." };
             
-        // Use returned data
-        const returnedAnswers = data.collectedAnswers || collectedAnswers || {};
-        const nextQuestionKey = data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey;
-        const updatedQuestionsAnswered = data.questionsAnswered !== undefined ? data.questionsAnswered : questionsAnswered;
-        const isComplete = data.isComplete || false;
+        // Use returned data or default values for text responses
+        const returnedAnswers = data.isTextResponse ? {} : (data.collectedAnswers || collectedAnswers || {});
+        const nextQuestionKey = data.isTextResponse ? null : (data.nextQuestionKey || data.currentQuestionKey || currentQuestionKey);
+        const updatedQuestionsAnswered = data.isTextResponse ? 0 : (data.questionsAnswered !== undefined ? data.questionsAnswered : questionsAnswered);
+        const isComplete = data.isTextResponse ? false : (data.isComplete || false);
         const correctChatId = data.chatId; 
 
         if (!correctChatId) {
-           console.error("[CHAT_DEBUG] CRITICAL: API did not return a chatId!");
+           if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] CRITICAL: API did not return a chatId!");
            throw new Error("Chat session ID missing from server response.");
         }
 
-        console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
+        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
         
-        // Log detailed information about returned answers
-        console.log("[CHAT_DEBUG] Processing returned answers:", {
+        // Log detailed information about returned answers (skip for text responses)
+        if (!data.isTextResponse) {
+        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Processing returned answers:", {
           returnedKeys: Object.keys(returnedAnswers),
           currentKeys: Object.keys(collectedAnswers),
           newAnswersCount: Object.keys(returnedAnswers).length,
@@ -431,11 +967,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           previousQuestionKey: currentQuestionKey,
           questionsAnswered: updatedQuestionsAnswered
         });
+        }
 
         // Ensure we're preserving all previous answers and adding new ones
+        // Skip state updates for text responses as they don't affect tool state
+        if (!data.isTextResponse) {
         setCollectedAnswers(returnedAnswers);
         setCurrentQuestionKey(nextQuestionKey);
         setQuestionsAnswered(updatedQuestionsAnswered);
+        }
 
         // Construct the updated current chat state with API response data
         const finalCurrentChat = {
@@ -443,26 +983,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           id: correctChatId, // IMPORTANT: Use the ID from the API response
           messages: [...updatedMessages, assistantMessage], // User + assistant messages
           tool_id: selectedTool, // Preserve/ensure tool_id is correct
-          
-          // Update metadata with the new state from the API response
-          metadata: {
-            currentQuestionKey: nextQuestionKey, // from data.currentQuestionKey or data.nextQuestionKey
-            questionsAnswered: updatedQuestionsAnswered, // from data.questionsAnswered
-            collectedAnswers: returnedAnswers,         // from data.collectedAnswers
-            isComplete: isComplete                     // from data.isComplete
-          },
-
-          // Also update top-level convenience properties for immediate UI consistency
+        };
+        
+        // Only add metadata for tool-based chats, not for regular chat text responses
+        if (!data.isTextResponse) {
+          finalCurrentChat.metadata = {
           currentQuestionKey: nextQuestionKey,
           questionsAnswered: updatedQuestionsAnswered,
           collectedAnswers: returnedAnswers,
           isComplete: isComplete
         };
+          
+          // Also update top-level convenience properties for immediate UI consistency
+          finalCurrentChat.currentQuestionKey = nextQuestionKey;
+          finalCurrentChat.questionsAnswered = updatedQuestionsAnswered;
+          finalCurrentChat.collectedAnswers = returnedAnswers;
+          finalCurrentChat.isComplete = isComplete;
+        }
         
-        console.log("[CHAT_DEBUG] Final chat state constructed:", {
+        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Final chat state constructed:", {
           finalChatId: finalCurrentChat.id,
           finalMessageCount: finalCurrentChat.messages.length,
-          basedOnChatId: chatToUpdate.id
+          basedOnChatId: chatToUpdate.id,
+          isTextResponse: data.isTextResponse
         });
 
         // Update both the current chat state AND the chats list
@@ -470,7 +1013,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Update the chats array, handling both existing and new chats
         setChats(prevChats => {
-          console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
+          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
             chatCount: prevChats.length,
             chatIds: prevChats.map(c => c.id)
           });
@@ -478,7 +1021,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // First check if the new chat already exists in the list
           // This makes the update idempotent (safe to call multiple times)
           if (prevChats.some(chat => chat.id === correctChatId)) {
-            console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
+            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
             return prevChats.map(chat => 
               chat.id === correctChatId ? finalCurrentChat : chat
             );
@@ -489,7 +1032,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             ? prevChats.filter(chat => chat.id !== tempId)
             : prevChats;
             
-          console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
+          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
             filteredCount: filteredChats.length,
             removedTempChat: tempId !== correctChatId,
             filteredIds: filteredChats.map(c => c.id)
@@ -498,7 +1041,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // Final safety check if chat exists after filtering
           const chatExists = filteredChats.some(chat => chat.id === correctChatId);
           
-          console.log(`[CHAT_DEBUG] Chat existence check:`, {
+          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Chat existence check:`, {
             chatExists,
             correctChatId,
             finalChatId: finalCurrentChat.id
@@ -510,14 +1053,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             result = filteredChats.map(chat => 
               chat.id === correctChatId ? finalCurrentChat : chat
             );
-            console.log(`[CHAT_DEBUG] Updated existing chat in list`);
+            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Updated existing chat in list`);
           } else {
             // Add as a new chat if it doesn't exist in the list
             result = [finalCurrentChat, ...filteredChats];
-            console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
+            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
           }
           
-          console.log(`[CHAT_DEBUG] Final chats state:`, {
+          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Final chats state:`, {
             resultCount: result.length,
             resultIds: result.map(c => c.id)
           });
@@ -525,31 +1068,45 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           return result;
         });
 
-        // If the offer is complete, initiate SSE connection
-        console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
-        if (isComplete && correctChatId) {
-            console.log(`[CHAT_DEBUG] Offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
+        // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
+        if (process.env.NODE_ENV !== "production") console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
+        if (isComplete && correctChatId && selectedTool === 'hybrid-offer') {
+            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Hybrid offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
             setIsWaitingForN8n(true);
             const encodedAnswers = encodeURIComponent(JSON.stringify(returnedAnswers || {}));
             connectToN8nResultStream(correctChatId, encodedAnswers);
+        } else if (isComplete && correctChatId && selectedTool === 'workshop-generator') {
+            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Workshop generator complete for chatId: ${correctChatId}. HTML should be displayed directly in the message.`);
+            // Workshop generator completion is handled by the HTML generation in the API response
+            // No need to trigger n8n document generation
         }
 
+        // Trigger scroll after message updates
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+
     } catch (error) {
-        console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
+        if (process.env.NODE_ENV !== "production") console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
         const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
         const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
         setChats(prev => {
-          console.log(`[CHAT_DEBUG] Setting error chat state:`, {
+          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Setting error chat state:`, {
             errorChatId: errorChat.id,
             prevChatCount: prev.length
           });
           return prev.map(chat => chat.id === errorChat.id ? errorChat : chat);
         });
         setCurrentChat(errorChat);
+        
+        // Trigger scroll after error message
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
     } finally {
       setIsLoading(false);
       setIsResponseLoading(false); // Make sure to clear response loading state
-      console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
+      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
       if (!isWaitingForN8n) {
          textareaRef.current?.focus();
       } 
@@ -563,24 +1120,79 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   };
 
-  // Auto-scroll for both messages and loading state changes
-  useEffect(() => {
+  // Improved auto-scroll function
+  const scrollToBottom = () => {
     if (scrollAreaRef.current) {
-      const scrollViewport = scrollAreaRef.current.querySelector('div[style*="overflow: hidden scroll"]');
-      if (scrollViewport) {
-        scrollViewport.scrollTop = scrollViewport.scrollHeight;
+      // Try multiple methods to find the scrollable element
+      const scrollArea = scrollAreaRef.current;
+      
+      // Method 1: Look for the viewport element (Radix ScrollArea)
+      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+      
+      // Method 2: Look for any element with overflow scroll
+      if (!scrollElement) {
+        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
+      }
+      
+      // Method 3: Use the scroll area itself
+      if (!scrollElement) {
+        scrollElement = scrollArea;
+      }
+      
+      if (scrollElement) {
+        // Force scroll to bottom with multiple approaches
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+        
+        // Also try scrollIntoView on the last message if available
+        if (lastMessageRef.current) {
+          lastMessageRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'end' 
+          });
+        }
       }
     }
-  }, [currentChat?.messages, isResponseLoading]);
+  };
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
+
+  // Auto-scroll with delay to ensure DOM is rendered
+  useEffect(() => {
+    if (currentChat?.messages?.length > 0) {
+      // Immediate scroll
+      scrollToBottom();
+      
+      // Delayed scroll to catch any late-rendering content
+      const timeoutId = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      
+      // Additional scroll for complex content like documents
+      const timeoutId2 = setTimeout(() => {
+        scrollToBottom();
+      }, 500);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+      };
+    }
+  }, [currentChat?.id, currentChat?.messages]);
 
   // Determine if the offer creation process is complete for UI feedback
-  const isOfferComplete = currentQuestionKey === null && Object.keys(collectedAnswers).length > 0;
+  // Check both local state and metadata for completion
+  const isOfferComplete = (currentQuestionKey === null && Object.keys(collectedAnswers).length > 0) || 
+                         (currentChat?.metadata?.isComplete === true) ||
+                         (currentChat?.metadata?.questionsAnswered >= 6);
 
   // Function to connect to SSE endpoint
   const connectToN8nResultStream = (chatId, encodedAnswers) => {
     if (eventSourceRef.current) {
-      console.log("[SSE Connect] Closing existing EventSource before creating new one.");
-      eventSourceRef.current.close(); // Close any previous connection
+      if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Closing existing EventSource before creating new one.");
+      closeConnection();
     }
 
     // Get the last 30 messages from the current chat
@@ -595,16 +1207,84 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Create the request body as a JSON object instead of URL params
     const postData = {
       chatId: chatId,
+      userId: user?.id || null,
       answersData: JSON.parse(decodeURIComponent(encodedAnswers)), // Parse since we already have encoded JSON
       chatHistory: chatHistory
     };
 
-    console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
-    console.log(`[SSE Connect] POST data:`, {
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE Connect] POST data:`, {
       chatId,
+      userId: user?.id || null,
       answersDataFields: Object.keys(postData.answersData),
       chatHistoryLength: chatHistory.length
     });
+
+    // First, save an initial document generation message that will persist across refreshes
+    try {
+      if (user?.id) {
+        // Save both a text message for DB persistence and thread-level metadata to track generation state
+        const initialMessagePayload = {
+          thread_id: chatId,
+          role: 'assistant',
+          content: `
+          <div class="document-generation-status">
+            <p>📝 <strong>I'm generating your document now.</strong> Please wait...</p>
+            <p>This typically takes about 1 minute to complete.</p>
+            <p>You can safely refresh the page - the document will appear here when it's ready.</p>
+          </div>
+          `,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            isGenerating: true,
+            generationStarted: new Date().toISOString()
+          }
+        };
+        if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Saving initial document generation message to DB:', initialMessagePayload);
+        saveMessage(initialMessagePayload, user.id)
+          .then(() => {
+            if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved initial document message to DB.');
+            // Also update the thread metadata to indicate document generation is in progress
+            return fetch('/api/update-thread-metadata', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                threadId: chatId,
+                metadata: {
+                  ...currentChat?.metadata,
+                  isGeneratingDocument: true,
+                  generationStartTime: new Date().toISOString()
+                }
+              })
+            });
+          })
+          .then(response => {
+            if (!response.ok) {
+              if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
+            } else {
+              if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully updated thread metadata for document generation');
+            }
+          })
+          .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error in document generation setup:', err));
+          
+        // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
+        const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
+        setChats(prevChats => prevChats.map(c => {
+          if (c.id === chatId) {
+            // Make sure we append to the end of the messages array
+            return {...c, messages: [...c.messages, initialMessage]};
+          }
+          return c;
+        }));
+        if (currentChat?.id === chatId) {
+          setCurrentChat(prevChat => ({...prevChat, messages: [...prevChat.messages, initialMessage]}));
+        }
+      } else {
+        if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Cannot save initial document message - no user ID');
+      }
+    } catch (initErr) {
+      if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving initial document message:', initErr);
+    }
 
     // We need to use a custom implementation for EventSource with POST
     // First, make the initial request to establish the connection
@@ -633,7 +1313,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Process each event (separated by double newlines)
         const events = buffer.split('\n\n');
-        buffer = events.pop() || ''; // Keep the last incomplete event in the buffer
+        buffer = events.pop() || '';
         
         events.forEach(eventStr => {
           if (!eventStr.trim()) return;
@@ -661,126 +1341,188 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               } else if (eventType === 'error') {
                 handleErrorEvent(parsedData);
               } else {
-                console.warn(`[SSE Connect] Unknown event type: ${eventType}`);
+                if (process.env.NODE_ENV !== "production") console.warn(`[SSE Connect] Unknown event type: ${eventType}`);
               }
             } catch (e) {
-              console.error(`[SSE Connect] Error parsing event data: ${e.message}`);
+              if (process.env.NODE_ENV !== "production") console.error(`[SSE Connect] Error parsing event data: ${e.message}`);
             }
           }
         });
       };
       
-      // Handle n8n_result events (same as the original implementation)
+      // Handle n8n_result events
       const handleN8nResult = (eventData) => {
-        console.log("[SSE Connect] Received n8n_result event:", eventData);
-        let resultMessageContent = null; // For immediate JSX display
+        if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Received n8n_result event:", JSON.stringify(eventData, null, 2));
         let contentToSaveToDB = null;   // For saving to DB
         let n8nResultData = null;
 
         try {
           if (eventData.success && eventData.data) {
             n8nResultData = eventData.data; // Store for later use
+            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Parsed n8n result data:", JSON.stringify(n8nResultData, null, 2));
             
-            // 1. Construct JSX for immediate display
-            resultMessageContent = (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 font-medium">
-                   <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
-                   <span>Document generated successfully!</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                   {n8nResultData.pdfWebViewLink && (
-                     <Button variant="outline" size="sm" asChild>
-                        <a href={n8nResultData.pdfWebViewLink} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-                        </a>
-                     </Button>
-                   )}
-                   {n8nResultData.pdfDownlaodLink && (
-                     <Button variant="outline" size="sm" asChild>
-                        <a href={n8nResultData.pdfDownlaodLink} target="_blank" rel="noopener noreferrer" download>
-                           <Download className="mr-2 h-4 w-4" /> Download PDF
-                        </a>
-                     </Button>
-                   )}
-                   {n8nResultData.googleDocLink && (
-                      <Button variant="outline" size="sm" asChild>
-                         <a href={n8nResultData.googleDocLink} target="_blank" rel="noopener noreferrer">
-                             <FileText className="mr-2 h-4 w-4" /> View Google Doc
-                         </a>
-                      </Button>
-                    )}
-                    {n8nResultData.offerInMd && (
-                         <MarkdownMessage content={n8nResultData.offerInMd} />
-                    )}
-                </div>
-              </div>
-            );
-
-            // 2. Construct Text content for DB saving
-            let dbText = "Document generated successfully.";
-            if (n8nResultData.pdfWebViewLink) dbText += `\nView PDF: ${n8nResultData.pdfWebViewLink}`;
-            if (n8nResultData.pdfDownlaodLink) dbText += `\nDownload PDF: ${n8nResultData.pdfDownlaodLink}`;
-            if (n8nResultData.googleDocLink) dbText += `\nView Google Doc: ${n8nResultData.googleDocLink}`;
-            contentToSaveToDB = dbText;
-
+            // Look for Google Doc link with different possible property names
+            const googleDocLink = n8nResultData.googleDocLink || n8nResultData.docUrl || n8nResultData.googleDocURL || n8nResultData.documentUrl;
+            
+            // Log the link to debug
+            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Google Doc link extracted:", googleDocLink);
+            
+            if (googleDocLink) {
+              // Update n8nResultData with normalized link
+              n8nResultData = {
+                ...n8nResultData,
+                googleDocLink: googleDocLink
+              };
+              
+              // Construct plain text version with HTML link embedded directly in the content
+              contentToSaveToDB = `✅ Document generated successfully!\n\n<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\nLink: ${googleDocLink}`;
+            } else {
+              throw new Error('No Google Doc link found in the response.');
+            }
           } else {
             throw new Error(eventData.message || 'Received unsuccessful result from server.');
           }
         } catch (parseError) {
-          console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
-          resultMessageContent = "✅ Document generated, but there was an issue displaying the links.";
-          contentToSaveToDB = "Document generated, but link display failed."; // Save fallback text
+          if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
+          contentToSaveToDB = "Document generated, but there was an issue displaying the link."; 
         }
 
-        // 3. Save the text version to DB (if content exists and chat context is still valid)
-        const finalChatId = currentChat?.id; 
-        if (contentToSaveToDB && finalChatId && finalChatId === chatId) {
+        // Save the text version to DB (if content exists)
+        if (contentToSaveToDB && user?.id) {
           try {
+            // Create a dedicated links object for the Google Doc only
+            const documentLinks = {
+              googleDocLink: n8nResultData?.googleDocLink
+            };
+            
+            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Document link to save:", documentLinks);
+            
             const messagePayload = {
-              thread_id: finalChatId,
+              thread_id: chatId,
               role: 'assistant',
               content: contentToSaveToDB,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              metadata: {
+                documentLinks: documentLinks,
+                isGenerating: false,
+                generationCompleted: new Date().toISOString()
+              }
             };
-            console.log('[SSE Connect] Saving n8n result message to DB:', messagePayload);
-            saveMessage(messagePayload);
-            console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', finalChatId);
+            if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Saving n8n result message to DB:', JSON.stringify(messagePayload, null, 2));
+            
+            // Update thread metadata to indicate generation is complete
+            fetch('/api/update-thread-metadata', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                threadId: chatId,
+                metadata: {
+                  ...currentChat?.metadata,
+                  isGeneratingDocument: false,
+                  documentGenerated: true,
+                  documentLinks: documentLinks,
+                  generationCompleteTime: new Date().toISOString()
+                }
+              })
+            }).then(response => {
+              if (!response.ok) {
+                if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Failed to update thread metadata after completion:', response.status);
+              } else {
+                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully updated thread metadata for document completion');
+              }
+            }).catch(err => {
+              if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error updating thread metadata:', err);
+            });
+            
+            // Call saveMessage and wait for it to complete
+            saveMessage(messagePayload, user.id)
+              .then(() => {
+                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', chatId);
+                
+                // Update the UI for other open instances of this chat
+                const documentMessage = { 
+                  role: 'assistant', 
+                  content: contentToSaveToDB,
+                  metadata: {
+                    documentLinks: documentLinks
+                  }
+                };
+                
+                // Remove any "generating document" messages and add the new result message at the end
+                setCurrentChat(prevChat => {
+                  if (!prevChat || prevChat.id !== chatId) return prevChat;
+                  
+                  // Filter out any "generating document" messages first
+                  const filteredMessages = prevChat.messages.filter(m => 
+                    !(typeof m.content === 'string' && (
+                      m.content.includes("generating your document") || 
+                      m.content.includes("document-generation-status"))
+                    )
+                  );
+                  
+                  // Always add the new document message at the end
+                  return {...prevChat, messages: [...filteredMessages, documentMessage]};
+                });
+                
+                setChats(prevChats => prevChats.map(c => {
+                  if (c.id === chatId) {
+                    // Filter out any "generating document" messages
+                    const filteredMessages = c.messages.filter(m => 
+                      !(typeof m.content === 'string' && (
+                        m.content.includes("generating your document") || 
+                        m.content.includes("document-generation-status"))
+                      )
+                    );
+                    
+                    // Always add the new document message at the end
+                    return {...c, messages: [...filteredMessages, documentMessage]};
+                  }
+                  return c;
+                }));
+                
+                // Clear the waiting state
+                setIsWaitingForN8n(false);
+                
+                // Trigger scroll to show the new document message
+                setTimeout(() => {
+                  scrollToBottom();
+                }, 100);
+                
+                // TODO: Add notification system here
+                // This is where we would trigger a notification to let the user know
+                // their document is ready, even if they're not currently viewing this chat
+                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Document ready - notification system would trigger here');
+              })
+              .catch(dbError => {
+                if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+              });
           } catch (dbError) {
-            console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+            if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error preparing to save n8n result message to DB:', dbError);
           }
         } else {
-          console.warn(`[SSE Connect] Did not save n8n result message to DB. Context Changed? chatId=${chatId}, finalChatId=${finalChatId}, contentExists=${!!contentToSaveToDB}`);
+          if (process.env.NODE_ENV !== "production") console.warn(`[SSE Connect] Did not save n8n result message to DB. No user ID or content. contentExists=${!!contentToSaveToDB}, userId=${!!user?.id}`);
         }
-
-        // 4. Update React state with JSX for immediate display
-        if (resultMessageContent !== null && finalChatId && finalChatId === chatId) {
-          const resultMessageForState = { role: 'assistant', content: resultMessageContent, isJSX: true }; 
-          setCurrentChat(prevChat => {
-            if (!prevChat || prevChat.id !== finalChatId) return prevChat;
-            return {...prevChat, messages: [...prevChat.messages, resultMessageForState]};
-          });
-          setChats(prevChats => prevChats.map(c => {
-            if (c.id === finalChatId) {
-              return {...c, messages: [...c.messages, resultMessageForState]};
-            }
-            return c;
-          }));
-        } else {
-          console.warn("[SSE Connect] Could not add result message to UI state - chat context might have changed or content was null.");
-        }
-
-        // 5. Finalize SSE handling
-        setIsWaitingForN8n(false);
-        console.log("[SSE Connect] Processed n8n_result successfully.");
-        textareaRef.current?.focus();
       };
       
       // Handle error events
       const handleErrorEvent = (eventData) => {
-        console.error("[SSE Connect] Received error event:", eventData);
+        if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Received error event:", eventData);
         
-        // Add an error message to the chat
+        // Always save error to DB so it persists through refreshes
+        if (user?.id) {
+          const errorMessagePayload = {
+            thread_id: chatId,
+            role: 'assistant',
+            content: eventData.message || "Connection error while generating document. Please try again later.",
+            timestamp: new Date().toISOString()
+          };
+          
+          saveMessage(errorMessagePayload, user.id)
+            .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved error message to DB.'))
+            .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving error message:', err));
+        }
+        
+        // Add an error message to the chat if we're on the relevant chat
         const sseErrorMessage = { 
           role: 'assistant', 
           content: eventData.message || "Connection error while generating document. Please try again later.", 
@@ -788,11 +1530,36 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }; 
         
         if (currentChat?.id === chatId) {
-          setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, sseErrorMessage]} : null);
-          setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, sseErrorMessage]} : c));
+          setCurrentChat(prevChat => {
+            if (!prevChat) return null;
+            
+            // Remove any "generating document" messages
+            const filteredMessages = prevChat.messages.filter(m => 
+              m.content !== "I'm generating your document now. Please wait..."
+            );
+            
+            return {...prevChat, messages: [...filteredMessages, sseErrorMessage]};
+          });
+          
+          setChats(prevChats => prevChats.map(c => {
+            if (c.id === chatId) {
+              // Remove any "generating document" messages
+              const filteredMessages = c.messages.filter(m => 
+                m.content !== "I'm generating your document now. Please wait..."
+              );
+              return {...c, messages: [...filteredMessages, sseErrorMessage]};
+            }
+            return c;
+          }));
         }
         
         setIsWaitingForN8n(false);
+        
+        // Trigger scroll to show the error message
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+        
         textareaRef.current?.focus();
       };
       
@@ -800,7 +1567,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       const readNextChunk = () => {
         reader.read().then(({ done, value }) => {
           if (done) {
-            console.log("[SSE Connect] Stream closed by server.");
+            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Stream closed by server.");
             setIsWaitingForN8n(false);
             return;
           }
@@ -809,8 +1576,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           processEvents(chunk);
           readNextChunk(); // Continue reading
         }).catch(error => {
-          console.error("[SSE Connect] Error reading from stream:", error);
+          if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Error reading from stream:", error);
           setIsWaitingForN8n(false);
+          
+          // Save stream error to DB
+          if (user?.id) {
+            const streamErrorPayload = {
+              thread_id: chatId,
+              role: 'assistant',
+              content: "Error streaming document data. Please try again.",
+              timestamp: new Date().toISOString()
+            };
+            
+            saveMessage(streamErrorPayload, user.id)
+              .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved stream error message to DB.'))
+              .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving stream error message:', err));
+          }
           
           // Add an error message to the chat
           const streamErrorMessage = { 
@@ -820,9 +1601,33 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           };
           
           if (currentChat?.id === chatId) {
-            setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, streamErrorMessage]} : null);
-            setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, streamErrorMessage]} : c));
+            setCurrentChat(prevChat => {
+              if (!prevChat) return null;
+              
+              // Remove any "generating document" messages
+              const filteredMessages = prevChat.messages.filter(m => 
+                m.content !== "I'm generating your document now. Please wait..."
+              );
+              
+              return {...prevChat, messages: [...filteredMessages, streamErrorMessage]};
+            });
+            
+            setChats(prevChats => prevChats.map(c => {
+              if (c.id === chatId) {
+                // Remove any "generating document" messages
+                const filteredMessages = c.messages.filter(m => 
+                  m.content !== "I'm generating your document now. Please wait..."
+                );
+                return {...c, messages: [...filteredMessages, streamErrorMessage]};
+              }
+              return c;
+            }));
           }
+          
+          // Trigger scroll to show the stream error message
+          setTimeout(() => {
+            scrollToBottom();
+          }, 100);
           
           textareaRef.current?.focus();
         });
@@ -832,8 +1637,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       readNextChunk();
     })
     .catch(error => {
-      console.error("[SSE Connect] Fetch error:", error);
+      if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Fetch error:", error);
       setIsWaitingForN8n(false);
+      
+      // Save connection error to DB
+      if (user?.id) {
+        const connectionErrorPayload = {
+          thread_id: chatId,
+          role: 'assistant',
+          content: `Connection error: ${error.message}. Please try again later.`,
+          timestamp: new Date().toISOString()
+        };
+        
+        saveMessage(connectionErrorPayload, user.id)
+          .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved connection error message to DB.'))
+          .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving connection error message:', err));
+      }
       
       // Add an error message to the chat
       const connectionErrorMessage = { 
@@ -843,23 +1662,47 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       };
       
       if (currentChat?.id === chatId) {
-        setCurrentChat(prevChat => prevChat ? {...prevChat, messages: [...prevChat.messages, connectionErrorMessage]} : null);
-        setChats(prevChats => prevChats.map(c => c.id === chatId ? {...c, messages: [...c.messages, connectionErrorMessage]} : c));
+        setCurrentChat(prevChat => {
+          if (!prevChat) return null;
+          
+          // Remove any "generating document" messages
+          const filteredMessages = prevChat.messages.filter(m => 
+            m.content !== "I'm generating your document now. Please wait..."
+          );
+          
+          return {...prevChat, messages: [...filteredMessages, connectionErrorMessage]};
+        });
+        
+        setChats(prevChats => prevChats.map(c => {
+          if (c.id === chatId) {
+            // Remove any "generating document" messages
+            const filteredMessages = c.messages.filter(m => 
+              m.content !== "I'm generating your document now. Please wait..."
+            );
+            return {...c, messages: [...filteredMessages, connectionErrorMessage]};
+          }
+          return c;
+        }));
       }
+      
+      // Trigger scroll to show the connection error message
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
       
       textareaRef.current?.focus();
     });
   };
 
   const pollForAssistantResponse = async (threadId, runId, chatId, chatWithThinking, updatedMessages) => {
-    console.log("[CHAT_DEBUG] Starting to poll for assistant response");
+    if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Starting to poll for assistant response");
     
     let attempts = 0;
     const maxAttempts = 30; // 30 attempts x 2 seconds = 60 seconds max
     
     const poll = async () => {
       if (attempts >= maxAttempts) {
-        console.error("[CHAT_DEBUG] Polling timed out after max attempts");
+        if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Polling timed out after max attempts");
         // Update with an error message
         const errorMessage = { 
           role: 'assistant', 
@@ -870,7 +1713,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       }
       
       attempts++;
-      console.log(`[CHAT_DEBUG] Polling attempt ${attempts}/${maxAttempts}`);
+      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Polling attempt ${attempts}/${maxAttempts}`);
       
       try {
         const response = await fetch('/api/assistant-status', {
@@ -884,12 +1727,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         });
         
         if (!response.ok) {
-          console.error(`[CHAT_DEBUG] Polling API error: ${response.status}`);
+          if (process.env.NODE_ENV !== "production") console.error(`[CHAT_DEBUG] Polling API error: ${response.status}`);
           throw new Error(`Polling request failed with status: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log(`[CHAT_DEBUG] Polling response:`, {
+        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Polling response:`, {
           status: data.status,
           messagePreview: data.message ? data.message.substring(0, 50) + '...' : 'no message'
         });
@@ -912,7 +1755,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // If still processing, wait and try again
         setTimeout(poll, 2000); // Poll every 2 seconds
       } catch (error) {
-        console.error("[CHAT_DEBUG] Error during polling:", error);
+        if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Error during polling:", error);
         
         // If there's an error, we'll try a few more times
         if (attempts < maxAttempts) {
@@ -933,7 +1776,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
   
   const updateChatWithFinalResponse = (chatWithThinking, finalMessage, chatId, userMessages) => {
-    console.log("[CHAT_DEBUG] Updating chat with final response", {
+    if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Updating chat with final response", {
       chatId,
       messageLengthBeforeUpdate: chatWithThinking.messages.length,
       finalMessagePreview: finalMessage.content.substring(0, 50) + '...'
@@ -957,133 +1800,197 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setChats(prev => prev.map(chat => 
       chat.id === chatId ? finalChat : chat
     ));
+    
+    // Trigger scroll to show the final response
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full relative"> {/* Added relative positioning */}
-       {/* --- Status Display --- */}
-       {selectedTool === 'hybrid-offer' && (
-           <div className="fixed top-4 right-4 bg-background border rounded-lg p-3 shadow-md max-w-[200px] z-10">
-                <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Offer Status</h4>
-                <div className="text-xs mb-2 font-medium">{questionsAnswered}/6 Questions Answered</div>
-                <ul className="space-y-1">
-                    {hybridOfferQuestions.map((q, index) => (
-                        <li key={q.key} className="flex items-center gap-2 text-xs">
-                            {collectedAnswers[q.key] ? (
-                                <CheckCircle2 className="h-3 w-3 text-green-500 flex-shrink-0" />
-                            ) : index === questionsAnswered ? (
-                                <HelpCircle className="h-3 w-3 text-blue-500 flex-shrink-0 animate-pulse" />
-                            ) : (
-                                <Circle className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-                            )}
-                            <span className={`${index === questionsAnswered ? 'font-medium' : 'text-muted-foreground'} truncate`} title={q.question}>
-                                {q.question.split(' ').slice(0, 4).join(' ')}...
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-           </div>
-       )}
-       {/* --- End Status Display --- */}
-       
+    <div className="flex flex-col h-full max-w-full">
+      {/* Chat header - added responsive padding */}
+      <div className="border-b p-3 sm:p-4 flex items-center justify-between sticky top-0 bg-background z-10">
+        <div className="flex items-center space-x-2">
+          <div className="font-semibold">
+            {currentChat && currentChat.title ? (
+              <span className="text-sm sm:text-base">{currentChat.title}</span>
+            ) : (
+              <span className="text-sm sm:text-base">New Conversation</span>
+            )}
+          </div>
+        </div>
+      </div>
 
-      <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 pt-16 gap-4"> {/* Reduced padding-top */}
-          {/* Initial Welcome Message (simplified) */}  
-          {!currentChat?.messages?.length && selectedTool === "hybrid-offer" && (
-              <div className="text-center space-y-2 p-4 bg-muted rounded-lg">
-              <h2 className="text-xl font-semibold">Welcome to Hybrid Offer Creator</h2>
-              <p className="text-muted-foreground text-sm">
-                  Let's gather the details for your offer. I'll ask a few questions.
-              </p>
+      {/* Messages container - updated with responsive spacing */}
+      <ScrollArea 
+        ref={scrollAreaRef} 
+        className="flex-1 overflow-y-auto px-2 sm:px-4"
+      >
+        <div className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
+          {/* First message or empty state when no messages */}
+          {!currentChat?.messages?.length ? (
+            <div className="flex items-center justify-center h-[calc(100vh-10rem)]">
+              <div className="text-center space-y-3 sm:space-y-6 max-w-md px-4">
+                <h3 className="text-lg sm:text-xl font-semibold">
+                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+                </h3>
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  {selectedTool 
+                    ? TOOLS[selectedTool].description
+                    : "Ask me anything related to your business."}
+                </p>
               </div>
+            </div>
+          ) : (
+            currentChat.messages
+              .filter((message) => {
+                // Filter out document generation status messages if document is already complete
+                const isGenerationStatus = typeof message.content === 'string' && 
+                  message.content.includes('document-generation-status');
+                
+                if (isGenerationStatus) {
+                  // Check if there are any completed document messages in the chat
+                  const hasCompletedDocuments = currentChat.messages.some(msg => 
+                    isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
+                  );
+                  
+                  // Also check metadata for completion
+                  const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
+                    currentChat.metadata?.isGeneratingDocument === false;
+                  
+                  // Filter out generation status if document is complete
+                  if (hasCompletedDocuments || isDocumentComplete) {
+                    if (process.env.NODE_ENV !== "production") console.log('[ChatArea] Filtering out generation status message - document is complete');
+                    return false;
+                  }
+                }
+                
+                return true;
+              })
+              .map((message, index, filteredArray) => {
+                // Check if this is the last message in the filtered array
+                const isLastMessage = index === filteredArray.length - 1;
+                
+                return (
+                  <div
+                    key={message.id || `message-${index}`}
+                    className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    {/* Message bubble - updated with responsive padding */}
+                    <div
+                      className={`
+                        flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
+                        ${message.role === "user" ? "flex-row-reverse" : ""}
+                      `}
+                    >
+                      {message.role === "user" ? (
+                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                          <AvatarImage src="" alt="User" />
+                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
+                            {user?.email?.charAt(0).toUpperCase() || "U"}
+                          </div>
+                        </Avatar>
+                      ) : (
+                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                          <AvatarImage src="" alt="Assistant" />
+                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
+                            J
+                          </div>
+                        </Avatar>
+                      )}
+
+                      <div
+                        className={`
+                          relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
+                          ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
+                        `}
+                      >
+                        {message.is_thinking ? (
+                          <LoadingMessage content={message.content} role={message.role} />
+                        ) : (
+                          // Conditional rendering for different message types
+                          <>
+                            {isDocumentMessage(message) ? (
+                              <DocumentMessage message={message} />
+                            ) : isLandingPageMessage(message) ? (
+                              <LandingPageMessage content={message.content} />
+                            ) : (
+                              // Check for HTML content
+                              message.content.includes('<a href') ? (
+                                <HTMLContent content={message.content} />
+                              ) : (
+                                <MarkdownMessage content={message.content} />
+                              )
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
           )}
-          {!currentChat?.messages?.length && selectedTool !== "hybrid-offer" && (
-              <div className="text-center space-y-2 p-4">
-                  <h2 className="text-xl font-semibold">Start Chatting</h2>
-              </div>
-          )} 
-          
-          {/* Chat Messages */}  
-          {currentChat?.messages?.map((message, i) => (
-              <div
-              key={`${currentChat.id}-${i}`}
-              className={`flex gap-3 mb-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-              {message.role === "assistant" && (
-                  <Avatar className="flex-shrink-0">
-                  <AvatarImage src="/bot-avatar.png" alt="AI" />
-                  </Avatar>
-              )}
-              <div
-                  className={`rounded-lg p-3 max-w-[80%] text-sm ${
-                  message.role === "user"
-                      ? "bg-primary text-primary-foreground whitespace-pre-wrap" // Keep for user text
-                      : "bg-muted overflow-auto"
-                  } ${message.isJSX ? '' : (message.role === 'assistant' ? '' : 'whitespace-pre-wrap')}`} // Only whitespace-pre-wrap for non-JSX user messages
-              >
-                  {/* Render content with markdown for assistant messages, directly for JSX, or as text for user */}
-                  {message.isJSX ? (
-                    message.content
-                  ) : message.role === 'assistant' ? (
-                    <MarkdownMessage content={message.content} />
-                  ) : (
-                    message.content
-                  )}
-              </div>
-              {message.role === "user" && (
-                  <Avatar className="flex-shrink-0">
-                  <AvatarImage src="/user-avatar.png" alt="User" />
-                  </Avatar>
-              )}
-              </div>
-          ))}
-          
-          {/* Loading Message while waiting for response */}
-          {isResponseLoading && (
-            <>
-              <LoadingMessage />
-              {console.log('[CHAT_DEBUG] Rendering LoadingMessage component')}
-            </>
-          )}
-          
-          {/* N8N Loading Indicator */} 
+
+          {/* Show n8n document generation loader */}
           {isWaitingForN8n && (
-             <div className="flex items-center justify-center m-2 mx-10 gap-2 p-3 bg-muted rounded-lg ring-1 ring-blue-500 bg-gradient-to-t from-blue-500/20 via-transparent to-transparent">
-                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                 <span className="text-sm text-muted-foreground">Generating document... (approx. 1 min)</span>
-             </div>
+            <div className="flex items-center justify-center py-6">
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
+                </div>
+                <p className="text-xs text-muted-foreground max-w-xs text-center">
+                  This may take up to 1-3 minutes. Your document is being created based on your answers.
+                </p>
+              </div>
+            </div>
           )}
-          
-          
+
+          {/* Loading state for AI response */}
+          {isResponseLoading && !isWaitingForN8n && (
+            <div className="flex items-start gap-3">
+              <Avatar className="h-9 w-9 mt-0.5">
+                <AvatarImage src="" alt="Assistant" />
+                <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
+                  J
+                </div>
+              </Avatar>
+              <div className="bg-muted p-4 rounded-lg">
+                <LoadingMessage role="assistant" />
+              </div>
+            </div>
+          )}
+        </div>
       </ScrollArea>
 
-      {/* Input Form */}  
-      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="max-w-2xl mx-auto flex gap-2 items-end">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isOfferComplete ? "Offer data sent." : isWaitingForN8n ? "Generating document..." : isLoading || isResponseLoading ? "Waiting for response..." : "Type your message..."}
-            className="min-h-[40px] max-h-[200px] resize-none text-sm flex-1 rounded-2xl hover:border-primary focus-visible:ring-1 focus-visible:ring-primary"
-            rows={1}
-            disabled={isLoading || isInitiating || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
-          />
-          <Button 
-             type="submit" 
-             disabled={isLoading || isInitiating || !input.trim() || isOfferComplete || isWaitingForN8n || isResponseLoading} // Add isResponseLoading
-             size="sm"
-             className="rounded-full h-10 w-10"
-          >
-            {isLoading || isInitiating || isWaitingForN8n || isResponseLoading ? 
-             <Loader2 className="h-4 w-4 animate-spin" />
-            : 
-            <ArrowUp className="h-4 w-4" />
-          }
-          </Button>
-        </div>
-      </form>
+      {/* Input area - made responsive for mobile devices */}
+      <div className="absolute bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-3 sm:p-4">
+        <form onSubmit={handleSubmit} className="flex flex-col space-y-2 mobile-input-wrapper">
+          <div className="relative">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message..."
+              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-base font-medium mobile-input"
+              rows={1}
+              disabled={isLoading || isResponseLoading || isWaitingForN8n}
+              style={{ fontSize: '16px' }} /* Prevent iOS zoom by ensuring min 16px font */
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
+              disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
