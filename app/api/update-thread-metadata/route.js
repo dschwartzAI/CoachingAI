@@ -1,69 +1,86 @@
-"use server";
-
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export async function POST(req) {
+const createSupabaseClient = () => {
+  const cookieStore = cookies();
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name, value, options) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name, options) {
+          cookieStore.set({ name, value: '', ...options });
+        },
+      },
+    }
+  );
+};
+
+export async function POST(request) {
   try {
-    const requestData = await req.json();
-    const { threadId, metadata } = requestData;
+    const { threadId, metadata } = await request.json();
     
     if (!threadId) {
-      return NextResponse.json(
-        { error: 'Thread ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Thread ID is required' }, { status: 400 });
     }
     
-    // Initialize Supabase client
-    const supabase = createRouteHandlerClient({ cookies });
+    console.log('[Update Thread Metadata] Updating thread:', threadId, 'with metadata:', metadata);
     
-    // Get session to verify authentication
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    const supabase = createSupabaseClient();
+    
+    // First, try to find the thread
+    const { data: existingThread, error: findError } = await supabase
+      .from('threads')
+      .select('id, metadata')
+      .eq('id', threadId)
+      .single();
+    
+    if (findError && findError.code !== 'PGRST116') {
+      console.error('[Update Thread Metadata] Error finding thread:', findError);
+      return NextResponse.json({ error: 'Failed to find thread' }, { status: 500 });
     }
+    
+    if (!existingThread) {
+      console.log('[Update Thread Metadata] Thread not found, cannot create thread without required fields (title, user_id)');
+      console.log('[Update Thread Metadata] This suggests the thread should have been created earlier in the process');
+      return NextResponse.json({ 
+        error: 'Thread not found and cannot be created without required fields',
+        details: 'Thread should be created during the chat initialization process'
+      }, { status: 404 });
+    }
+    
+    // Merge the new metadata with existing metadata
+    const updatedMetadata = { ...existingThread.metadata, ...metadata };
     
     // Update the thread metadata
     const { data, error } = await supabase
       .from('threads')
       .update({ 
-        metadata: metadata,
+        metadata: updatedMetadata,
         updated_at: new Date().toISOString()
       })
       .eq('id', threadId)
-      .eq('user_id', session.user.id) // Ensure the user owns this thread
-      .select('id, metadata');
+      .select()
+      .single();
     
     if (error) {
-      console.error('Error updating thread metadata:', error);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
+      console.error('[Update Thread Metadata] Error updating thread metadata:', error);
+      return NextResponse.json({ error: 'Failed to update thread metadata' }, { status: 500 });
     }
     
-    if (!data || data.length === 0) {
-      return NextResponse.json(
-        { error: 'Thread not found or access denied' },
-        { status: 404 }
-      );
-    }
-    
-    return NextResponse.json({
-      success: true,
-      data: data[0]
-    });
+    console.log('[Update Thread Metadata] Thread metadata updated successfully:', data.id);
+    return NextResponse.json({ success: true, thread: data });
     
   } catch (error) {
-    console.error('Unexpected error in update-thread-metadata:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('[Update Thread Metadata] Unexpected error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 } 

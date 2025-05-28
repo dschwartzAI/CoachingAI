@@ -64,24 +64,53 @@ function extractN8nLinks(content) {
 
 // Add a function to check if a message is a document message
 function isDocumentMessage(message) {
-  return (
-    typeof message.content === 'string' && 
+  const hasDocumentContent = typeof message.content === 'string' && 
     (message.content.includes('Document generated successfully') || 
      message.content.includes('generating your document') ||
-     (message.metadata?.documentLinks && Object.values(message.metadata.documentLinks).some(link => link)))
-  );
+     message.content.includes('View Google Doc') ||
+     message.content.includes('document-generation-status'));
+  
+  const hasDocumentMetadata = message.metadata?.documentLinks && 
+    Object.values(message.metadata.documentLinks).some(link => link);
+  
+  const result = hasDocumentContent || hasDocumentMetadata;
+  
+  console.log('[isDocumentMessage] Checking message:', {
+    messageId: message.id,
+    hasDocumentContent,
+    hasDocumentMetadata,
+    contentPreview: typeof message.content === 'string' ? message.content.substring(0, 100) + '...' : 'non-string',
+    metadata: message.metadata,
+    result
+  });
+  
+  return result;
 }
 
 // Function to render HTML content directly
 function HTMLContent({ content }) {
+  // Clean up content by removing redundant "Link:" text that follows HTML links
+  const cleanContent = (rawContent) => {
+    if (!rawContent) return '';
+    
+    // Remove "Link: [URL]" patterns that appear after HTML links
+    let cleaned = rawContent.replace(/\n\nLink:\s*https?:\/\/[^\s]+/g, '');
+    
+    // Also remove just "Link:" followed by URL on same line
+    cleaned = cleaned.replace(/Link:\s*https?:\/\/[^\s]+/g, '');
+    
+    return cleaned.trim();
+  };
+  
   // Parse the content to extract links and render them as proper React components
   const processContent = () => {
-    if (!content) return '';
+    const cleanedContent = cleanContent(content);
+    if (!cleanedContent) return '';
     
     try {
       // Create a temporary div to parse the HTML
       const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = content;
+      tempDiv.innerHTML = cleanedContent;
       
       // Extract all links
       const links = [];
@@ -102,11 +131,11 @@ function HTMLContent({ content }) {
       
       // If no links found, just return the content as is
       if (links.length === 0) {
-        return <span>{content.replace(/<[^>]*>/g, '')}</span>;
+        return <span>{cleanedContent.replace(/<[^>]*>/g, '')}</span>;
       }
       
       // Split content at link positions
-      let remainingContent = content;
+      let remainingContent = cleanedContent;
       const fragments = [];
       
       links.forEach((link, i) => {
@@ -170,7 +199,7 @@ function HTMLContent({ content }) {
     } catch (error) {
       console.error('Error processing HTML content:', error);
       // Fallback to simply removing HTML tags
-      return <span>{content.replace(/<[^>]*>/g, '')}</span>;
+      return <span>{cleanContent(content).replace(/<[^>]*>/g, '')}</span>;
     }
   };
   
@@ -180,54 +209,77 @@ function HTMLContent({ content }) {
   }
   
   // Fallback to dangerouslySetInnerHTML if running on server
-  return <div dangerouslySetInnerHTML={{ __html: content }} />;
+  return <div dangerouslySetInnerHTML={{ __html: cleanContent(content) }} />;
 }
 
 // Define the DocumentMessage component
 function DocumentMessage({ message }) {
+  // Check if this is a document generation status message
+  const isGenerationStatus = typeof message.content === 'string' && 
+    message.content.includes('document-generation-status');
+  
+  // If it's a generation status message, show a proper loading UI
+  if (isGenerationStatus) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground font-medium">I'm generating your document now</span>
+          </div>
+          <p className="text-xs text-muted-foreground max-w-xs text-center">
+            This typically takes about 1 minute to complete.
+          </p>
+          <p className="text-xs text-muted-foreground max-w-xs text-center">
+            You'll receive a notification and the document will appear here when it's ready.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
   // First check if message has metadata with document links
   const documentLinks = message.metadata?.documentLinks;
-  const hasMetadataLinks = documentLinks && (documentLinks.googleDocLink || documentLinks.pdfWebViewLink || documentLinks.pdfDownloadLink);
+  const hasMetadataLinks = documentLinks && documentLinks.googleDocLink;
   
   // Then check for n8n links in the message content as a fallback
   const extractedLinks = extractN8nLinks(message.content);
-  const hasExtractedLinks = extractedLinks.googleDocLink || extractedLinks.pdfWebViewLink || extractedLinks.pdfDownloadLink;
+  const hasExtractedLinks = extractedLinks.googleDocLink;
   
-  // Combine links, prioritizing metadata links
+  // Check if the content already contains HTML links
+  const contentHasHtmlLinks = typeof message.content === 'string' && message.content.includes('<a href');
+  
+  // Get the Google Doc link, prioritizing metadata links
   const docLink = documentLinks?.googleDocLink || extractedLinks.googleDocLink;
-  const pdfView = documentLinks?.pdfWebViewLink || extractedLinks.pdfWebViewLink;
-  const pdfDownload = documentLinks?.pdfDownloadLink || extractedLinks.pdfDownloadLink;
-  
-  const hasAnyLinks = docLink || pdfView || pdfDownload;
   
   return (
-    <div className="space-y-2">
-      <div>{/* Show the message text */}
-        <MarkdownMessage content={message.content.split('\n')[0]} />
+    <div className="space-y-3">
+      <div>
+        {/* Check if content contains HTML and render appropriately */}
+        {message.content.includes('<a href') ? (
+          <HTMLContent content={message.content} />
+        ) : (
+          <MarkdownMessage content={message.content} />
+        )}
       </div>
-      {hasAnyLinks && (
-        <div className="flex flex-wrap gap-2 mt-2">
-          {pdfView && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={pdfView} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-2 h-4 w-4" /> View PDF
-              </a>
-            </Button>
-          )}
-          {pdfDownload && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={pdfDownload} target="_blank" rel="noopener noreferrer" download>
-                <Download className="mr-2 h-4 w-4" /> Download PDF
-              </a>
-            </Button>
-          )}
-          {docLink && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={docLink} target="_blank" rel="noopener noreferrer">
-                <FileText className="mr-2 h-4 w-4" /> View Google Doc
-              </a>
-            </Button>
-          )}
+      {/* Only show the separate link section if content doesn't already have HTML links */}
+      {docLink && !contentHasHtmlLinks && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+          <div className="flex items-center gap-2 text-green-800 font-medium">
+            <CheckCircle2 className="h-5 w-5" />
+            Your document is ready!
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <FileText className="h-4 w-4 text-green-600" />
+            <a 
+              href={docLink} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline break-all"
+            >
+              View Google Doc
+            </a>
+          </div>
         </div>
       )}
     </div>
@@ -284,8 +336,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentSelectedTool === 'hybrid-offer' ? hybridOfferQuestions[0]?.key : null));
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
         
-        // Check if this thread has a document being generated
-        if (currentChat.metadata.isGeneratingDocument === true) {
+        // Check document generation state
+        if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
           console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
           setIsWaitingForN8n(true);
           
@@ -323,8 +375,19 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             // No start time available, just set the loading state
             setIsWaitingForN8n(true);
           }
-        } else {
+        } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
+          // Document generation is complete or not in progress
+          console.log(`[ChatArea Context Change Effect] Document generation complete or not in progress, clearing loading state`);
           setIsWaitingForN8n(false);
+        } else {
+          // Check if there are already document messages in the chat
+          const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
+          if (hasDocumentMessages) {
+            console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
+            setIsWaitingForN8n(false);
+          } else {
+            setIsWaitingForN8n(false);
+          }
         }
         
         // If we have metadata, this thread was already initiated in the past
@@ -341,7 +404,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
           console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
-          eventSourceRef.current.close();
+          eventSourceRef.current.close(); // Close any previous connection
           eventSourceRef.current = null;
       }
     } else {
@@ -356,9 +419,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
          setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
          
          // Check document generation state
-         if (currentChat.metadata.isGeneratingDocument === true) {
+         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
            setIsWaitingForN8n(true);
-         } else if (currentChat.metadata.isGeneratingDocument === false) {
+         } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
            setIsWaitingForN8n(false);
          }
          // Otherwise don't change isWaitingForN8n
@@ -858,6 +921,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             connectToN8nResultStream(correctChatId, encodedAnswers);
         }
 
+        // Trigger scroll after message updates
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+
     } catch (error) {
         console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
         const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
@@ -870,6 +938,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           return prev.map(chat => chat.id === errorChat.id ? errorChat : chat);
         });
         setCurrentChat(errorChat);
+        
+        // Trigger scroll after error message
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
     } finally {
       setIsLoading(false);
       setIsResponseLoading(false); // Make sure to clear response loading state
@@ -887,18 +960,73 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   };
 
-  // Auto-scroll for both messages and loading state changes
-  useEffect(() => {
+  // Improved auto-scroll function
+  const scrollToBottom = () => {
     if (scrollAreaRef.current) {
-      const scrollViewport = scrollAreaRef.current.querySelector('div[style*="overflow: hidden scroll"]');
-      if (scrollViewport) {
-        scrollViewport.scrollTop = scrollViewport.scrollHeight;
+      // Try multiple methods to find the scrollable element
+      const scrollArea = scrollAreaRef.current;
+      
+      // Method 1: Look for the viewport element (Radix ScrollArea)
+      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+      
+      // Method 2: Look for any element with overflow scroll
+      if (!scrollElement) {
+        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
+      }
+      
+      // Method 3: Use the scroll area itself
+      if (!scrollElement) {
+        scrollElement = scrollArea;
+      }
+      
+      if (scrollElement) {
+        // Force scroll to bottom with multiple approaches
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+        
+        // Also try scrollIntoView on the last message if available
+        if (lastMessageRef.current) {
+          lastMessageRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'end' 
+          });
+        }
       }
     }
-  }, [currentChat?.messages, isResponseLoading]);
+  };
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
+
+  // Auto-scroll with delay to ensure DOM is rendered
+  useEffect(() => {
+    if (currentChat?.messages?.length > 0) {
+      // Immediate scroll
+      scrollToBottom();
+      
+      // Delayed scroll to catch any late-rendering content
+      const timeoutId = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      
+      // Additional scroll for complex content like documents
+      const timeoutId2 = setTimeout(() => {
+        scrollToBottom();
+      }, 500);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+      };
+    }
+  }, [currentChat?.id, currentChat?.messages]);
 
   // Determine if the offer creation process is complete for UI feedback
-  const isOfferComplete = currentQuestionKey === null && Object.keys(collectedAnswers).length > 0;
+  // Check both local state and metadata for completion
+  const isOfferComplete = (currentQuestionKey === null && Object.keys(collectedAnswers).length > 0) || 
+                         (currentChat?.metadata?.isComplete === true) ||
+                         (currentChat?.metadata?.questionsAnswered >= 6);
 
   // Function to connect to SSE endpoint
   const connectToN8nResultStream = (chatId, encodedAnswers) => {
@@ -1073,73 +1201,41 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             n8nResultData = eventData.data; // Store for later use
             console.log("[SSE Connect] Parsed n8n result data:", JSON.stringify(n8nResultData, null, 2));
             
-            // Fix any potential typos in keys and ensure all link properties are present
-            if (n8nResultData.pdfDownlaodLink && !n8nResultData.pdfDownloadLink) {
-              n8nResultData.pdfDownloadLink = n8nResultData.pdfDownlaodLink;
-            }
+            // Look for Google Doc link with different possible property names
+            const googleDocLink = n8nResultData.googleDocLink || n8nResultData.docUrl || n8nResultData.googleDocURL || n8nResultData.documentUrl;
             
-            // Look for different possible property names for document links
-            const googleDocLink = n8nResultData.googleDocLink || n8nResultData.docUrl || n8nResultData.googleDocURL;
-            const pdfViewLink = n8nResultData.pdfWebViewLink || n8nResultData.pdfViewUrl || n8nResultData.viewPdfUrl;
-            const pdfDownloadLink = n8nResultData.pdfDownloadLink || n8nResultData.pdfDownlaodLink || n8nResultData.downloadPdfUrl;
-            
-            // Log all potential links to debug
-            console.log("[SSE Connect] Document links extracted:", {
-              googleDocLink,
-              pdfViewLink,
-              pdfDownloadLink,
-              rawData: n8nResultData
-            });
-            
-            // Update n8nResultData with normalized links
-            n8nResultData = {
-              ...n8nResultData,
-              googleDocLink: googleDocLink,
-              pdfWebViewLink: pdfViewLink,
-              pdfDownloadLink: pdfDownloadLink
-            };
-            
-            // Construct plain text version with HTML links embedded directly in the content
-            let dbText = "✅ Document generated successfully!\n\n";
+            // Log the link to debug
+            console.log("[SSE Connect] Google Doc link extracted:", googleDocLink);
             
             if (googleDocLink) {
-              dbText += `<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\n`;
+              // Update n8nResultData with normalized link
+              n8nResultData = {
+                ...n8nResultData,
+                googleDocLink: googleDocLink
+              };
+              
+              // Construct plain text version with HTML link embedded directly in the content
+              contentToSaveToDB = `✅ Document generated successfully!\n\n<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\nLink: ${googleDocLink}`;
+            } else {
+              throw new Error('No Google Doc link found in the response.');
             }
-            
-            if (pdfViewLink) {
-              dbText += `<a href="${pdfViewLink}" target="_blank" rel="noopener noreferrer">View PDF</a>\n\n`;
-            }
-            
-            if (pdfDownloadLink) {
-              dbText += `<a href="${pdfDownloadLink}" target="_blank" rel="noopener noreferrer" download>Download PDF</a>\n\n`;
-            }
-            
-            // Also add plain text links as a fallback
-            dbText += "\n\nLinks:\n";
-            if (googleDocLink) dbText += `Google Doc: ${googleDocLink}\n`;
-            if (pdfViewLink) dbText += `View PDF: ${pdfViewLink}\n`;
-            if (pdfDownloadLink) dbText += `Download PDF: ${pdfDownloadLink}\n`;
-            
-            contentToSaveToDB = dbText;
           } else {
             throw new Error(eventData.message || 'Received unsuccessful result from server.');
           }
         } catch (parseError) {
           console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
-          contentToSaveToDB = "Document generated, but there was an issue displaying the links."; 
+          contentToSaveToDB = "Document generated, but there was an issue displaying the link."; 
         }
 
         // Save the text version to DB (if content exists)
         if (contentToSaveToDB && user?.id) {
           try {
-            // Create a dedicated links object for better debugging and access
+            // Create a dedicated links object for the Google Doc only
             const documentLinks = {
-              googleDocLink: n8nResultData?.googleDocLink,
-              pdfWebViewLink: n8nResultData?.pdfWebViewLink,
-              pdfDownloadLink: n8nResultData?.pdfDownloadLink
+              googleDocLink: n8nResultData?.googleDocLink
             };
             
-            console.log("[SSE Connect] Document links to save:", documentLinks);
+            console.log("[SSE Connect] Document link to save:", documentLinks);
             
             const messagePayload = {
               thread_id: chatId,
@@ -1226,6 +1322,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 
                 // Clear the waiting state
                 setIsWaitingForN8n(false);
+                
+                // Trigger scroll to show the new document message
+                setTimeout(() => {
+                  scrollToBottom();
+                }, 100);
+                
+                // TODO: Add notification system here
+                // This is where we would trigger a notification to let the user know
+                // their document is ready, even if they're not currently viewing this chat
+                console.log('[SSE Connect] Document ready - notification system would trigger here');
               })
               .catch(dbError => {
                 console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
@@ -1288,6 +1394,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
         
         setIsWaitingForN8n(false);
+        
+        // Trigger scroll to show the error message
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+        
         textareaRef.current?.focus();
       };
       
@@ -1352,6 +1464,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             }));
           }
           
+          // Trigger scroll to show the stream error message
+          setTimeout(() => {
+            scrollToBottom();
+          }, 100);
+          
           textareaRef.current?.focus();
         });
       };
@@ -1407,6 +1524,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           return c;
         }));
       }
+      
+      // Trigger scroll to show the connection error message
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
       
       textareaRef.current?.focus();
     });
@@ -1518,6 +1640,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setChats(prev => prev.map(chat => 
       chat.id === chatId ? finalChat : chat
     ));
+    
+    // Trigger scroll to show the final response
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
   };
 
   return (
@@ -1532,14 +1659,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               <span className="text-sm sm:text-base">New Conversation</span>
             )}
           </div>
-          {/* Display current question progress for hybrid offer */}
-          {selectedTool === 'hybrid-offer' && !isOfferComplete && (
-            <div className="text-xs bg-muted rounded-full px-2 py-0.5 ml-2 flex items-center space-x-1">
-              <span>
-                {questionsAnswered} / {TOOLS['hybrid-offer'].questions.filter(q => q.required).length}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1564,62 +1683,92 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               </div>
             </div>
           ) : (
-            currentChat.messages.map((message, index) => (
-              <div
-                key={message.id || `message-${index}`}
-                className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
-                ref={index === currentChat.messages.length - 1 ? lastMessageRef : null}
-              >
-                {/* Message bubble - updated with responsive padding */}
-                <div
-                  className={`
-                    flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
-                    ${message.role === "user" ? "flex-row-reverse" : ""}
-                  `}
-                >
-                  {message.role === "user" ? (
-                    <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
-                      <AvatarImage src="" alt="User" />
-                      <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
-                        {user?.email?.charAt(0).toUpperCase() || "U"}
-                      </div>
-                    </Avatar>
-                  ) : (
-                    <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
-                      <AvatarImage src="" alt="Assistant" />
-                      <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
-                        J
-                      </div>
-                    </Avatar>
-                  )}
-
+            currentChat.messages
+              .filter((message) => {
+                // Filter out document generation status messages if document is already complete
+                const isGenerationStatus = typeof message.content === 'string' && 
+                  message.content.includes('document-generation-status');
+                
+                if (isGenerationStatus) {
+                  // Check if there are any completed document messages in the chat
+                  const hasCompletedDocuments = currentChat.messages.some(msg => 
+                    isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
+                  );
+                  
+                  // Also check metadata for completion
+                  const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
+                    currentChat.metadata?.isGeneratingDocument === false;
+                  
+                  // Filter out generation status if document is complete
+                  if (hasCompletedDocuments || isDocumentComplete) {
+                    console.log('[ChatArea] Filtering out generation status message - document is complete');
+                    return false;
+                  }
+                }
+                
+                return true;
+              })
+              .map((message, index, filteredArray) => {
+                // Check if this is the last message in the filtered array
+                const isLastMessage = index === filteredArray.length - 1;
+                
+                return (
                   <div
-                    className={`
-                      relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
-                      ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
-                    `}
+                    key={message.id || `message-${index}`}
+                    className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
+                    ref={isLastMessage ? lastMessageRef : null}
                   >
-                    {message.is_thinking ? (
-                      <LoadingMessage content={message.content} role={message.role} />
-                    ) : (
-                      // Conditional rendering for document message vs. regular message
-                      <>
-                        {isDocumentMessage(message) ? (
-                          <DocumentMessage message={message} />
+                    {/* Message bubble - updated with responsive padding */}
+                    <div
+                      className={`
+                        flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
+                        ${message.role === "user" ? "flex-row-reverse" : ""}
+                      `}
+                    >
+                      {message.role === "user" ? (
+                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                          <AvatarImage src="" alt="User" />
+                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
+                            {user?.email?.charAt(0).toUpperCase() || "U"}
+                          </div>
+                        </Avatar>
+                      ) : (
+                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                          <AvatarImage src="" alt="Assistant" />
+                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
+                            J
+                          </div>
+                        </Avatar>
+                      )}
+
+                      <div
+                        className={`
+                          relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
+                          ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
+                        `}
+                      >
+                        {message.is_thinking ? (
+                          <LoadingMessage content={message.content} role={message.role} />
                         ) : (
-                          // Check for HTML content
-                          message.content.includes('<a href') ? (
-                            <HTMLContent content={message.content} />
-                          ) : (
-                            <MarkdownMessage content={message.content} />
-                          )
+                          // Conditional rendering for document message vs. regular message
+                          <>
+                            {isDocumentMessage(message) ? (
+                              <DocumentMessage message={message} />
+                            ) : (
+                              // Check for HTML content
+                              message.content.includes('<a href') ? (
+                                <HTMLContent content={message.content} />
+                              ) : (
+                                <MarkdownMessage content={message.content} />
+                              )
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))
+                );
+              })
           )}
 
           {/* Show n8n document generation loader */}
@@ -1631,7 +1780,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
                 </div>
                 <p className="text-xs text-muted-foreground max-w-xs text-center">
-                  This may take up to 15-30 seconds. Your document is being created based on your answers.
+                  This may take up to 1-3 minutes. Your document is being created based on your answers.
                 </p>
               </div>
             </div>
@@ -1678,12 +1827,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
-
-          {selectedTool === 'hybrid-offer' && !isOfferComplete && (
-            <div className="text-xs text-muted-foreground">
-              {TOOLS['hybrid-offer'].questions[questionsAnswered]?.hint || ""}
-            </div>
-          )}
         </form>
       </div>
     </div>

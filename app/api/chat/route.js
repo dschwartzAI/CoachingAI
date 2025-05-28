@@ -44,49 +44,80 @@ const hybridOfferQuestions = [
   },
   { 
     key: 'clientResult', 
-    question: "What's your best client result?",
-    description: "Best client outcome"
+    question: "What's a specific, real-world result you've helped a client achieve?",
+    description: "Specific client success story"
   }
 ];
 
 // Add a function to validate answers using AI
 async function validateHybridOfferAnswer(questionKey, answer) {
-  if (!answer || answer.trim().length < 5) {
+  if (!answer || answer.trim().length < 3) {
     return {
       isValid: false,
       reason: "The answer is too short to provide meaningful information."
     };
   }
 
-  // Create validation prompts based on question type
+  // For offerDescription, if the answer is short (e.g., just a service name),
+  // consider it valid without extensive AI validation.
+  if (questionKey === 'offerDescription' && answer.trim().length < 50 && answer.trim().split(' ').length <= 5) {
+    console.log(`[Chat API] Skipping extensive AI validation for short offerDescription: "${answer}"`);
+    return { isValid: true, reason: null, topic: "service description" };
+  }
+
+  // For clientResult, be much more lenient - accept any answer that mentions a result or outcome
+  if (questionKey === 'clientResult') {
+    const cleanedAnswer = answer.toLowerCase();
+    
+    // Check for result-indicating keywords (much broader list)
+    const hasResultKeywords = /\b(made|increased|grew|saved|achieved|revenue|profit|sales|leads|reduction|extra|helped|generated|improved|boosted|doubled|tripled|gained|earned|won|success|result|outcome|impact|million|thousand|percent|%|dollars?|clients?|customers?)\b/.test(cleanedAnswer);
+    
+    // Check for numbers or quantifiable terms
+    const hasQuantifiableTerms = /[0-9$€£¥%]|(?:one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion|more|less|better|faster|higher|lower)/.test(cleanedAnswer);
+    
+    // If it has either result keywords OR quantifiable terms, and is at least 3 words, accept it
+    if ((hasResultKeywords || hasQuantifiableTerms) && answer.trim().split(' ').length >= 3) {
+      console.log(`[Chat API] Auto-accepting clientResult with result indicators: "${answer}"`);
+      return { isValid: true, reason: null, topic: "client success story" };
+    }
+    
+    // Even if no clear indicators, if it's a reasonable length and mentions "client" or similar, accept it
+    if (answer.trim().length > 10 && /\b(client|customer|company|business|helped|worked)\b/.test(cleanedAnswer)) {
+      console.log(`[Chat API] Auto-accepting clientResult mentioning clients: "${answer}"`);
+      return { isValid: true, reason: null, topic: "client success story" };
+    }
+
+    // For clientResult, if we get here and it's at least 5 words, be very lenient
+    if (answer.trim().split(' ').length >= 5) {
+      console.log(`[Chat API] Auto-accepting clientResult with sufficient length: "${answer}"`);
+      return { isValid: true, reason: null, topic: "client success story" };
+    }
+  }
+  
   const validationCriteria = {
-    offerDescription: "Should describe a product or service with enough detail to understand what it is. Must focus on WHAT is being offered, not pricing or audience.",
+    offerDescription: "Should describe a product or service. It can be a concise name (e.g., 'Web Design Service') or a more detailed explanation. Must focus on WHAT is being offered, not pricing or audience.",
     targetAudience: "Should describe who the offering is for - demographics, professions, or characteristics. Must focus on WHO the clients are, not what they're charged or the problems they have.",
     painPoints: "Should identify problems or challenges that the target audience experiences. Must focus on PROBLEMS clients face, not solutions or pricing.",
     solution: "Should explain how the product/service addresses the pain points in a unique way. Must focus on HOW problems are solved, not pricing or audience.",
     pricing: "Should provide information about pricing structure, tiers, or general price range. Must focus on COSTS or pricing models, not other aspects.",
-    clientResult: "Should describe success stories or outcomes that clients have achieved. Must focus on RESULTS, not the service itself or pricing."
+    clientResult: "Should describe any client success, outcome, or result. Can be very brief (e.g., 'made a client $1M', 'helped increase sales'). ANY mention of helping clients achieve something positive is valid."
   };
 
   const validationPrompt = [
     {
       role: "system",
       content: `You are an assistant that validates answers for creating a hybrid offer.
-You should determine if an answer provides relevant information to the SPECIFIC question being asked.
+Your primary goal is to determine if an answer provides relevant and SUFFICIENT information for the SPECIFIC question being asked.
 Be strict about topic relevance - if someone answers about pricing when asked about solution approach, that's invalid.
 Check that the answer addresses the core of what's being asked, not just tangentially related information.
 If the answer discusses a different aspect of the business than what was asked, mark it as invalid.
+For 'offerDescription', a concise service name (e.g., 'Career Coaching', 'Airbnb Revenue Management') IS a valid and sufficient answer.
+For 'clientResult', be EXTREMELY LENIENT. ANY mention of helping a client, achieving a result, or positive outcome should be marked as valid. Examples of valid answers: 'made a client $1M', 'helped increase their sales', 'improved their revenue', 'we helped one company make extra money', 'increased leads for clients'. Do NOT require detailed explanations of HOW the result was achieved.
 Example of invalid answer: Question about unique solution approach → Answer about pricing structure.`
     },
     {
       role: "user",
-      content: `Question category: ${questionKey}
-Validation criteria: ${validationCriteria[questionKey]}
-User's answer: "${answer}"
-
-Is this answer directly relevant to the question category? Does it address what was specifically asked?
-Analyze whether the answer addresses the correct topic or if it's discussing a different aspect of the business.
-Return JSON in this format: { "isValid": boolean, "reason": "explanation if invalid", "topic": "what topic the answer actually addresses" }`
+      content: `Question category: ${questionKey}\nValidation criteria: ${validationCriteria[questionKey]}\nUser's answer: "${answer}"\n\nIs this answer directly relevant to the question category? Does it address what was specifically asked according to the criteria?\nFocus on whether the user's answer *directly addresses* the question's core intent.\nReturn JSON in this format: { "isValid": boolean, "reason": "explanation if invalid", "topic": "what topic the answer actually addresses" }`
     }
   ];
 
@@ -95,7 +126,7 @@ Return JSON in this format: { "isValid": boolean, "reason": "explanation if inva
     const validationCompletion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
       messages: validationPrompt,
-      temperature: 0.3, // Lower temperature for more consistent validation
+      temperature: 0.1, // Very low temperature for consistent validation
       response_format: { type: "json_object" }
     });
 
@@ -155,7 +186,7 @@ export async function POST(request) {
   try {
     // Get the request body
     const body = await request.json();
-    const { messages, tool, isToolInit, chatId: clientChatId } = body;
+    const { messages, tool, isToolInit, chatId: clientChatId, isDocumentResult } = body;
     
     let currentQuestionKey = body.currentQuestionKey || null; 
     const collectedAnswers = body.collectedAnswers || {};
@@ -291,31 +322,148 @@ export async function POST(request) {
     // Save incoming USER message to DB & ensure thread exists
     if (chatId && messages && messages.length > 0) {
       try {
-        let { data: existingThread, error: lookupError } = await supabase.from('threads').select('id, title, user_id, tool_id, metadata').eq('id', chatId).single();
+        // First, check if thread exists
+        let { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id, title, user_id, tool_id, metadata')
+          .eq('id', chatId)
+          .single();
+        
         if (lookupError && lookupError.code === 'PGRST116') {
-            console.log(`[CHAT_API_DEBUG] Thread not found, creating new: ${chatId}`);
-            const firstUserMessage = messages.find(msg => msg.role === 'user');
-            const threadTitle = firstUserMessage ? generateThreadTitle(firstUserMessage) : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
-            const initialMetadata = tool === 'hybrid-offer' ? { currentQuestionKey: 'offerDescription', questionsAnswered: 0, isComplete: false } : null;
-            const { data: newThread, error: threadError } = await supabase.from('threads').insert({ id: chatId, title: threadTitle, user_id: userId, tool_id: tool || null, metadata: initialMetadata }).select().single();
-            if (threadError) console.error('[CHAT_API_DEBUG] Error creating thread:', threadError); else existingThread = newThread;
+          // Thread not found, create new one
+          console.log(`[CHAT_API_DEBUG] Thread not found, creating new: ${chatId}`);
+          
+          const firstUserMessage = messages.find(msg => msg.role === 'user');
+          const threadTitle = firstUserMessage 
+            ? generateThreadTitle(firstUserMessage) 
+            : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
+          
+          const initialMetadata = tool === 'hybrid-offer' 
+            ? { currentQuestionKey: 'offerDescription', questionsAnswered: 0, isComplete: false } 
+            : {};
+          
+          console.log(`[CHAT_API_DEBUG] Creating thread with data:`, {
+            id: chatId,
+            title: threadTitle,
+            user_id: userId,
+            tool_id: tool || null,
+            metadata: initialMetadata
+          });
+          
+          const { data: newThread, error: threadError } = await supabase
+            .from('threads')
+            .insert({
+              id: chatId,
+              title: threadTitle,
+              user_id: userId,
+              tool_id: tool || null,
+              metadata: initialMetadata
+            })
+            .select()
+            .single();
+          
+          if (threadError) {
+            console.error('[CHAT_API_DEBUG] Error creating thread:', threadError);
+            console.error('[CHAT_API_DEBUG] Thread creation failed with details:', {
+              code: threadError.code,
+              message: threadError.message,
+              details: threadError.details,
+              hint: threadError.hint
+            });
+          } else {
+            console.log('[CHAT_API_DEBUG] Thread created successfully:', newThread.id);
+            existingThread = newThread;
+          }
         } else if (lookupError) {
-            console.error('[CHAT_API_DEBUG] Unexpected error looking up thread:', lookupError);
+          console.error('[CHAT_API_DEBUG] Unexpected error looking up thread:', lookupError);
         } else {
-            console.log('[CHAT_API_DEBUG] Thread found:', existingThread?.id);
+          console.log('[CHAT_API_DEBUG] Thread found:', existingThread?.id);
         }
 
-        const lastMessage = messages[messages.length - 1];
-        if (lastMessage && lastMessage.content && lastMessage.role === 'user') {
-            const { data: existingUserMsg, error: msgCheckError } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', lastMessage.content).eq('role', 'user').limit(1);
-            if (msgCheckError) console.error('[CHAT_API_DEBUG] Error checking existing user message:', msgCheckError);
-            if (!existingUserMsg || existingUserMsg.length === 0) {
-                const { error: saveMsgError } = await supabase.from('messages').insert({ thread_id: chatId, role: lastMessage.role, content: lastMessage.content, timestamp: lastMessage.timestamp || new Date().toISOString(), user_id: userId });
-                if (saveMsgError) console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError); else console.log('[CHAT_API_DEBUG] User message saved.');
+        // Save the user message if thread exists or was created successfully
+        if (existingThread) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.content && lastMessage.role === 'user') {
+            // Check if this exact message already exists to avoid duplicates
+            const { data: existingUserMsg, error: msgCheckError } = await supabase
+              .from('messages')
+              .select('id')
+              .eq('thread_id', chatId)
+              .eq('content', lastMessage.content)
+              .eq('role', 'user')
+              .limit(1);
+            
+            if (msgCheckError) {
+              console.error('[CHAT_API_DEBUG] Error checking existing user message:', msgCheckError);
             }
+            
+            if (!existingUserMsg || existingUserMsg.length === 0) {
+              const { error: saveMsgError } = await supabase
+                .from('messages')
+                .insert({
+                  thread_id: chatId,
+                  role: lastMessage.role,
+                  content: lastMessage.content,
+                  timestamp: lastMessage.timestamp || new Date().toISOString(),
+                  user_id: userId
+                });
+              
+              if (saveMsgError) {
+                console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError);
+              } else {
+                console.log('[CHAT_API_DEBUG] User message saved.');
+              }
+            } else {
+              console.log('[CHAT_API_DEBUG] User message already exists, skipping save.');
+            }
+          }
+        } else {
+          console.error('[CHAT_API_DEBUG] Cannot save message - thread does not exist and creation failed');
         }
       } catch (dbError) {
         console.error('[CHAT_API_DEBUG] DB error (user message/thread):', dbError);
+      }
+    }
+
+    // Handle document result messages (special case)
+    if (isDocumentResult && messages && messages.length > 0) {
+      const documentMessage = messages[messages.length - 1];
+      if (documentMessage && documentMessage.role === 'assistant') {
+        console.log('[CHAT_API_DEBUG] Processing document result message');
+        
+        // Save the document message directly and return
+        if (chatId && supabase) {
+          try {
+            const msgObj = { 
+              thread_id: chatId, 
+              role: 'assistant', 
+              content: documentMessage.content, 
+              timestamp: new Date().toISOString(), 
+              user_id: userId 
+            };
+            
+            const { data: savedMsg, error: saveError } = await supabase
+              .from('messages')
+              .insert(msgObj)
+              .select()
+              .single();
+              
+            if (saveError) {
+              console.error('[CHAT_API_DEBUG] Error saving document result message:', saveError);
+            } else {
+              console.log('[CHAT_API_DEBUG] Document result message saved:', { id: savedMsg?.id });
+            }
+          } catch (dbError) {
+            console.error('[CHAT_API_DEBUG] DB error saving document result message:', dbError);
+          }
+        }
+        
+        // Return success response
+        return NextResponse.json({
+          message: documentMessage.content,
+          chatId: chatId,
+          isDocumentResult: true
+        });
       }
     }
 
@@ -371,6 +519,7 @@ export async function POST(request) {
          * Consider the context of previous exchanges - if the user has provided details across multiple messages, consider the cumulative information
          * If the user asks a question instead of answering, this is NOT a valid answer
          * If the user's response is completely off-topic or discusses a different aspect of their business than what was asked, mark as invalid and redirect them
+         * For 'clientResult', if the user provides a clear, quantifiable outcome (e.g., 'Made a client $1M extra', 'Increased sales by 50%'), this IS a SUFFICIENT initial answer. You can acknowledge this and then decide if it's the *final* question or if you need to move to a summary/completion step. You might optionally ask for *how* they achieved it if the conversation feels incomplete, but the quantifiable result itself is valid.
          * For each question type, insufficient answers might look like:
             - solution question: "I charge 13% upside" (this is pricing, not solution)
             - painPoints question: "My target audience is small businesses" (this is audience, not pain points)
@@ -381,7 +530,7 @@ export async function POST(request) {
             - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend"
             - solution: "We handle campaign creation, keyword research, and ongoing optimization"
             - pricing: "Monthly retainer of $1000" or "15% of ad spend"
-            - clientResult: "Doubled their conversion rate" or "Generated 50 new leads per month"
+            - clientResult: "Increased a client's sales by 30% in the first quarter." or "Helped a SaaS company make an extra $1M last year." // No need to initially force the 'how' here.
          * When an answer is invalid because it's addressing the wrong topic:
             1. Clearly but kindly explain that they're discussing a different aspect than what was asked
             2. Acknowledge what they shared (e.g., "Thanks for sharing about your pricing structure")
@@ -390,7 +539,7 @@ export async function POST(request) {
          * If they've attempted to answer the question but provided insufficient details, probe deeper with specific follow-up questions
          * When in doubt, use follow-up questions rather than automatically moving to the next question`);
       
-      promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. If validAnswer is false, this can be an empty string or null.`);
+      promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. For 'clientResult', ensure it's a specific past achievement, not a general promise. If validAnswer is false, this can be an empty string or null.`);
       promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
       promptParts.push(`4. nextQuestionKey (string):`);
       promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* unanswered question from this list: ${hybridOfferQuestions.map(q => q.key).join(", ")}. The next question should be the first one in the sequence that hasn't been answered yet.`);
@@ -398,8 +547,9 @@ export async function POST(request) {
       promptParts.push(`   - If isComplete is true: This can be null.`);
       promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
+      promptParts.push(`   - If validAnswer was true and currentQuestionKey was 'clientResult' AND isComplete is true (meaning clientResult was the last question): Acknowledge the great result. Then, transition to the completion message (e.g., "Fantastic result! That sounds like a powerful impact. Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now."). Do NOT ask for more details about the client result if it was already deemed valid and it completes the questionnaire.`);
       promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing or why their answer addressed a different topic than what was asked. For example: "I see you're sharing about your pricing structure, which is great information we'll cover soon! Right now though, I'd like to understand more about your unique solution approach - how exactly do you solve the problems your clients face?"`);
-      promptParts.push(`   - If isComplete is true: Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
+      promptParts.push(`   - If isComplete is true (and it wasn't handled by the specific clientResult completion case above): Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
       promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
       
       // Add the new section on conversational approach and probing questions
@@ -536,6 +686,36 @@ export async function POST(request) {
 
       // Log the constructed toolResponsePayload
       console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
+
+    } else if (tool === 'highlevel-landing-page') {
+      console.log('[CHAT_API_DEBUG] Processing highlevel-landing-page tool logic');
+      
+      // Import the template and prompt
+      const { HIGHLEVEL_LANDING_PAGE_TEMPLATE } = await import('@/templates/highlevel-landing-page-template.js');
+      const { HIGHLEVEL_LANDING_PAGE_PROMPT } = await import('@/prompts/highlevel-landing-page-prompt.js');
+      
+      // Prepare messages for OpenAI with the specialized system prompt
+      const messagesForOpenAI = [
+        { role: "system", content: HIGHLEVEL_LANDING_PAGE_PROMPT },
+        ...messages
+      ];
+      
+      console.log('[CHAT_API_DEBUG] Calling OpenAI for HighLevel landing page generation');
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: messagesForOpenAI,
+        temperature: 0.7
+      });
+      
+      determinedAiResponseContent = completion.choices[0].message.content;
+      console.log('[CHAT_API_DEBUG] HighLevel landing page response generated');
+      
+      // For this tool, we don't have structured questions, so just return the response
+      toolResponsePayload = {
+        message: determinedAiResponseContent,
+        chatId: chatId,
+        tool: 'highlevel-landing-page'
+      };
 
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');

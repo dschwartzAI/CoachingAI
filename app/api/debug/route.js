@@ -55,6 +55,7 @@ export async function GET(request) {
         title: t.title,
         user_id: t.user_id,
         tool_id: t.tool_id,
+        metadata: t.metadata,
         created_at: t.created_at,
         updated_at: t.updated_at,
         messageCount: t.messages?.length || 0,

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import NotificationBell from "./NotificationBell";
 import { 
   LogIn, 
   LogOut, 
@@ -38,7 +39,6 @@ const toolIcons = {
 };
 
 export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading }) {
-  console.log('[Sidebar DEBUG] chats prop:', chats);
   const { user, signOut } = useAuth();
   const router = useRouter();
   const [expandedChats, setExpandedChats] = useState(false);
@@ -142,14 +142,21 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
             <MessageSquare className="h-5 w-5" />
             <span className="font-semibold">Sovereign AI</span>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="md:hidden"
-            onClick={() => setIsMobileOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <NotificationBell 
+              chats={chats}
+              setCurrentChat={setCurrentChat}
+              currentChat={currentChat}
+            />
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="md:hidden"
+              onClick={() => setIsMobileOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
         
         <div className="flex-grow flex flex-col overflow-hidden">
