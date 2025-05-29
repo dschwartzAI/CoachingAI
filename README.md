@@ -55,3 +55,16 @@ A few scripts help verify your setup:
   curl -X POST http://localhost:3000/api/test-n8n
   ```
 
+
+## User Profiles and Settings
+
+The application stores additional details about each account. These fields are:
+
+- **Business Name**
+- **Business Type**
+- **Target Audience**
+- **Business Description**
+- **Goals**
+- **Challenges**
+
+You will be prompted to provide this information on your first login. The same form can be revisited at any time from the **Settings** page to update your profile.
