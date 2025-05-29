@@ -32,9 +32,9 @@ export async function GET() {
   }
 
   const { data, error } = await supabase
-    .from('profiles')
+    .from('user_profiles')
     .select('full_name, occupation, desired_mrr, desired_hours')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (error) {
@@ -56,14 +56,14 @@ export async function POST(request) {
   const { full_name, occupation, desired_mrr, desired_hours } = body
 
   const { data, error } = await supabase
-    .from('profiles')
+    .from('user_profiles')
     .upsert({
-      id: user.id,
+      user_id: user.id,
       full_name,
       occupation,
       desired_mrr,
       desired_hours
-    }, { onConflict: 'id' })
+    }, { onConflict: 'user_id' })
     .select()
     .single()
 
