@@ -20,10 +20,15 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
       if (savedNotifications) {
         try {
           const parsed = JSON.parse(savedNotifications);
-          // Convert timestamp strings back to Date objects
+          // Convert timestamp strings back to Date objects and clean up old format
           const notificationsWithDates = parsed.map(n => ({
-            ...n,
-            timestamp: new Date(n.timestamp)
+            id: n.id,
+            chatId: n.chatId,
+            chatTitle: n.chatTitle,
+            message: n.message,
+            timestamp: new Date(n.timestamp),
+            type: n.type
+            // Note: removed 'read' property as we no longer track read status
           }));
           setNotifications(notificationsWithDates);
         } catch (error) {
@@ -46,8 +51,13 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
 
   // Save notifications to localStorage whenever they change
   useEffect(() => {
-    if (user?.id && notifications.length > 0) {
-      localStorage.setItem(`notifications_${user.id}`, JSON.stringify(notifications));
+    if (user?.id) {
+      if (notifications.length > 0) {
+        localStorage.setItem(`notifications_${user.id}`, JSON.stringify(notifications));
+      } else {
+        // Remove the localStorage entry if no notifications remain
+        localStorage.removeItem(`notifications_${user.id}`);
+      }
     }
   }, [notifications, user?.id]);
 
@@ -93,8 +103,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           chatTitle: chat.title || 'Hybrid Offer',
           message: 'Your document is ready!',
           timestamp: new Date(),
-          type: 'document_ready',
-          read: false
+          type: 'document_ready'
         });
       }
     });
@@ -108,14 +117,6 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
     }
   }, [chats, user, processedChats]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const markAsRead = (notificationId) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-    );
-  };
-
   const removeNotification = (notificationId) => {
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
   };
@@ -125,7 +126,8 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
     const targetChat = chats.find(c => c.id === notification.chatId);
     if (targetChat) {
       setCurrentChat(targetChat);
-      markAsRead(notification.id);
+      // Remove the notification instead of just marking as read
+      removeNotification(notification.id);
       setShowNotifications(false);
     }
   };
@@ -159,7 +161,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
       </Button>
 
       {showNotifications && (
-        <Card className="absolute top-full right-0 mt-2 w-80 max-w-[90vw] z-50 shadow-lg border transform -translate-x-full md:-translate-x-0">
+        <Card className="absolute top-full left-full ml-2 mt-2 w-80 max-w-[calc(100vw-2rem)] z-50 shadow-lg border">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Notifications</h3>

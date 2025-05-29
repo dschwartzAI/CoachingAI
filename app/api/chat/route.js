@@ -5,6 +5,8 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
+import { getUserProfile } from '@/lib/utils/supabase';
+import { buildProfileContext } from '@/lib/utils/ai';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -1177,9 +1179,9 @@ export async function POST(request) {
     if (userId) {
       try {
         const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
+          .from('user_profiles')
           .select('full_name, occupation, desired_mrr, desired_hours')
-          .eq('id', userId)
+          .eq('user_id', userId)
           .single();
         if (!profileError) {
           userProfile = profileData;
@@ -1191,14 +1193,8 @@ export async function POST(request) {
       }
     }
 
-    const profileSummaryParts = [];
-    if (userProfile?.full_name) profileSummaryParts.push(userProfile.full_name);
-    if (userProfile?.occupation) profileSummaryParts.push(`Occupation: ${userProfile.occupation}`);
-    if (userProfile?.desired_mrr) profileSummaryParts.push(`Desired MRR: ${userProfile.desired_mrr}`);
-    if (userProfile?.desired_hours) profileSummaryParts.push(`Desired hours: ${userProfile.desired_hours}`);
-    const profileSummary = profileSummaryParts.length > 0
-      ? profileSummaryParts.join(', ')
-      : 'User profile information is unavailable.';
+    // Build profile context using the centralized function from ai.js
+    const profileContext = await buildProfileContext(userProfile);
 
     // Handle anonymous users more gracefully
     if (!userId) {
@@ -1216,7 +1212,7 @@ export async function POST(request) {
 
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
-      const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)\nUser Profile Summary: ${profileSummary}`;
+      const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)${profileContext}`;
       const initialMessage = "What's your core product or service?";
       const existingAnswers = body.collectedAnswers || {};
       const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
@@ -1290,7 +1286,7 @@ export async function POST(request) {
 
     // SECTION 1B: Handle workshop generator tool initialization
     if (isToolInit && tool === 'workshop-generator') {
-      const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.\nUser Profile Summary: ${profileSummary}`;
+      const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.${profileContext}`;
       const initialMessage = "Welcome! I'm excited to help you create a compelling workshop. Let's start with the most important part - what specific outcomes or goals will participants achieve by the end of your workshop?";
       const existingAnswers = body.collectedAnswers || {};
       
@@ -1352,6 +1348,15 @@ export async function POST(request) {
 
       console.log('[CHAT_API_DEBUG] Sending initial workshop generator response (tool init)');
       return NextResponse.json(initResponsePayload);
+    }
+
+    // Handle invalid tool IDs
+    if (isToolInit && tool && !TOOLS[tool]) {
+      console.error(`[CHAT_API_DEBUG] Tool initialization attempted for invalid tool: ${tool}`);
+      return NextResponse.json(
+        { error: `Invalid tool: ${tool}. Available tools: ${Object.keys(TOOLS).join(', ')}` },
+        { status: 400 }
+      );
     }
 
     // Save incoming USER message to DB & ensure thread exists
@@ -2076,115 +2081,171 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
       }
     } else if (!tool) {
-      console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');
+      console.log('[CHAT_API_DEBUG] Using 2-step coaching process for regular chat');
       try {
-        // Define system instructions for regular chat
-        const REGULAR_CHAT_SYSTEM_INSTRUCTIONS = `You are James Kemp. You are a British business strategist who helps consultants, coaches, and service providers build highly leveraged businesses. Your speaking style is:
-
-Conversational, punchy, and energetic
-
-Laced with dry humor, occasional swearing, and metaphor
-
-Confident, but never robotic—you're human, blunt, and relatable
-
-Philosophical yet tactical—zooming in on real-world execution, then zooming out to a worldview
-
-Driven by empathy, truth, and clarity—not fluff or hype
-
-Your content loops around core principles like:
-
-Leverage > hustle
-
-One-to-many models
-
-Offers should solve old problems in new ways
-
-Don't sell "clarity" or "confidence"—sell mechanisms and outcomes
-
-Business should feed your life, not consume it
-
-You regularly use signature phrases and patterns like:
-
-"Let me be blunt…"
-
-"This isn't about the thing, it's about how people feel about the thing."
-
-"The fastest way to get rich is also the fastest way to burn out."
-
-"Don't sell the seat on the plane—sell the destination."
-
-"It's not that it's hard—it's just harder for people who haven't done the Reps."
-
-You avoid filler, corporate jargon, or motivational fluff. You're not afraid to call BS, but you don't name-drop or publicly shame. You often reframe popular advice in a simpler, more honest way—especially around pricing, scale, and life design.
-
-Keep responses short unless deeper unpacking is required. Speak to one person. If someone asks how to do something, prioritize clarity and next steps. When appropriate, challenge the question's assumptions to help them think better.
-
-CRITICAL: Always end with a coaching question or drill deeper if there isn't enough information. Remember that defining the question is half of the solution.`;
-
-        // Convert messages format for Responses API 
-        // The first message is the system message, the rest are conversation messages
-        const formattedMessages = messages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }));
+        // STEP 1: Query the vector store to get relevant information
+        console.log('[CHAT_API_DEBUG] Step 1: Querying vector store for relevant information');
         
-        // Insert system message at the beginning if not already present
-        if (!formattedMessages.find(msg => msg.role === 'system')) {
-          formattedMessages.unshift({ role: 'system', content: REGULAR_CHAT_SYSTEM_INSTRUCTIONS });
-        }
+        const latestUserMessage = messages.length > 0 ? messages[messages.length - 1].content : "";
+        const searchQuery = latestUserMessage; // Use the latest user message as search query
         
-        console.log('[CHAT_API_DEBUG] Calling OpenAI Responses API with vector store');
-        
-        // Switch to non-streaming mode for regular chat
-        console.log('[CHAT_API_DEBUG] Using non-streaming mode for regular chat');
-        const completion = await openai.responses.create({
+        const vectorSearchResponse = await openai.responses.create({
           model: OPENAI_MODEL,
-          input: formattedMessages,
+          input: [
+            {
+              role: "system",
+              content: `You are a knowledge retrieval assistant. Your job is to find and extract relevant information from the knowledge base to help answer the user's question. Be comprehensive but focused - include specific strategies, frameworks, tactics, and examples that relate to the user's query. Do not try to coach or provide personal advice - just extract and organize the relevant information clearly.`
+            },
+            {
+              role: "user", 
+              content: searchQuery
+            }
+          ],
           tools: [{
             type: "file_search",
             vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
-            max_num_results: 5
+            max_num_results: 8
           }],
           include: ["file_search_call.results"],
           stream: false
         });
 
-        // Log complete response for debugging
-        console.log('[CHAT_API_DEBUG] Non-streaming response received:', JSON.stringify({
-          chunks: completion.output ? completion.output.length : 0,
-          types: completion.output ? completion.output.map(item => item.type) : []
-        }));
-
-        // Process the response and extract text
-        let responseText = "";
-        if (completion.output) {
-          for (const item of completion.output) {
+        // Extract the knowledge base information
+        let knowledgeBaseInfo = "";
+        if (vectorSearchResponse.output) {
+          for (const item of vectorSearchResponse.output) {
             if (item.type === 'message' && item.content) {
-              console.log('[CHAT_API_DEBUG] Found message with content types:', 
-                item.content.map(c => c.type));
-              
               for (const contentItem of item.content) {
                 if (contentItem.type === 'output_text' && contentItem.text) {
-                  console.log('[CHAT_API_DEBUG] Found output_text:', contentItem.text.substring(0, 50));
-                  responseText += contentItem.text;
+                  knowledgeBaseInfo += contentItem.text;
                 }
               }
-            } else if (item.type === 'text' && item.text) {
-              console.log('[CHAT_API_DEBUG] Found text item:', item.text.substring(0, 50));
-              responseText += item.text;
-            } else if (item.type === 'output_text' && item.text) {
-              console.log('[CHAT_API_DEBUG] Found direct output_text item:', item.text.substring(0, 50));
-              responseText += item.text;
             }
           }
         }
 
-        if (responseText) {
-          console.log('[CHAT_API_DEBUG] Final extracted response text:', responseText.substring(0, 100) + '...');
-        } else {
-          console.error('[CHAT_API_DEBUG] No text extracted from response!');
-          responseText = "I apologize, but I couldn't generate a proper response. Please try again.";
-        }
+        console.log('[CHAT_API_DEBUG] Step 1 complete: Retrieved knowledge base info length:', knowledgeBaseInfo.length);
+
+        // STEP 1.5: Tool Suggestion Analysis (for verbal guidance only)
+        console.log('[CHAT_API_DEBUG] Step 1.5: Analyzing for tool suggestion opportunities');
+        
+        const toolSuggestionResponse = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: `You are an intelligent assistant that analyzes user questions to determine if they would benefit from knowing about specific tools available in the app.
+
+AVAILABLE TOOLS TO MENTION:
+1. HYBRID OFFER CREATOR - This tool creates a complete, customized offer document for users. Mention when users ask about:
+   - Creating, building, or structuring an offer
+   - Pricing strategy or pricing structure  
+   - Package deals or bundling services
+   - Monetizing their expertise
+   - Converting their service into a product
+   - Creating leverage in their business model
+   - "How should I price..." or "What should I charge..."
+   - Problems with one-to-one vs one-to-many models
+   - Creating scalable revenue streams
+
+2. WORKSHOP GENERATOR - This tool creates a complete workshop landing page for users. Mention when users ask about:
+   - Creating workshops, webinars, or training sessions
+   - Teaching or educating their audience
+   - Group training or group sessions  
+   - Building educational content
+   - Creating lead magnets through education
+   - "I want to teach..." or "How do I create a workshop..."
+   - Structuring learning experiences
+
+GUIDELINES:
+- Only suggest tools when the user's question is DIRECTLY related to creating these specific things
+- Don't suggest tools for general business advice that mentions these topics
+- If they're asking broad strategy questions, coaching is more appropriate
+- The tool should be mentioned naturally in coaching, not as the primary focus
+
+Analyze this conversation:
+Recent messages: ${messages.slice(-3).map(m => `${m.role}: ${m.content}`).join('\n')}
+
+Return JSON: { "shouldMention": boolean, "toolName": string|null, "reasoning": string }`
+            },
+            {
+              role: "user",
+              content: latestUserMessage
+            }
+          ],
+          temperature: 0.3,
+          response_format: { type: "json_object" }
+        });
+
+        const suggestionAnalysis = JSON.parse(toolSuggestionResponse.choices[0].message.content);
+        console.log('[CHAT_API_DEBUG] Tool suggestion analysis:', suggestionAnalysis);
+
+        // STEP 2: Process the information through James' coaching lens
+        console.log('[CHAT_API_DEBUG] Step 2: Processing through James coaching lens');
+        
+        const JAMES_COACHING_SYSTEM = `You are James Kemp, a British business strategist who helps consultants, coaches, and service providers build highly leveraged businesses.
+
+PERSONALITY & TONE:
+- Conversational, punchy, and energetic
+- Dry humor and occasional light profanity when it feels natural (not forced)
+- Confident but human, blunt yet empathetic
+- Philosophical yet tactical—zoom between execution and worldview
+- Truth-focused, no fluff or corporate jargon
+
+CORE PRINCIPLES (weave naturally into advice, don't list):
+• Leverage > hustle
+• One-to-many models over one-to-one
+• Offers should solve old problems in new ways
+• Don't sell "clarity" or "confidence"—sell mechanisms and outcomes
+• Business should feed life, not consume it
+
+SIGNATURE PHRASES (use sparingly, max 1-2 per response, only when they fit naturally):
+• "Let me be blunt..."
+• "This isn't about the thing, it's about how people feel about the thing."
+• "The fastest way to get rich is also the fastest way to burn out."
+• "Don't sell the seat on the plane—sell the destination."
+• "It's not that it's hard—it's just harder for people who haven't done the Reps."
+
+TOOL MENTIONS: ${suggestionAnalysis.shouldMention ? `
+The user's question relates to our ${suggestionAnalysis.toolName}. You should:
+1. Answer their question with your coaching insights first
+2. Naturally mention that we have a specialized tool for this
+3. Briefly explain what the tool does and where to find it (sidebar)
+4. Don't make the tool the focus - keep coaching as primary
+
+Example: "...and speaking of pricing strategy, we actually have a specialized Hybrid Offer Creator tool in the sidebar that will create a complete, customized offer document for you. But let me give you the strategic thinking first..."` : `
+Focus on coaching their specific situation using the knowledge base information.`}
+
+RESPONSE GUIDELINES:
+- Keep responses conversational and coaching-focused, NOT encyclopedic
+- Use knowledge base info as supporting material, filter through your lens
+- Speak directly to one person
+- Challenge assumptions when helpful
+- Always end with a coaching question or next step
+- Be practical and actionable, not theoretical
+- Vary your language and avoid repetitive phrases
+- If mentioning tools, do it naturally within the coaching context
+
+The user's conversation history and knowledge base research are provided below.${profileContext}`;
+
+        // Create the coaching conversation with context
+        const coachingMessages = [
+          { role: "system", content: JAMES_COACHING_SYSTEM },
+          { role: "system", content: "Brevity Directive: Reply in **no more than 3 sentences (~80 words)**. If a tool is relevant, mention it in the first or second sentence. End with one short coaching question. No bullet lists or headings." },
+          { role: "user", content: `Here's our conversation so far:\n\n${messages.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n\n')}\n\nRelevant information from knowledge base:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : 'Provide coaching based on their question using the knowledge base information.'}\n\nRespond as James, coaching them on their specific situation.` }
+        ];
+
+        const coachingResponse = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: coachingMessages,
+          temperature: 0.8, // Higher temperature for more personality
+          max_tokens: 220 // Force very concise responses
+        });
+
+        const responseText = coachingResponse.choices[0].message.content;
+        
+        console.log('[CHAT_API_DEBUG] Step 2 complete: Generated James-style response');
+        console.log('[CHAT_API_DEBUG] Tool mentioned:', suggestionAnalysis.shouldMention ? suggestionAnalysis.toolName : 'None');
 
         // Save the response to the database
         if (chatId && supabase) {
@@ -2219,9 +2280,9 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
         });
 
       } catch (error) {
-        console.error('[CHAT_API_DEBUG] Error with Responses API:', error);
+        console.error('[CHAT_API_DEBUG] Error with 2-step coaching process:', error);
         return NextResponse.json({ 
-          error: `Sorry, an error occurred: Error with Responses API: ${error.message}`, 
+          error: `Sorry, an error occurred: Error with coaching process: ${error.message}`, 
           chatId 
         }, { status: 500 });
       }

@@ -68,3 +68,42 @@ The application stores additional details about each account. These fields are:
 - **Challenges**
 
 You will be prompted to provide this information on your first login. The same form can be revisited at any time from the **Settings** page to update your profile.
+
+## Supabase Development Workflow
+
+### Quick Start
+```bash
+# Sync with cloud and start local development
+npm run db:sync
+npm run dev
+```
+
+### Daily Workflow
+```bash
+# Morning: Get latest schema from cloud
+npm run db:pull
+
+# Development: Make changes locally
+npm run db:migration "your_change_description"
+# Edit the migration file in supabase/migrations/
+
+# Test your changes
+npm run db:reset
+
+# Evening: Push changes to cloud
+npm run db:push
+```
+
+### Common Commands
+```bash
+npm run db:status     # Check what's running
+npm run db:start      # Start local Supabase
+npm run db:stop       # Stop local Supabase
+npm run db:reset      # Reset local DB with migrations
+npm run db:types      # Generate TypeScript types
+```
+
+### Troubleshooting
+- **Constraint violations**: Run `npm run db:pull` to sync latest schema
+- **Migration conflicts**: Reset with `npm run db:reset`
+- **Type errors**: Update types with `npm run db:types`
