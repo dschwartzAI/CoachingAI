@@ -2158,6 +2158,51 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           responseText = "I apologize, but I couldn't generate a proper response. Please try again.";
         }
 
+        // --- Second Pass: Rewrite in James Kemp's voice ---
+        try {
+          const rewritePrompt = {
+            role: 'user',
+            content:
+              'Now rewrite that answer exactly like James Kemp would say it\u2014make it punchy, witty, blunt, coaching-style. Use his characteristic humor, metaphors, and directness.'
+          };
+
+          const rewriteMessages = [
+            { role: 'system', content: REGULAR_CHAT_SYSTEM_INSTRUCTIONS },
+            { role: 'assistant', content: responseText },
+            rewritePrompt
+          ];
+
+          const rewriteCompletion = await openai.responses.create({
+            model: OPENAI_MODEL,
+            input: rewriteMessages,
+            stream: false
+          });
+
+          let rewrittenText = '';
+          if (rewriteCompletion.output) {
+            for (const item of rewriteCompletion.output) {
+              if (item.type === 'message' && item.content) {
+                for (const contentItem of item.content) {
+                  if (contentItem.type === 'output_text' && contentItem.text) {
+                    rewrittenText += contentItem.text;
+                  }
+                }
+              } else if (item.type === 'text' && item.text) {
+                rewrittenText += item.text;
+              } else if (item.type === 'output_text' && item.text) {
+                rewrittenText += item.text;
+              }
+            }
+          }
+
+          if (rewrittenText) {
+            responseText = rewrittenText;
+          }
+        } catch (rewriteError) {
+          if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Rewrite step failed:', rewriteError);
+          // Continue with original responseText if rewriting fails
+        }
+
         // Save the response to the database
         if (chatId && supabase) {
           try {
