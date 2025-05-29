@@ -1265,7 +1265,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully updated thread metadata for document generation');
             }
           })
-          .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error in document generation setup:', err));
+          .catch(err => {
+            if (process.env.NODE_ENV !== "production") {
+              console.error('[SSE Connect] Error in document generation setup:', err);
+            }
+          });
           
         // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
         const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
@@ -1518,8 +1522,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           };
           
           saveMessage(errorMessagePayload, user.id)
-            .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved error message to DB.'))
-            .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving error message:', err));
+            .then(() => {
+              if (process.env.NODE_ENV !== "production") {
+                console.log('[SSE Connect] Successfully saved error message to DB.');
+              }
+            })
+            .catch(err => {
+              if (process.env.NODE_ENV !== "production") {
+                console.error('[SSE Connect] Error saving error message:', err);
+              }
+            });
         }
         
         // Add an error message to the chat if we're on the relevant chat
@@ -1589,8 +1601,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             };
             
             saveMessage(streamErrorPayload, user.id)
-              .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved stream error message to DB.'))
-              .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving stream error message:', err));
+              .then(() => {
+                if (process.env.NODE_ENV !== "production") {
+                  console.log('[SSE Connect] Successfully saved stream error message to DB.');
+                }
+              })
+              .catch(err => {
+                if (process.env.NODE_ENV !== "production") {
+                  console.error('[SSE Connect] Error saving stream error message:', err);
+                }
+              });
           }
           
           // Add an error message to the chat
@@ -1650,8 +1670,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         };
         
         saveMessage(connectionErrorPayload, user.id)
-          .then(() => if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved connection error message to DB.'))
-          .catch(err => if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving connection error message:', err));
+          .then(() => {
+            if (process.env.NODE_ENV !== "production") {
+              console.log('[SSE Connect] Successfully saved connection error message to DB.');
+            }
+          })
+          .catch(err => {
+            if (process.env.NODE_ENV !== "production") {
+              console.error('[SSE Connect] Error saving connection error message:', err);
+            }
+          });
       }
       
       // Add an error message to the chat
