@@ -100,7 +100,7 @@ async function validateHybridOfferAnswer(questionKey, answer) {
   // For offerDescription, if the answer is short (e.g., just a service name),
   // consider it valid without extensive AI validation.
   if (questionKey === 'offerDescription' && answer.trim().length < 50 && answer.trim().split(' ').length <= 5) {
-    if (process.env.NODE_ENV !== "production") console.log(`[Chat API] Skipping extensive AI validation for short offerDescription: "${answer}"`);
+    console.log(`[Chat API] Skipping extensive AI validation for short offerDescription: "${answer}"`);
     return { isValid: true, reason: null, topic: "service description" };
   }
 
@@ -116,19 +116,19 @@ async function validateHybridOfferAnswer(questionKey, answer) {
     
     // If it has either result keywords OR quantifiable terms, and is at least 3 words, accept it
     if ((hasResultKeywords || hasQuantifiableTerms) && answer.trim().split(' ').length >= 3) {
-      if (process.env.NODE_ENV !== "production") console.log(`[Chat API] Auto-accepting clientResult with result indicators: "${answer}"`);
+      console.log(`[Chat API] Auto-accepting clientResult with result indicators: "${answer}"`);
       return { isValid: true, reason: null, topic: "client success story" };
     }
     
     // Even if no clear indicators, if it's a reasonable length and mentions "client" or similar, accept it
     if (answer.trim().length > 10 && /\b(client|customer|company|business|helped|worked)\b/.test(cleanedAnswer)) {
-      if (process.env.NODE_ENV !== "production") console.log(`[Chat API] Auto-accepting clientResult mentioning clients: "${answer}"`);
+      console.log(`[Chat API] Auto-accepting clientResult mentioning clients: "${answer}"`);
       return { isValid: true, reason: null, topic: "client success story" };
     }
 
     // For clientResult, if we get here and it's at least 5 words, be very lenient
     if (answer.trim().split(' ').length >= 5) {
-      if (process.env.NODE_ENV !== "production") console.log(`[Chat API] Auto-accepting clientResult with sufficient length: "${answer}"`);
+      console.log(`[Chat API] Auto-accepting clientResult with sufficient length: "${answer}"`);
       return { isValid: true, reason: null, topic: "client success story" };
     }
   }
@@ -171,10 +171,10 @@ Example of invalid answer: Question about unique solution approach → Answer ab
 
     // Parse the validation result
     const validationResult = JSON.parse(validationCompletion.choices[0].message.content);
-    if (process.env.NODE_ENV !== "production") console.log(`[Chat API] Answer validation for ${questionKey}:`, validationResult);
+    console.log(`[Chat API] Answer validation for ${questionKey}:`, validationResult);
     return validationResult;
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") console.error('[Chat API] Error validating answer:', error);
+    console.error('[Chat API] Error validating answer:', error);
     // Default to accepting the answer if validation fails
     return { isValid: true, reason: null };
   }
@@ -216,7 +216,7 @@ function generateThreadTitle(message) {
     title = title.substr(0, maxLength).split(' ').slice(0, -1).join(' ') + '...';
   }
   
-  if (process.env.NODE_ENV !== "production") console.log('[Chat API] Generated title from message:', {
+  console.log('[Chat API] Generated title from message:', {
     original: message.content.substring(0, 50) + (message.content.length > 50 ? '...' : ''),
     generated: title
   });
@@ -325,7 +325,7 @@ Guidelines:
 - Transform the user's input into benefit-focused, conversion copy${hasDesignInstructions ? '\n- Apply the requested design changes to the overall styling and presentation' : ''}`;
 
   try {
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Generating AI-powered workshop copy with Claude Opus');
+    console.log('[CHAT_API_DEBUG] Generating AI-powered workshop copy with Claude Opus');
     
     const message = await anthropic.messages.create({
       model: "claude-3-opus-20240229",
@@ -340,7 +340,7 @@ Guidelines:
     });
 
     const copyDataString = message.content[0].text;
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Claude Opus raw response:', copyDataString);
+    console.log('[CHAT_API_DEBUG] Claude Opus raw response:', copyDataString);
     
     // Extract JSON from the response (Claude might include extra text)
     let jsonMatch = copyDataString.match(/\{[\s\S]*\}/);
@@ -349,7 +349,7 @@ Guidelines:
     }
     
     const copyData = JSON.parse(jsonMatch[0]);
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Claude-generated copy data:', copyData);
+    console.log('[CHAT_API_DEBUG] Claude-generated copy data:', copyData);
 
     // Determine color scheme and styling based on design instructions
     let colorScheme = {
@@ -1085,11 +1085,11 @@ Guidelines:
       .replace(/{{FOOTER_COPYRIGHT}}/g, copyData.footerCopyright)
       .replace(/{{FOOTER_DISCLAIMER}}/g, copyData.footerDisclaimer);
 
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] HTML template populated with Claude-generated copy');
+    console.log('[CHAT_API_DEBUG] HTML template populated with Claude-generated copy');
     return populatedHTML;
 
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error generating Claude copy for workshop HTML:', error);
+    console.error('[CHAT_API_DEBUG] Error generating Claude copy for workshop HTML:', error);
     
     // Fallback to basic template if Claude generation fails
     const fallbackHTML = `<!DOCTYPE html>
@@ -1135,12 +1135,12 @@ export async function POST(request) {
     let chatId = clientChatId;
     if (!chatId || !isValidUUID(chatId)) {
       chatId = uuidv4();
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] ChatId validation failed: received="${clientChatId}", generated new UUID="${chatId}"`);
+      console.log(`[CHAT_API_DEBUG] ChatId validation failed: received="${clientChatId}", generated new UUID="${chatId}"`);
     } else {
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] ChatId validation passed: using existing UUID="${chatId}"`);
+      console.log(`[CHAT_API_DEBUG] ChatId validation passed: using existing UUID="${chatId}"`);
     }
 
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Request received:', { 
+    console.log('[CHAT_API_DEBUG] Request received:', { 
       messageCount: messages?.length || 0, 
       toolId: tool || 'none',
       isToolInit: isToolInit || false,
@@ -1177,7 +1177,7 @@ export async function POST(request) {
       if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
         // Generate a consistent anonymous ID based on the chat ID for better tracking
         userId = 'anon-' + (chatId.substring(0, 8));
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
+        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
       } else {
         return NextResponse.json(
           { error: 'Authentication required' },
@@ -1218,7 +1218,7 @@ export async function POST(request) {
 
       // Attempt to save this new thread with its initial metadata to the database
       try {
-        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Attempting to save new thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        console.log(`[CHAT_API_DEBUG] Attempting to save new thread for tool init. Chat ID: ${finalChatIdForDB}`);
         const { data: existingThread, error: lookupError } = await supabase
           .from('threads')
           .select('id')
@@ -1240,23 +1240,23 @@ export async function POST(request) {
             });
 
           if (insertError) {
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error inserting new thread during tool init:', insertError);
+            console.error('[CHAT_API_DEBUG] Error inserting new thread during tool init:', insertError);
             // Don't fail the whole request, but log the error. Client will have initial state.
           } else {
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] New thread saved successfully during tool init:', finalChatIdForDB);
+            console.log('[CHAT_API_DEBUG] New thread saved successfully during tool init:', finalChatIdForDB);
           }
         } else if (existingThread) {
           // Thread already exists, maybe update its metadata if it was a re-init attempt?
           // For now, let's assume init is for a new session. If it exists, metadata should already be there.
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+          console.log('[CHAT_API_DEBUG] Thread already existed during tool init, not re-inserting:', finalChatIdForDB);
         } else if (lookupError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error looking up thread during tool init:', lookupError);
+          console.error('[CHAT_API_DEBUG] Error looking up thread during tool init:', lookupError);
         }
       } catch (dbSaveError) {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] DB exception during tool init thread save:', dbSaveError);
+        console.error('[CHAT_API_DEBUG] DB exception during tool init thread save:', dbSaveError);
       }
 
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
+      console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
       return NextResponse.json(initResponsePayload);
     }
 
@@ -1287,7 +1287,7 @@ export async function POST(request) {
 
       // Save thread to database
       try {
-        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Attempting to save new workshop thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        console.log(`[CHAT_API_DEBUG] Attempting to save new workshop thread for tool init. Chat ID: ${finalChatIdForDB}`);
         const { data: existingThread, error: lookupError } = await supabase
           .from('threads')
           .select('id')
@@ -1309,20 +1309,20 @@ export async function POST(request) {
             });
 
           if (insertError) {
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error inserting new workshop thread during tool init:', insertError);
+            console.error('[CHAT_API_DEBUG] Error inserting new workshop thread during tool init:', insertError);
           } else {
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] New workshop thread saved successfully during tool init:', finalChatIdForDB);
+            console.log('[CHAT_API_DEBUG] New workshop thread saved successfully during tool init:', finalChatIdForDB);
           }
         } else if (existingThread) {
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Workshop thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+          console.log('[CHAT_API_DEBUG] Workshop thread already existed during tool init, not re-inserting:', finalChatIdForDB);
         } else if (lookupError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error looking up workshop thread during tool init:', lookupError);
+          console.error('[CHAT_API_DEBUG] Error looking up workshop thread during tool init:', lookupError);
         }
       } catch (dbSaveError) {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] DB exception during workshop tool init thread save:', dbSaveError);
+        console.error('[CHAT_API_DEBUG] DB exception during workshop tool init thread save:', dbSaveError);
       }
 
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Sending initial workshop generator response (tool init)');
+      console.log('[CHAT_API_DEBUG] Sending initial workshop generator response (tool init)');
       return NextResponse.json(initResponsePayload);
     }
 
@@ -1338,7 +1338,7 @@ export async function POST(request) {
         
         if (lookupError && lookupError.code === 'PGRST116') {
           // Thread not found, create new one
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Thread not found, creating new: ${chatId}`);
+          console.log(`[CHAT_API_DEBUG] Thread not found, creating new: ${chatId}`);
           
           const firstUserMessage = messages.find(msg => msg.role === 'user');
           const threadTitle = firstUserMessage 
@@ -1349,7 +1349,7 @@ export async function POST(request) {
             ? { currentQuestionKey: 'offerDescription', questionsAnswered: 0, isComplete: false } 
             : {};
           
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Creating thread with data:`, {
+          console.log(`[CHAT_API_DEBUG] Creating thread with data:`, {
             id: chatId,
             title: threadTitle,
             user_id: userId,
@@ -1370,21 +1370,21 @@ export async function POST(request) {
             .single();
           
           if (threadError) {
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error creating thread:', threadError);
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Thread creation failed with details:', {
+            console.error('[CHAT_API_DEBUG] Error creating thread:', threadError);
+            console.error('[CHAT_API_DEBUG] Thread creation failed with details:', {
               code: threadError.code,
               message: threadError.message,
               details: threadError.details,
               hint: threadError.hint
             });
           } else {
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread created successfully:', newThread.id);
+            console.log('[CHAT_API_DEBUG] Thread created successfully:', newThread.id);
             existingThread = newThread;
           }
         } else if (lookupError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Unexpected error looking up thread:', lookupError);
+          console.error('[CHAT_API_DEBUG] Unexpected error looking up thread:', lookupError);
         } else {
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread found:', existingThread?.id);
+          console.log('[CHAT_API_DEBUG] Thread found:', existingThread?.id);
         }
 
         // Save the user message if thread exists or was created successfully
@@ -1401,7 +1401,7 @@ export async function POST(request) {
               .limit(1);
             
             if (msgCheckError) {
-              if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error checking existing user message:', msgCheckError);
+              console.error('[CHAT_API_DEBUG] Error checking existing user message:', msgCheckError);
             }
             
             if (!existingUserMsg || existingUserMsg.length === 0) {
@@ -1416,19 +1416,19 @@ export async function POST(request) {
                 });
               
               if (saveMsgError) {
-                if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError);
+                console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError);
               } else {
-                if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] User message saved.');
+                console.log('[CHAT_API_DEBUG] User message saved.');
               }
             } else {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] User message already exists, skipping save.');
+              console.log('[CHAT_API_DEBUG] User message already exists, skipping save.');
             }
           }
         } else {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Cannot save message - thread does not exist and creation failed');
+          console.error('[CHAT_API_DEBUG] Cannot save message - thread does not exist and creation failed');
         }
       } catch (dbError) {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] DB error (user message/thread):', dbError);
+        console.error('[CHAT_API_DEBUG] DB error (user message/thread):', dbError);
       }
     }
 
@@ -1436,7 +1436,7 @@ export async function POST(request) {
     if (isDocumentResult && messages && messages.length > 0) {
       const documentMessage = messages[messages.length - 1];
       if (documentMessage && documentMessage.role === 'assistant') {
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Processing document result message');
+        console.log('[CHAT_API_DEBUG] Processing document result message');
         
         // Save the document message directly and return
         if (chatId && supabase) {
@@ -1456,12 +1456,12 @@ export async function POST(request) {
               .single();
               
             if (saveError) {
-              if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error saving document result message:', saveError);
+              console.error('[CHAT_API_DEBUG] Error saving document result message:', saveError);
             } else {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Document result message saved:', { id: savedMsg?.id });
+              console.log('[CHAT_API_DEBUG] Document result message saved:', { id: savedMsg?.id });
             }
           } catch (dbError) {
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] DB error saving document result message:', dbError);
+            console.error('[CHAT_API_DEBUG] DB error saving document result message:', dbError);
           }
         }
         
@@ -1479,7 +1479,7 @@ export async function POST(request) {
     let toolResponsePayload = null;
 
     if (tool === 'hybrid-offer') {
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path)');
+      console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path)');
       currentQuestionKey = body.currentQuestionKey || 'offerDescription';
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
       const totalQuestions = hybridOfferQuestions.length;
@@ -1602,14 +1602,14 @@ export async function POST(request) {
       // Only do this for non-initial messages (when there's a current question to validate against)
       if (currentQuestionKey && messages.length > 0 && messages[messages.length - 1].role === 'user') {
         const latestUserMessage = messages[messages.length - 1].content;
-        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Running additional validation for answer to '${currentQuestionKey}': "${latestUserMessage.substring(0, 50)}..."`);
+        console.log(`[CHAT_API_DEBUG] Running additional validation for answer to '${currentQuestionKey}': "${latestUserMessage.substring(0, 50)}..."`);
         
         try {
           // First, validate the answer using our dedicated validation function
           const validationResult = await validateHybridOfferAnswer(currentQuestionKey, latestUserMessage);
           
           if (!validationResult.isValid) {
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
+            console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
             
             // If the answer is completely off-topic, we'll generate a direct but kind response
             const invalidAnswerResponse = `I notice you're sharing about ${validationResult.topic || 'something different'}, which is valuable information! However, I'm currently asking about your ${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description || currentQuestionKey}. Could you tell me more specifically about that?`;
@@ -1625,19 +1625,19 @@ export async function POST(request) {
             };
             
             // Return early with this simple validation response
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Returning early with validation failure response');
+            console.log('[CHAT_API_DEBUG] Returning early with validation failure response');
             return NextResponse.json(toolResponsePayload);
           } else {
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Answer validation passed for '${currentQuestionKey}'`);
+            console.log(`[CHAT_API_DEBUG] Answer validation passed for '${currentQuestionKey}'`);
           }
         } catch (validationError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error in answer validation:', validationError);
+          console.error('[CHAT_API_DEBUG] Error in answer validation:', validationError);
           // Continue with normal processing if validation throws an error
         }
       }
       
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Sending analyzing prompt for hybrid-offer (conversational):', analyzingPrompt);
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Messages for OpenAI:', JSON.stringify(messagesForOpenAI.slice(-6))); // Log last few messages sent
+      console.log('[CHAT_API_DEBUG] Sending analyzing prompt for hybrid-offer (conversational):', analyzingPrompt);
+      console.log('[CHAT_API_DEBUG] Messages for OpenAI:', JSON.stringify(messagesForOpenAI.slice(-6))); // Log last few messages sent
 
 
       const analyzingCompletion = await openai.chat.completions.create({
@@ -1648,9 +1648,9 @@ export async function POST(request) {
       });
       
       const analysisResultString = analyzingCompletion.choices[0].message.content;
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Raw analysisResult string:', analysisResultString);
+      console.log('[CHAT_API_DEBUG] Raw analysisResult string:', analysisResultString);
       const analysisResult = JSON.parse(analysisResultString);
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Conversational Analysis result:', analysisResult);
+      console.log('[CHAT_API_DEBUG] Conversational Analysis result:', analysisResult);
       
       determinedAiResponseContent = analysisResult.responseToUser;
       const tempCollectedAnswers = { ...collectedAnswers };
@@ -1691,10 +1691,10 @@ export async function POST(request) {
       };
 
       // Log the constructed toolResponsePayload
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
+      console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
 
     } else if (tool === 'workshop-generator') {
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Processing workshop generator tool logic (non-init path)');
+      console.log('[CHAT_API_DEBUG] Processing workshop generator tool logic (non-init path)');
       currentQuestionKey = body.currentQuestionKey || 'participantOutcomes';
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
       const totalQuestions = workshopQuestions.length;
@@ -1716,7 +1716,7 @@ export async function POST(request) {
         designChangeKeywords.some(keyword => latestUserMessage.toLowerCase().includes(keyword));
 
       if (isDesignChangeRequest) {
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Detected design change request for completed workshop');
+        console.log('[CHAT_API_DEBUG] Detected design change request for completed workshop');
         
         // Get the original HTML from the last assistant message that contains HTML
         let originalHTML = null;
@@ -1732,7 +1732,7 @@ export async function POST(request) {
 
         if (!originalHTML) {
           // Fallback: generate original HTML first
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] No original HTML found, generating base template');
+          console.log('[CHAT_API_DEBUG] No original HTML found, generating base template');
           originalHTML = await generateWorkshopHTML(collectedAnswers);
         }
 
@@ -1799,7 +1799,7 @@ Return the complete modified HTML with only the CSS styling changes applied.`;
             }
           } else {
             // Fallback: if no HTML found, use original with simple modifications
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] No HTML in Claude response, applying simple modifications');
+            console.log('[CHAT_API_DEBUG] No HTML in Claude response, applying simple modifications');
             modifiedHTML = originalHTML;
             
             // Apply simple CSS modifications based on common requests
@@ -1880,7 +1880,7 @@ Feel free to request any additional design changes!`;
           };
 
         } catch (error) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error generating design modifications:', error);
+          console.error('[CHAT_API_DEBUG] Error generating design modifications:', error);
           determinedAiResponseContent = `I understand you'd like to make design changes to your workshop landing page. However, I encountered an error processing your request. Could you please try rephrasing your design request? For example:
           
 - "Make the background darker"
@@ -1983,7 +1983,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           ...messages 
         ];
 
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Sending analyzing prompt for workshop generator (conversational)');
+        console.log('[CHAT_API_DEBUG] Sending analyzing prompt for workshop generator (conversational)');
 
         const analyzingCompletion = await openai.chat.completions.create({
           model: OPENAI_MODEL,
@@ -1993,9 +1993,9 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         });
         
         const analysisResultString = analyzingCompletion.choices[0].message.content;
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Raw workshop analysis result string:', analysisResultString);
+        console.log('[CHAT_API_DEBUG] Raw workshop analysis result string:', analysisResultString);
         const analysisResult = JSON.parse(analysisResultString);
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Workshop Analysis result:', analysisResult);
+        console.log('[CHAT_API_DEBUG] Workshop Analysis result:', analysisResult);
         
         determinedAiResponseContent = analysisResult.responseToUser;
         const tempCollectedAnswers = { ...collectedAnswers };
@@ -2015,7 +2015,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           
           // Check if the AI wants to generate HTML
           if (determinedAiResponseContent && determinedAiResponseContent.includes('<!-- GENERATE_WORKSHOP_HTML_NOW -->')) {
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
+            console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
             
             // Generate the HTML using the template and collected answers
             const generatedHTML = await generateWorkshopHTML(tempCollectedAnswers);
@@ -2026,7 +2026,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
               `\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
             );
             
-            if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
+            console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
           }
         } else if (analysisResult.validAnswer) {
           // Valid answer, not complete. AI's responseToUser should be asking the next question.
@@ -2045,10 +2045,10 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           chatId: chatId
         };
 
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
+        console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
       }
     } else if (!tool) {
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');
+      console.log('[CHAT_API_DEBUG] Using Responses API for regular chat');
       try {
         // Define system instructions for regular chat
         const REGULAR_CHAT_SYSTEM_INSTRUCTIONS = `You are James Kemp. You are a British business strategist who helps consultants, coaches, and service providers build highly leveraged businesses. Your speaking style is:
@@ -2105,10 +2105,10 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           formattedMessages.unshift({ role: 'system', content: REGULAR_CHAT_SYSTEM_INSTRUCTIONS });
         }
         
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Calling OpenAI Responses API with vector store');
+        console.log('[CHAT_API_DEBUG] Calling OpenAI Responses API with vector store');
         
         // Switch to non-streaming mode for regular chat
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Using non-streaming mode for regular chat');
+        console.log('[CHAT_API_DEBUG] Using non-streaming mode for regular chat');
         const completion = await openai.responses.create({
           model: OPENAI_MODEL,
           input: formattedMessages,
@@ -2122,7 +2122,7 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
         });
 
         // Log complete response for debugging
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Non-streaming response received:', JSON.stringify({
+        console.log('[CHAT_API_DEBUG] Non-streaming response received:', JSON.stringify({
           chunks: completion.output ? completion.output.length : 0,
           types: completion.output ? completion.output.map(item => item.type) : []
         }));
@@ -2132,75 +2132,30 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
         if (completion.output) {
           for (const item of completion.output) {
             if (item.type === 'message' && item.content) {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Found message with content types:', 
+              console.log('[CHAT_API_DEBUG] Found message with content types:', 
                 item.content.map(c => c.type));
               
               for (const contentItem of item.content) {
                 if (contentItem.type === 'output_text' && contentItem.text) {
-                  if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Found output_text:', contentItem.text.substring(0, 50));
+                  console.log('[CHAT_API_DEBUG] Found output_text:', contentItem.text.substring(0, 50));
                   responseText += contentItem.text;
                 }
               }
             } else if (item.type === 'text' && item.text) {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Found text item:', item.text.substring(0, 50));
+              console.log('[CHAT_API_DEBUG] Found text item:', item.text.substring(0, 50));
               responseText += item.text;
             } else if (item.type === 'output_text' && item.text) {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Found direct output_text item:', item.text.substring(0, 50));
+              console.log('[CHAT_API_DEBUG] Found direct output_text item:', item.text.substring(0, 50));
               responseText += item.text;
             }
           }
         }
 
         if (responseText) {
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Final extracted response text:', responseText.substring(0, 100) + '...');
+          console.log('[CHAT_API_DEBUG] Final extracted response text:', responseText.substring(0, 100) + '...');
         } else {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] No text extracted from response!');
+          console.error('[CHAT_API_DEBUG] No text extracted from response!');
           responseText = "I apologize, but I couldn't generate a proper response. Please try again.";
-        }
-
-        // --- Second Pass: Rewrite in James Kemp's voice ---
-        try {
-          const rewritePrompt = {
-            role: 'user',
-            content:
-              'Now rewrite that answer exactly like James Kemp would say it\u2014make it punchy, witty, blunt, coaching-style. Use his characteristic humor, metaphors, and directness.'
-          };
-
-          const rewriteMessages = [
-            { role: 'system', content: REGULAR_CHAT_SYSTEM_INSTRUCTIONS },
-            { role: 'assistant', content: responseText },
-            rewritePrompt
-          ];
-
-          const rewriteCompletion = await openai.responses.create({
-            model: OPENAI_MODEL,
-            input: rewriteMessages,
-            stream: false
-          });
-
-          let rewrittenText = '';
-          if (rewriteCompletion.output) {
-            for (const item of rewriteCompletion.output) {
-              if (item.type === 'message' && item.content) {
-                for (const contentItem of item.content) {
-                  if (contentItem.type === 'output_text' && contentItem.text) {
-                    rewrittenText += contentItem.text;
-                  }
-                }
-              } else if (item.type === 'text' && item.text) {
-                rewrittenText += item.text;
-              } else if (item.type === 'output_text' && item.text) {
-                rewrittenText += item.text;
-              }
-            }
-          }
-
-          if (rewrittenText) {
-            responseText = rewrittenText;
-          }
-        } catch (rewriteError) {
-          if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Rewrite step failed:', rewriteError);
-          // Continue with original responseText if rewriting fails
         }
 
         // Save the response to the database
@@ -2220,12 +2175,12 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
               .single();
               
             if (saveError) {
-              if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
+              console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
             } else {
-              if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
+              console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
             }
           } catch (dbError) {
-            if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
+            console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
           }
         }
 
@@ -2236,14 +2191,14 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
         });
 
       } catch (error) {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error with Responses API:', error);
+        console.error('[CHAT_API_DEBUG] Error with Responses API:', error);
         return NextResponse.json({ 
           error: `Sorry, an error occurred: Error with Responses API: ${error.message}`, 
           chatId 
         }, { status: 500 });
       }
     } else { 
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_API_DEBUG] Calling OpenAI for generic tool: ${tool}`);
+      console.log(`[CHAT_API_DEBUG] Calling OpenAI for generic tool: ${tool}`);
       const completion = await openai.chat.completions.create({
         model: OPENAI_MODEL, 
         messages: messages, 
@@ -2256,27 +2211,27 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
       } else {
         determinedAiResponseContent = JSON.stringify(determinedAiResponseContent);
       }
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Generic tool OpenAI response received.');
+      console.log('[CHAT_API_DEBUG] Generic tool OpenAI response received.');
     }
 
     // SECTION 3: Save the assistant's response to the database
     if (typeof determinedAiResponseContent !== 'undefined' && chatId && supabase) {
-      if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Preparing to save assistant message to DB.');
+      console.log('[CHAT_API_DEBUG] Preparing to save assistant message to DB.');
       let contentToSaveForDB = determinedAiResponseContent;
 
       const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', contentToSaveForDB).eq('role', 'assistant').limit(1);
-      if (asstMsgCheckErr) if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
+      if (asstMsgCheckErr) console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
       
       if (!existingAsstMsg || existingAsstMsg.length === 0) {
         const msgObj = { thread_id: chatId, role: 'assistant', content: contentToSaveForDB, timestamp: new Date().toISOString(), user_id: userId };
         const { data: savedMsg, error: saveError } = await supabase.from('messages').insert(msgObj).select().single();
-        if (saveError) if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError); else if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Asst message saved:', { id: savedMsg?.id });
+        if (saveError) console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError); else console.log('[CHAT_API_DEBUG] Asst message saved:', { id: savedMsg?.id });
       } else {
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Asst message already exists, skipping save.');
+        console.log('[CHAT_API_DEBUG] Asst message already exists, skipping save.');
       }
 
       if (tool === 'hybrid-offer' && toolResponsePayload) {
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Updating thread metadata for hybrid-offer (after saving message):', {
+        console.log('[CHAT_API_DEBUG] Updating thread metadata for hybrid-offer (after saving message):', {
           chatId,
           questionsAnswered: toolResponsePayload.questionsAnswered,
           currentQuestionKey: toolResponsePayload.currentQuestionKey,
@@ -2295,14 +2250,14 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           })
           .eq('id', chatId);
         if (threadUpdateError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
+          console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
         } else {
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread metadata updated successfully');
+          console.log('[CHAT_API_DEBUG] Thread metadata updated successfully');
         }
       }
 
       if (tool === 'workshop-generator' && toolResponsePayload) {
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Updating thread metadata for workshop generator (after saving message):', {
+        console.log('[CHAT_API_DEBUG] Updating thread metadata for workshop generator (after saving message):', {
           chatId,
           questionsAnswered: toolResponsePayload.questionsAnswered,
           currentQuestionKey: toolResponsePayload.currentQuestionKey,
@@ -2321,9 +2276,9 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           })
           .eq('id', chatId);
         if (threadUpdateError) {
-          if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
+          console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
         } else {
-          if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
+          console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
         }
       }
     }
@@ -2342,7 +2297,7 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
             chatId: chatId
         };
     } else {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Critical: No response determined. Fallback.');
+        console.error('[CHAT_API_DEBUG] Critical: No response determined. Fallback.');
         finalResponsePayload = {
             message: "An error occurred processing your request.",
             currentQuestionKey: body.currentQuestionKey || null,
@@ -2354,11 +2309,11 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
         };
     }
 
-    if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Sending final response to client:', { chatId: finalResponsePayload.chatId, msgPreview: finalResponsePayload.message?.substring(0,50) });
+    console.log('[CHAT_API_DEBUG] Sending final response to client:', { chatId: finalResponsePayload.chatId, msgPreview: finalResponsePayload.message?.substring(0,50) });
     return NextResponse.json(finalResponsePayload);
 
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") console.error('[CHAT_API_DEBUG] Unhandled error in API route:', { msg: error.message, stack: error.stack });
+    console.error('[CHAT_API_DEBUG] Unhandled error in API route:', { msg: error.message, stack: error.stack });
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: error.status || 500 });
   }
 }

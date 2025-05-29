@@ -27,7 +27,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           }));
           setNotifications(notificationsWithDates);
         } catch (error) {
-          if (process.env.NODE_ENV !== "production") console.error('Error parsing saved notifications:', error);
+          console.error('Error parsing saved notifications:', error);
         }
       }
 
@@ -38,7 +38,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           const parsed = JSON.parse(savedProcessedChats);
           setProcessedChats(new Set(parsed));
         } catch (error) {
-          if (process.env.NODE_ENV !== "production") console.error('Error parsing saved processed chats:', error);
+          console.error('Error parsing saved processed chats:', error);
         }
       }
     }
@@ -159,7 +159,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
       </Button>
 
       {showNotifications && (
-        <Card className="absolute top-full right-0 mt-2 w-80 max-w-[90vw] z-50 shadow-lg border">
+        <Card className="absolute top-full right-0 mt-2 w-80 max-w-[90vw] z-50 shadow-lg border transform -translate-x-full md:-translate-x-0">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Notifications</h3>

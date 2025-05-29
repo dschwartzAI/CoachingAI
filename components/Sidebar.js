@@ -49,7 +49,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   // Add this to debug the thread title issue
   useEffect(() => {
     if (currentChat) {
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Current chat updated:', {
+      console.log('[Sidebar] Current chat updated:', {
         chatId: currentChat.id,
         title: currentChat.title,
         messagesCount: currentChat.messages?.length || 0,
@@ -65,8 +65,8 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
 
   const handleNewChat = (toolId = null) => {
     const newChat = createNewThread(toolId);
-    if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
-    if (process.env.NODE_ENV !== "production") console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
+    console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
+    console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
     setCurrentChat(newChat);
   };
 
@@ -93,9 +93,9 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   // Delete chat handler
   const handleDeleteChat = async (chatId) => {
     try {
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Attempting to delete chat:', chatId);
+      console.log('[Sidebar] Attempting to delete chat:', chatId);
       await deleteThread(chatId);
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Chat deleted successfully:', chatId);
+      console.log('[Sidebar] Chat deleted successfully:', chatId);
       
       // Remove from UI state
       if (currentChat?.id === chatId) {
@@ -106,7 +106,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       // Remove from chats list
       setChats(prev => prev.filter(chat => chat.id !== chatId));
     } catch (err) {
-      if (process.env.NODE_ENV !== "production") console.error('[Sidebar] Delete chat error:', err);
+      console.error('[Sidebar] Delete chat error:', err);
       alert('Failed to delete chat. Please try again.');
     }
   };
