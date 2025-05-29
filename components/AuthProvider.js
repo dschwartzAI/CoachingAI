@@ -4,12 +4,14 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { usePostHog } from '@/hooks/use-posthog';
+import { getUserProfile } from '@/lib/utils/supabase';
 
 const AuthContext = createContext(undefined);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileChecked, setProfileChecked] = useState(false);
   const router = useRouter();
   const { identify, reset } = usePostHog();
 
@@ -95,6 +97,31 @@ export function AuthProvider({ children }) {
     initializeAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
+
+  useEffect(() => {
+    const checkProfile = async () => {
+      if (!user || profileChecked) return;
+
+      try {
+        const profile = await getUserProfile(user.id);
+        if (!profile || !profile.business_name || !profile.business_type || !profile.target_audience || !profile.business_description) {
+          router.replace('/profile');
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV !== 'production') console.error('[Auth] Error fetching user profile:', err);
+      } finally {
+        setProfileChecked(true);
+      }
+    };
+
+    checkProfile();
+  }, [user, profileChecked, router]);
+
+  useEffect(() => {
+    if (!user) {
+      setProfileChecked(false);
+    }
+  }, [user]);
 
   const value = {
     user,
