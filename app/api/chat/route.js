@@ -1172,6 +1172,34 @@ export async function POST(request) {
     const { data: { user } } = await supabase.auth.getUser();
     let userId = user?.id;
 
+    // Fetch profile information for authenticated users
+    let userProfile = null;
+    if (userId) {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('full_name, occupation, desired_mrr, desired_hours')
+          .eq('id', userId)
+          .single();
+        if (!profileError) {
+          userProfile = profileData;
+        } else if (process.env.NODE_ENV !== 'production') {
+          console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
+        }
+      } catch (profileException) {
+        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching profile:', profileException);
+      }
+    }
+
+    const profileSummaryParts = [];
+    if (userProfile?.full_name) profileSummaryParts.push(userProfile.full_name);
+    if (userProfile?.occupation) profileSummaryParts.push(`Occupation: ${userProfile.occupation}`);
+    if (userProfile?.desired_mrr) profileSummaryParts.push(`Desired MRR: ${userProfile.desired_mrr}`);
+    if (userProfile?.desired_hours) profileSummaryParts.push(`Desired hours: ${userProfile.desired_hours}`);
+    const profileSummary = profileSummaryParts.length > 0
+      ? profileSummaryParts.join(', ')
+      : 'User profile information is unavailable.';
+
     // Handle anonymous users more gracefully
     if (!userId) {
       if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
@@ -1188,7 +1216,7 @@ export async function POST(request) {
 
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
-      const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)`;
+      const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)\nUser Profile Summary: ${profileSummary}`;
       const initialMessage = "What's your core product or service?";
       const existingAnswers = body.collectedAnswers || {};
       const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
@@ -1262,7 +1290,7 @@ export async function POST(request) {
 
     // SECTION 1B: Handle workshop generator tool initialization
     if (isToolInit && tool === 'workshop-generator') {
-      const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.`;
+      const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.\nUser Profile Summary: ${profileSummary}`;
       const initialMessage = "Welcome! I'm excited to help you create a compelling workshop. Let's start with the most important part - what specific outcomes or goals will participants achieve by the end of your workshop?";
       const existingAnswers = body.collectedAnswers || {};
       
