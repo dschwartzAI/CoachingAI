@@ -7,10 +7,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import NotificationBell from "./NotificationBell";
 import { 
-  LogIn, 
-  LogOut, 
-  Loader2, 
-  MessageSquare, 
+  LogIn,
+  LogOut,
+  Loader2,
+  MessageSquare,
   Plus,
   ChevronDown,
   ChevronUp,
@@ -24,7 +24,8 @@ import {
   FileText,
   ChevronRight,
   Menu,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -267,25 +268,35 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
         {/* User Profile - Styled like the image */}
         <div className="p-4 border-t mt-auto">
           {user ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <Avatar className="h-8 w-8 border">
-                  <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
-                  <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium truncate" title={user.email}>
-                    {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
-                  </span>
-                  <span className="text-xs text-muted-foreground truncate">
-                    {user.email || "example@example.com"}
-                  </span>
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <Avatar className="h-8 w-8 border">
+                    <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
+                    <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium truncate" title={user.email}>
+                      {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
+                    </span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {user.email || "example@example.com"}
+                    </span>
+                  </div>
                 </div>
+                <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
+                  <LogOut className="h-4 w-4" />
+                </Button>
               </div>
-              <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
-                <LogOut className="h-4 w-4" />
+              <Button
+                variant="ghost"
+                className="w-full justify-start px-2 h-8 text-sm mt-2 hover:bg-muted"
+                onClick={() => router.push('/profile')}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
               </Button>
-            </div>
+            </>
           ) : (
             <Button className="w-full" onClick={() => router.push('/login')}>
               <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
