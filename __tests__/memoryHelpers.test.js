@@ -1,7 +1,7 @@
 import { saveMemory, searchMemories } from '@/lib/utils/supabase'
 
 jest.mock('@supabase/ssr', () => ({
-  createBrowserClient: jest.fn()
+  createServerClient: jest.fn()
 }))
 
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'uuid-123') }))
@@ -11,7 +11,7 @@ const insertMock = jest.fn(() => ({ select: () => ({ single: () => Promise.resol
 const rpcMock = jest.fn(() => Promise.resolve({ data: [{ id: 'm1' }], error: null }))
 
 beforeEach(() => {
-  require('@supabase/ssr').createBrowserClient.mockReturnValue({
+  require('@supabase/ssr').createServerClient.mockReturnValue({
     from: jest.fn(() => ({ insert: insertMock })),
     rpc: rpcMock
   })

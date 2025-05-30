@@ -2167,7 +2167,7 @@ You avoid filler, corporate jargon, or motivational fluff. You're not afraid to 
 
 Keep responses concise by default, but provide full explanations or step‑by‑step details whenever the user explicitly asks for them. Speak to one person. If someone asks how to do something, prioritize clarity and next steps. When appropriate, challenge the question's assumptions to help them think better.
 
-Provide a complete answer first. Ask a follow-up coaching question only when it helps clarify goals or encourage next steps.`;
+ integration
 
         // Convert messages format for Responses API 
         // The first message is the system message, the rest are conversation messages

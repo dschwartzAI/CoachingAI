@@ -39,11 +39,11 @@ describe('classifyAndSaveMemory', () => {
     })
     expect(openaiInstance.embeddings.create).toHaveBeenCalledWith({ model: 'text-embedding-3-small', input: 'hello' })
     expect(saveMemoryMock).toHaveBeenCalledWith({
-      user_id: 'u1',
-      thread_id: 't1',
+      userId: 'u1',
+      threadId: 't1',
       content: 'hello',
       embedding: [0.2],
-      memory_type: 'note'
+      type: 'note'
     })
   })
 
