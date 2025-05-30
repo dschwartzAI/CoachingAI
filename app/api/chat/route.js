@@ -2434,6 +2434,7 @@ The user's conversation history and knowledge base research are provided below.$
       if (contentToSaveForDB && chatId && userId) {
         classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch((err) => {
           console.error('[CHAT_API_DEBUG] Memory classification failed (error caught in POST route):', err.message, err.stack);
+          console.error(`[CHAT_API_DEBUG] ENV CHECK INSIDE CATCH BLOCK: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
         });
       } else {
         console.error('[CHAT_API_DEBUG] Skipped calling classifyAndSaveMemory due to missing parameters.');
