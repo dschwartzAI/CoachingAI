@@ -1190,73 +1190,7 @@ export async function POST(request) {
     }
 
     // FAST PATH: Handle tool initialization FIRST before any profile/context building
-    if (isToolInit && tool === 'hybrid-offer') {
-      const initialSystemPrompt = `You are creating a hybrid offer for businesses.`;
-      const initialMessage = "What's your core product or service?";
-      const existingAnswers = body.collectedAnswers || {};
-      const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
-      
-      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
-
-      const initialMetadataForDB = {
-        currentQuestionKey: 'offerDescription',
-        questionsAnswered: 0,
-        isComplete: false,
-        collectedAnswers: {}
-      };
-
-      const initResponsePayload = {
-        message: initialMessage,
-        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
-        collectedAnswers: { ...initialMetadataForDB.collectedAnswers },
-        questionsAnswered: initialMetadataForDB.questionsAnswered,
-        isComplete: initialMetadataForDB.isComplete,
-        chatId: finalChatIdForDB,
-        systemPrompt: initialSystemPrompt
-      };
-
-      // Attempt to save this new thread with its initial metadata to the database
-      try {
-        console.log(`[CHAT_API_DEBUG] Attempting to save new thread for tool init. Chat ID: ${finalChatIdForDB}`);
-        const { data: existingThread, error: lookupError } = await supabase
-          .from('threads')
-          .select('id')
-          .eq('id', finalChatIdForDB)
-          .single();
-
-        if (lookupError && lookupError.code === 'PGRST116') { // Not found, so insert
-          const toolDetails = TOOLS[tool];
-          const threadTitle = toolDetails ? toolDetails.name : 'Hybrid Offer Chat';
-          
-          const { error: insertError } = await supabase
-            .from('threads')
-            .insert({
-              id: finalChatIdForDB,
-              user_id: userId,
-              tool_id: tool,
-              title: threadTitle,
-              metadata: initialMetadataForDB
-            });
-
-          if (insertError) {
-            console.error('[CHAT_API_DEBUG] Error inserting new thread during tool init:', insertError);
-          } else {
-            console.log('[CHAT_API_DEBUG] New thread saved successfully during tool init:', finalChatIdForDB);
-          }
-        } else if (existingThread) {
-          console.log('[CHAT_API_DEBUG] Thread already existed during tool init, not re-inserting:', finalChatIdForDB);
-        } else if (lookupError) {
-          console.error('[CHAT_API_DEBUG] Error looking up thread during tool init:', lookupError);
-        }
-      } catch (dbSaveError) {
-        console.error('[CHAT_API_DEBUG] DB exception during tool init thread save:', dbSaveError);
-      }
-
-      console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
-      return NextResponse.json(initResponsePayload);
-    }
-
-    // FAST PATH: Handle workshop generator tool initialization
+    // NOTE: hybrid-offer needs profile context, so it uses the full path below
     if (isToolInit && tool === 'workshop-generator') {
       const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.`;
       const initialMessage = "Welcome! I'm excited to help you create a compelling workshop. Let's start with the most important part - what specific outcomes or goals will participants achieve by the end of your workshop?";
@@ -1322,7 +1256,7 @@ export async function POST(request) {
       return NextResponse.json(initResponsePayload);
     }
 
-    // Handle invalid tool IDs
+    // Handle invalid tool IDs for initialization
     if (isToolInit && tool && !TOOLS[tool]) {
       console.error(`[CHAT_API_DEBUG] Tool initialization attempted for invalid tool: ${tool}`);
       return NextResponse.json(
@@ -1331,7 +1265,7 @@ export async function POST(request) {
       );
     }
 
-    // NOW build profile context only for non-init requests (where we actually need it)
+    // NOW build profile context only for non-workshop-init requests (where we actually need it)
     console.log('[CHAT_API_DEBUG] Building profile context for non-init request');
     
     // Fetch profile information for authenticated users
