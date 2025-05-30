@@ -7,7 +7,7 @@ import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
-import { saveMemory, searchMemories } from '@/lib/utils/memory';
+import { createSessionSummary, getCoachingContext, getMessageCount } from '@/lib/utils/memory';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -22,21 +22,6 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-
-// Helper to embed text using OpenAI
-async function embedText(text) {
-  if (!text) return null;
-  try {
-    const embedRes = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text
-    });
-    return embedRes.data[0]?.embedding || null;
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error creating embedding:', err);
-    return null;
-  }
-}
 
 // Define the questions and their corresponding keys, in order
 const hybridOfferQuestions = [
@@ -1209,86 +1194,20 @@ export async function POST(request) {
       }
     }
 
-    // Memory summary retrieval and profile context generation
-    let memorySummary = null;
-    if (userId) {
-      try {
-        const { data: memData, error: memError } = await supabase
-          .from('memory_summaries')
-          .select('summary')
-          .eq('user_id', userId)
-          .single();
-        if (!memError && memData?.summary) {
-          memorySummary = memData.summary;
-        } else if (memError && process.env.NODE_ENV !== 'production') {
-          console.error('[CHAT_API_DEBUG] Error fetching memory summary:', memError);
-        }
-      } catch (memEx) {
-        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching memory summary:', memEx);
-      }
-    }
-
+    // Build profile context using the centralized function from ai.js
     const profileContext = await buildProfileContext(userProfile);
-
-    // (Optional) Combined profile summary – currently unused but kept for future use
-    const profileSummaryParts = [];
-    if (memorySummary) profileSummaryParts.push(memorySummary);
-    if (userProfile?.full_name) profileSummaryParts.push(userProfile.full_name);
-    if (userProfile?.occupation) profileSummaryParts.push(`Occupation: ${userProfile.occupation}`);
-    if (userProfile?.desired_mrr) profileSummaryParts.push(`Desired MRR: ${userProfile.desired_mrr}`);
-    if (userProfile?.desired_hours) profileSummaryParts.push(`Desired hours: ${userProfile.desired_hours}`);
-    const profileSummary = profileSummaryParts.join(', ');
 
     // Handle anonymous users more gracefully
     if (!userId) {
       if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
-        // Generate a proper UUID for anonymous users for database compatibility
-        userId = uuidv4();
-        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using generated UUID:', userId);
+        // Generate a consistent anonymous ID based on the chat ID for better tracking
+        userId = 'anon-' + (chatId.substring(0, 8));
+        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
       } else {
         return NextResponse.json(
           { error: 'Authentication required' },
           { status: 401 }
         );
-      }
-    }
-
-    const userQuestion = body.userQuestion || '';
-    if (userQuestion) {
-      const embedding = await embedText(userQuestion);
-      const memoryMatches = await searchMemories(userId, embedding);
-      const relevantSnippets = (memoryMatches || []).filter(m => m.similarity > 0.8);
-      if (relevantSnippets.length > 0) {
-        relevantSnippets.forEach(snippet => {
-          const text = snippet.snippet || snippet.content || snippet.text || '';
-          if (text) messages.push({ role: 'system', content: text });
-        });
-      }
-    }
-
-    // Add a new section for Memory Retrieval before regular chat processing
-    let retrievedMemoryContext = "";
-    if (!tool && messages && messages.length > 0 && userId) {
-      const lastUserMessage = messages[messages.length - 1];
-      if (lastUserMessage && lastUserMessage.role === 'user' && lastUserMessage.content) {
-        console.log('[CHAT_API_DEBUG] Attempting to retrieve memories for user question:', lastUserMessage.content.substring(0, 50));
-        try {
-          const questionEmbedding = await embedText(lastUserMessage.content);
-          if (questionEmbedding) {
-            const memoryMatches = await searchMemories(userId, questionEmbedding, 3, 0.75); // Get top 3 matches with similarity > 0.75
-            if (memoryMatches && memoryMatches.length > 0) {
-              retrievedMemoryContext = "\n\nRelevant information from your past conversations:\n" +
-                                     memoryMatches.map(mem => `- ${mem.content}`).join("\n");
-              console.log('[CHAT_API_DEBUG] Retrieved memories, context length:', retrievedMemoryContext.length);
-            } else {
-              console.log('[CHAT_API_DEBUG] No sufficiently relevant memories found.');
-            }
-          } else {
-            console.log('[CHAT_API_DEBUG] Could not create embedding for user question, skipping memory retrieval.');
-          }
-        } catch (memSearchErr) {
-          console.error('[CHAT_API_DEBUG] Error during memory retrieval:', memSearchErr);
-        }
       }
     }
 
@@ -1534,12 +1453,6 @@ export async function POST(request) {
                 console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError);
               } else {
                 console.log('[CHAT_API_DEBUG] User message saved.');
-                // ADD CLASSIFICATION FOR USER MESSAGE HERE
-                if (lastMessage.content && chatId && userId) {
-                  classifyAndSaveMemory(lastMessage.content, chatId, userId, 'user').catch(err => {
-                    console.error('[CHAT_API_DEBUG] User memory classification/save failed (caught in POST route):', err.message);
-                  });
-                }
               }
             } else {
               console.log('[CHAT_API_DEBUG] User message already exists, skipping save.');
@@ -2171,6 +2084,11 @@ I'll be happy to regenerate the HTML with your specific changes!`;
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using 2-step coaching process for regular chat');
       try {
+        // STEP 0: Get coaching context for this user
+        console.log('[CHAT_API_DEBUG] Step 0: Retrieving coaching context');
+        const coachingContext = await getCoachingContext(userId);
+        console.log('[CHAT_API_DEBUG] Coaching context retrieved, length:', coachingContext.length);
+        
         // STEP 1: Query the vector store to get relevant information
         console.log('[CHAT_API_DEBUG] Step 1: Querying vector store for relevant information');
         
@@ -2314,7 +2232,7 @@ RESPONSE GUIDELINES:
 - Vary your language and avoid repetitive phrases
 - If mentioning tools, do it naturally within the coaching context
 
-${retrievedMemoryContext} // Inject retrieved memories here
+${coachingContext}
 
 The user's conversation history and knowledge base research are provided below.${profileContext}`;
 
@@ -2358,13 +2276,16 @@ The user's conversation history and knowledge base research are provided below.$
             } else {
               console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
               
-              // Trigger memory classification for regular chat
-              try {
-                console.log('[CHAT_API_DEBUG] Triggering memory classification for regular chat');
-                await classifyAndSaveMemory(responseText, chatId, userId, 'assistant'); // Pass 'assistant' role
-                console.log('[CHAT_API_DEBUG] Memory classification completed for regular chat');
-              } catch (memErr) {
-                console.error('[CHAT_API_DEBUG] Memory classification failed for regular chat:', memErr.message, memErr.stack);
+              // STEP 3: Check if we should trigger a session summary
+              const messageCount = await getMessageCount(chatId);
+              console.log('[CHAT_API_DEBUG] Current message count for thread:', messageCount);
+              
+              // Trigger session summary every 8-10 messages (when count is divisible by 9)
+              if (messageCount > 0 && messageCount % 9 === 0) {
+                console.log('[CHAT_API_DEBUG] Triggering session summary (message count:', messageCount, ')');
+                createSessionSummary(chatId, userId).catch(err => {
+                  console.error('[CHAT_API_DEBUG] Session summary failed:', err);
+                });
               }
             }
           } catch (dbError) {
@@ -2450,7 +2371,7 @@ The user's conversation history and knowledge base research are provided below.$
           questionsAnswered: toolResponsePayload.questionsAnswered,
           currentQuestionKey: toolResponsePayload.currentQuestionKey,
           isComplete: toolResponsePayload.isComplete,
-          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length
+          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length 
         });
         const { error: threadUpdateError } = await supabase
           .from('threads')
@@ -2459,7 +2380,7 @@ The user's conversation history and knowledge base research are provided below.$
               currentQuestionKey: toolResponsePayload.currentQuestionKey,
               questionsAnswered: toolResponsePayload.questionsAnswered,
               isComplete: toolResponsePayload.isComplete,
-              collectedAnswers: toolResponsePayload.collectedAnswers
+              collectedAnswers: toolResponsePayload.collectedAnswers 
             }
           })
           .eq('id', chatId);
@@ -2468,23 +2389,6 @@ The user's conversation history and knowledge base research are provided below.$
         } else {
           console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
         }
-      }
-
-      // Start non-blocking memory classification with better error logging
-      console.log(`[CHAT_API_DEBUG] Attempting to call classifyAndSaveMemory. Params: contentToSaveForDB (length: ${contentToSaveForDB?.length}), chatId: ${chatId}, userId: ${userId}`);
-      console.log(`[CHAT_API_DEBUG] ENV CHECK BEFORE CALL: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
-      
-      if (contentToSaveForDB && chatId && userId) {
-        try {
-          console.log('[CHAT_API_DEBUG] AWAITING classifyAndSaveMemory (debug build)');
-          await classifyAndSaveMemory(contentToSaveForDB, chatId, userId, 'assistant'); // Pass 'assistant' role
-          console.log('[CHAT_API_DEBUG] classifyAndSaveMemory completed without throwing');
-        } catch (err) {
-          console.error('[CHAT_API_DEBUG] Memory classification failed (await path):', err.message, err.stack);
-          console.error(`[CHAT_API_DEBUG] ENV CHECK INSIDE CATCH BLOCK: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
-        }
-      } else {
-        console.error('[CHAT_API_DEBUG] Skipped calling classifyAndSaveMemory due to missing parameters.');
       }
     }
 
@@ -2567,72 +2471,4 @@ function processFileSearchResults(fileSearchCall) {
       return null;
     })
     .filter(Boolean); // Remove any null results
-}
-
-// Analyze assistant text and store as memory without blocking the response
-export async function classifyAndSaveMemory(text, threadId, userId, messageRole = 'assistant') {
-  console.log(`[CHAT_API_DEBUG] Entered classifyAndSaveMemory. Args: text (length: ${text?.length}), threadId: ${threadId}, userId: ${userId}, role: ${messageRole}`);
-  console.log(`[CHAT_API_DEBUG] ENV CHECK AT START OF classifyAndSaveMemory: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
-  
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('[CHAT_API_DEBUG] CRITICAL: OPENAI_API_KEY is missing in classifyAndSaveMemory. Aborting.');
-    return;
-  }
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('[CHAT_API_DEBUG] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing in classifyAndSaveMemory. Aborting.');
-    return;
-  }
-  if (!text || !threadId || !userId) {
-    console.error('[CHAT_API_DEBUG] CRITICAL: Missing text, threadId, or userId in classifyAndSaveMemory. Aborting.');
-    return;
-  }
-
-  try {
-    console.log(`[CHAT_API_DEBUG] Starting memory classification for ${messageRole} (user: ${userId})`);
-    
-    const classificationSystemPrompt = messageRole === 'user'
-      ? 'You are an AI that analyzes a user\'s message. Decide if it contains significant personal information, facts, preferences, or context that should be saved as a long-term memory for a personalized experience. Bias towards saving if it reveals something specific about the user. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "preference" for opinions/likes/dislikes, "fact" for objective statements about the user.'
-      : 'Decide if the following assistant message provides significant new information, a conclusion, or context that should be saved as a memory to maintain conversation continuity. Avoid saving generic conversational filler. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "episodic" if unsure for assistant messages.';
-
-    const classificationPrompt = [
-      { role: 'system', content: classificationSystemPrompt },
-      { role: 'user', content: text } // Still use 'user' role here for the content being classified, system prompt gives context
-    ];
-    const cls = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: classificationPrompt,
-      temperature: 0,
-      response_format: { type: 'json_object' }
-    });
-    const result = JSON.parse(cls.choices[0].message.content || '{}'); result.should_write_memory = true; // TEMP FIX
-    console.log('[CHAT_API_DEBUG] Memory classification result:', result);
-    
-    if (!result.should_write_memory) {
-      console.log('[CHAT_API_DEBUG] AI decided not to save this message as memory');
-      return;
-    }
-
-    console.log('[CHAT_API_DEBUG] Creating embedding for memory...');
-    const embed = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text
-    });
-    const embedding = embed.data[0]?.embedding;
-    if (!embedding) {
-      console.log('[CHAT_API_DEBUG] Failed to create embedding');
-      return;
-    }
-
-    console.log('[CHAT_API_DEBUG] Saving memory to database...');
-    await saveMemory({
-      userId,
-      threadId,
-      content: text,
-      embedding,
-      type: result.memory_type || 'general'
-    });
-    console.log('[CHAT_API_DEBUG] Memory saved successfully!');
-  } catch (err) {
-    console.error('[CHAT_API_DEBUG] Memory classification failed (error caught within classifyAndSaveMemory):', err.message, err.stack);
-  }
-}
+} 
