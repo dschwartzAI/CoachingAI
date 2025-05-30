@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const userProfilesTable = pgTable("user_profiles", {
   id: text("id").defaultRandom().primaryKey(),
@@ -7,6 +7,7 @@ export const userProfilesTable = pgTable("user_profiles", {
   occupation: text("occupation"),
   desired_mrr: text("desired_mrr"),
   desired_hours: text("desired_hours"),
+  allow_memory: boolean("allow_memory").default(true).notNull(),
   business_name: text("business_name"),
   business_type: text("business_type"),
   target_audience: text("target_audience"),
