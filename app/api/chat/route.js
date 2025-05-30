@@ -1534,6 +1534,12 @@ export async function POST(request) {
                 console.error('[CHAT_API_DEBUG] Error saving user message:', saveMsgError);
               } else {
                 console.log('[CHAT_API_DEBUG] User message saved.');
+                // ADD CLASSIFICATION FOR USER MESSAGE HERE
+                if (lastMessage.content && chatId && userId) {
+                  classifyAndSaveMemory(lastMessage.content, chatId, userId, 'user').catch(err => {
+                    console.error('[CHAT_API_DEBUG] User memory classification/save failed (caught in POST route):', err.message);
+                  });
+                }
               }
             } else {
               console.log('[CHAT_API_DEBUG] User message already exists, skipping save.');
@@ -2355,7 +2361,7 @@ The user's conversation history and knowledge base research are provided below.$
               // Trigger memory classification for regular chat
               try {
                 console.log('[CHAT_API_DEBUG] Triggering memory classification for regular chat');
-                await classifyAndSaveMemory(responseText, chatId, userId);
+                await classifyAndSaveMemory(responseText, chatId, userId, 'assistant'); // Pass 'assistant' role
                 console.log('[CHAT_API_DEBUG] Memory classification completed for regular chat');
               } catch (memErr) {
                 console.error('[CHAT_API_DEBUG] Memory classification failed for regular chat:', memErr.message, memErr.stack);
@@ -2471,7 +2477,7 @@ The user's conversation history and knowledge base research are provided below.$
       if (contentToSaveForDB && chatId && userId) {
         try {
           console.log('[CHAT_API_DEBUG] AWAITING classifyAndSaveMemory (debug build)');
-          await classifyAndSaveMemory(contentToSaveForDB, chatId, userId);
+          await classifyAndSaveMemory(contentToSaveForDB, chatId, userId, 'assistant'); // Pass 'assistant' role
           console.log('[CHAT_API_DEBUG] classifyAndSaveMemory completed without throwing');
         } catch (err) {
           console.error('[CHAT_API_DEBUG] Memory classification failed (await path):', err.message, err.stack);
@@ -2564,8 +2570,8 @@ function processFileSearchResults(fileSearchCall) {
 }
 
 // Analyze assistant text and store as memory without blocking the response
-export async function classifyAndSaveMemory(text, threadId, userId) {
-  console.log(`[CHAT_API_DEBUG] Entered classifyAndSaveMemory. Args: text (length: ${text?.length}), threadId: ${threadId}, userId: ${userId}`);
+export async function classifyAndSaveMemory(text, threadId, userId, messageRole = 'assistant') {
+  console.log(`[CHAT_API_DEBUG] Entered classifyAndSaveMemory. Args: text (length: ${text?.length}), threadId: ${threadId}, userId: ${userId}, role: ${messageRole}`);
   console.log(`[CHAT_API_DEBUG] ENV CHECK AT START OF classifyAndSaveMemory: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
   
   if (!process.env.OPENAI_API_KEY) {
@@ -2582,11 +2588,15 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
   }
 
   try {
-    console.log('[CHAT_API_DEBUG] Starting memory classification for user:', userId);
+    console.log(`[CHAT_API_DEBUG] Starting memory classification for ${messageRole} (user: ${userId})`);
     
+    const classificationSystemPrompt = messageRole === 'user'
+      ? 'You are an AI that analyzes a user\'s message. Decide if it contains significant personal information, facts, preferences, or context that should be saved as a long-term memory for a personalized experience. Bias towards saving if it reveals something specific about the user. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "preference" for opinions/likes/dislikes, "fact" for objective statements about the user.'
+      : 'Decide if the following assistant message provides significant new information, a conclusion, or context that should be saved as a memory to maintain conversation continuity. Avoid saving generic conversational filler. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "episodic" if unsure for assistant messages.';
+
     const classificationPrompt = [
-      { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "preference" if unsure.' },
-      { role: 'user', content: text }
+      { role: 'system', content: classificationSystemPrompt },
+      { role: 'user', content: text } // Still use 'user' role here for the content being classified, system prompt gives context
     ];
     const cls = await openai.chat.completions.create({
       model: 'gpt-4o',
