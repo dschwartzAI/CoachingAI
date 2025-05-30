@@ -469,6 +469,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Only reset state and close SSE if the actual chat or tool context has changed
     if (hasContextSwitched) {
       console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
+      setInitiationAttemptedForContext(false); // <<< ADDED THIS RESET HERE
       
       // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
@@ -534,7 +535,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
         
         // If we have metadata, this thread was already initiated in the past
-        setInitiationAttemptedForContext(true);
+        // setInitiationAttemptedForContext(true); // This line is now effectively superseded by the reset above if context truly switched
       } else {
         // Reset to default state if no metadata
         setCollectedAnswers({});
@@ -542,7 +543,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
         setCurrentQuestionKey(questionsArray[0]?.key);
         setIsWaitingForN8n(false);
-        setInitiationAttemptedForContext(false);
+        // setInitiationAttemptedForContext(false); // Already set above if hasContextSwitched
       }
 
       // Close EventSource only if context switched
@@ -698,7 +699,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               }
           };
           
-          console.log("[ChatArea Initiate Func] Constructed updatedChat (with fixes):", JSON.stringify(updatedChat, null, 2));
+          console.log("[ChatArea Initiate Func] Constructed updatedChat object:", JSON.stringify(updatedChat, null, 2));
 
           console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
           setChats(prev => {
@@ -713,6 +714,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               }
           });
           setCurrentChat(updatedChat);
+          console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${updatedChat.messages[0]?.content?.substring(0, 50)}..."`);
           console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       } catch (error) {
