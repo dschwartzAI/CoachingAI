@@ -33,7 +33,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('full_name, occupation, desired_mrr, desired_hours')
+    .select('full_name, occupation, desired_mrr, desired_hours, allow_memory')
     .eq('user_id', user.id)
     .single()
 
@@ -53,7 +53,7 @@ export async function POST(request) {
   }
 
   const body = await request.json()
-  const { full_name, occupation, desired_mrr, desired_hours } = body
+  const { full_name, occupation, desired_mrr, desired_hours, allow_memory } = body
 
   const { data, error } = await supabase
     .from('user_profiles')
@@ -62,7 +62,8 @@ export async function POST(request) {
       full_name,
       occupation,
       desired_mrr,
-      desired_hours
+      desired_hours,
+      allow_memory
     }, { onConflict: 'user_id' })
     .select()
     .single()

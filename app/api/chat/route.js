@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
+import { saveMemory } from '@/lib/utils/memory';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -2356,7 +2357,7 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           questionsAnswered: toolResponsePayload.questionsAnswered,
           currentQuestionKey: toolResponsePayload.currentQuestionKey,
           isComplete: toolResponsePayload.isComplete,
-          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length 
+          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length
         });
         const { error: threadUpdateError } = await supabase
           .from('threads')
@@ -2365,7 +2366,7 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
               currentQuestionKey: toolResponsePayload.currentQuestionKey,
               questionsAnswered: toolResponsePayload.questionsAnswered,
               isComplete: toolResponsePayload.isComplete,
-              collectedAnswers: toolResponsePayload.collectedAnswers 
+              collectedAnswers: toolResponsePayload.collectedAnswers
             }
           })
           .eq('id', chatId);
@@ -2375,6 +2376,9 @@ CRITICAL: Always end with a coaching question or drill deeper if there isn't eno
           if (process.env.NODE_ENV !== "production") console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
         }
       }
+
+      // Start non-blocking memory classification
+      classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch(() => {});
     }
 
     // SECTION 4: Prepare the final response to send to the client
@@ -2456,4 +2460,41 @@ function processFileSearchResults(fileSearchCall) {
       return null;
     })
     .filter(Boolean); // Remove any null results
-} 
+}
+
+// Analyze assistant text and store as memory without blocking the response
+async function classifyAndSaveMemory(text, threadId, userId) {
+  try {
+    const classificationPrompt = [
+      { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "short type"}. Use "general" if unsure.' },
+      { role: 'user', content: text }
+    ];
+    const cls = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: classificationPrompt,
+      temperature: 0,
+      response_format: { type: 'json_object' }
+    });
+    const result = JSON.parse(cls.choices[0].message.content || '{}');
+    if (!result.should_write_memory) return;
+
+    const embed = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text
+    });
+    const embedding = embed.data[0]?.embedding;
+    if (!embedding) return;
+
+    await saveMemory({
+      user_id: userId,
+      thread_id: threadId,
+      content: text,
+      embedding,
+      memory_type: result.memory_type || 'general'
+    });
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[CHAT_API_DEBUG] Memory classification failed:', err);
+    }
+  }
+}

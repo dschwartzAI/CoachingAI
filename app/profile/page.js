@@ -16,6 +16,7 @@ export default function ProfilePage() {
   const [occupation, setOccupation] = useState('');
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
+  const [allowMemory, setAllowMemory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -39,6 +40,7 @@ export default function ProfilePage() {
           setOccupation(data.profile.occupation || '');
           setDesiredMrr(data.profile.desired_mrr || '');
           setDesiredHours(data.profile.desired_hours || '');
+          setAllowMemory(data.profile.allow_memory ?? false);
         }
       } catch (err) {
         if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -46,6 +48,35 @@ export default function ProfilePage() {
     };
     if (user) fetchProfile();
   }, [user]);
+
+  const handleDownloadMemories = async () => {
+    try {
+      const res = await fetch('/api/memory');
+      if (!res.ok) throw new Error('Failed to fetch memories');
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'memories.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') console.error('Download memories failed:', err);
+    }
+  };
+
+  const handleDeleteMemories = async () => {
+    if (!confirm('Delete all memories?')) return;
+    try {
+      const res = await fetch('/api/memory', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete memories');
+      setSuccess('Memories deleted');
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') console.error('Delete memories failed:', err);
+      setError(err.message || 'Failed to delete memories');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,7 +91,8 @@ export default function ProfilePage() {
           full_name: fullName,
           occupation,
           desired_mrr: desiredMrr,
-          desired_hours: desiredHours
+          desired_hours: desiredHours,
+          allow_memory: allowMemory
         })
       });
       const data = await res.json();
@@ -105,11 +137,30 @@ export default function ProfilePage() {
               <Label htmlFor="desiredHours">Desired Hours per Week</Label>
               <Input id="desiredHours" value={desiredHours} onChange={(e) => setDesiredHours(e.target.value)} disabled={saving} />
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="allowMemory"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={allowMemory}
+                onChange={(e) => setAllowMemory(e.target.checked)}
+                disabled={saving}
+              />
+              <Label htmlFor="allowMemory">Allow coaching memory</Label>
+            </div>
             {error && <p className="text-sm text-center text-destructive">{error}</p>}
             {success && <p className="text-sm text-center text-green-500">{success}</p>}
             <Button type="submit" className="w-full" disabled={saving}>
               {saving ? 'Saving...' : 'Save Profile'}
             </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={handleDownloadMemories} disabled={saving}>
+                Download memories
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleDeleteMemories} disabled={saving}>
+                Delete memories
+              </Button>
+            </div>
           </form>
         </CardContent>
         {user && (
