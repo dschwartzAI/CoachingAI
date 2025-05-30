@@ -2463,7 +2463,7 @@ function processFileSearchResults(fileSearchCall) {
 }
 
 // Analyze assistant text and store as memory without blocking the response
-async function classifyAndSaveMemory(text, threadId, userId) {
+export async function classifyAndSaveMemory(text, threadId, userId) {
   try {
     const classificationPrompt = [
       { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "short type"}. Use "general" if unsure.' },

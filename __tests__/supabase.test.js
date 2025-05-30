@@ -36,7 +36,13 @@ describe('supabase utils', () => {
     expect(isProfileComplete(profile)).toBe(true)
   })
 
-integration
+  it('isUserProfileComplete uses getUserProfile', async () => {
+    jest.spyOn(supabaseExports, 'getUserProfile').mockResolvedValue({
+      full_name: 'Test',
+      occupation: 'Dev',
+      desired_mrr: '1',
+      desired_hours: '2'
+    })
     await expect(isUserProfileComplete('user')).resolves.toBe(true)
     expect(supabaseExports.getUserProfile).toHaveBeenCalledWith('user')
   })
