@@ -2428,9 +2428,16 @@ The user's conversation history and knowledge base research are provided below.$
       }
 
       // Start non-blocking memory classification with better error logging
-      classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch((err) => {
-        console.error('[CHAT_API_DEBUG] Memory classification failed:', err.message);
-      });
+      console.log(`[CHAT_API_DEBUG] Attempting to call classifyAndSaveMemory. Params: contentToSaveForDB (length: ${contentToSaveForDB?.length}), chatId: ${chatId}, userId: ${userId}`);
+      console.log(`[CHAT_API_DEBUG] ENV CHECK BEFORE CALL: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
+      
+      if (contentToSaveForDB && chatId && userId) {
+        classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch((err) => {
+          console.error('[CHAT_API_DEBUG] Memory classification failed (error caught in POST route):', err.message, err.stack);
+        });
+      } else {
+        console.error('[CHAT_API_DEBUG] Skipped calling classifyAndSaveMemory due to missing parameters.');
+      }
     }
 
     // SECTION 4: Prepare the final response to send to the client
@@ -2516,6 +2523,22 @@ function processFileSearchResults(fileSearchCall) {
 
 // Analyze assistant text and store as memory without blocking the response
 export async function classifyAndSaveMemory(text, threadId, userId) {
+  console.log(`[CHAT_API_DEBUG] Entered classifyAndSaveMemory. Args: text (length: ${text?.length}), threadId: ${threadId}, userId: ${userId}`);
+  console.log(`[CHAT_API_DEBUG] ENV CHECK AT START OF classifyAndSaveMemory: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
+  
+  if (!process.env.OPENAI_API_KEY) {
+    console.error('[CHAT_API_DEBUG] CRITICAL: OPENAI_API_KEY is missing in classifyAndSaveMemory. Aborting.');
+    return;
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('[CHAT_API_DEBUG] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing in classifyAndSaveMemory. Aborting.');
+    return;
+  }
+  if (!text || !threadId || !userId) {
+    console.error('[CHAT_API_DEBUG] CRITICAL: Missing text, threadId, or userId in classifyAndSaveMemory. Aborting.');
+    return;
+  }
+
   try {
     console.log('[CHAT_API_DEBUG] Starting memory classification for user:', userId);
     
@@ -2558,6 +2581,6 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
     });
     console.log('[CHAT_API_DEBUG] Memory saved successfully!');
   } catch (err) {
-    console.error('[CHAT_API_DEBUG] Memory classification failed:', err);
+    console.error('[CHAT_API_DEBUG] Memory classification failed (error caught within classifyAndSaveMemory):', err.message, err.stack);
   }
 }
