@@ -1175,9 +1175,168 @@ export async function POST(request) {
     const { data: { user } } = await supabase.auth.getUser();
     let userId = user?.id;
 
+    // Handle anonymous users more gracefully
+    if (!userId) {
+      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
+        // Generate a consistent anonymous ID based on the chat ID for better tracking
+        userId = 'anon-' + (chatId.substring(0, 8));
+        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
+      } else {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
+    }
+
+    // FAST PATH: Handle tool initialization FIRST before any profile/context building
+    if (isToolInit && tool === 'hybrid-offer') {
+      const initialSystemPrompt = `You are creating a hybrid offer for businesses.`;
+      const initialMessage = "What's your core product or service?";
+      const existingAnswers = body.collectedAnswers || {};
+      const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
+      
+      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
+
+      const initialMetadataForDB = {
+        currentQuestionKey: 'offerDescription',
+        questionsAnswered: 0,
+        isComplete: false,
+        collectedAnswers: {}
+      };
+
+      const initResponsePayload = {
+        message: initialMessage,
+        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
+        collectedAnswers: { ...initialMetadataForDB.collectedAnswers },
+        questionsAnswered: initialMetadataForDB.questionsAnswered,
+        isComplete: initialMetadataForDB.isComplete,
+        chatId: finalChatIdForDB,
+        systemPrompt: initialSystemPrompt
+      };
+
+      // Attempt to save this new thread with its initial metadata to the database
+      try {
+        console.log(`[CHAT_API_DEBUG] Attempting to save new thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        const { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', finalChatIdForDB)
+          .single();
+
+        if (lookupError && lookupError.code === 'PGRST116') { // Not found, so insert
+          const toolDetails = TOOLS[tool];
+          const threadTitle = toolDetails ? toolDetails.name : 'Hybrid Offer Chat';
+          
+          const { error: insertError } = await supabase
+            .from('threads')
+            .insert({
+              id: finalChatIdForDB,
+              user_id: userId,
+              tool_id: tool,
+              title: threadTitle,
+              metadata: initialMetadataForDB
+            });
+
+          if (insertError) {
+            console.error('[CHAT_API_DEBUG] Error inserting new thread during tool init:', insertError);
+          } else {
+            console.log('[CHAT_API_DEBUG] New thread saved successfully during tool init:', finalChatIdForDB);
+          }
+        } else if (existingThread) {
+          console.log('[CHAT_API_DEBUG] Thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+        } else if (lookupError) {
+          console.error('[CHAT_API_DEBUG] Error looking up thread during tool init:', lookupError);
+        }
+      } catch (dbSaveError) {
+        console.error('[CHAT_API_DEBUG] DB exception during tool init thread save:', dbSaveError);
+      }
+
+      console.log('[CHAT_API_DEBUG] Sending initial hybrid offer response (tool init)');
+      return NextResponse.json(initResponsePayload);
+    }
+
+    // FAST PATH: Handle workshop generator tool initialization
+    if (isToolInit && tool === 'workshop-generator') {
+      const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.`;
+      const initialMessage = "Welcome! I'm excited to help you create a compelling workshop. Let's start with the most important part - what specific outcomes or goals will participants achieve by the end of your workshop?";
+      const existingAnswers = body.collectedAnswers || {};
+      
+      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
+
+      const initialMetadataForDB = {
+        currentQuestionKey: 'participantOutcomes',
+        questionsAnswered: 0,
+        isComplete: false,
+        collectedAnswers: {}
+      };
+
+      const initResponsePayload = {
+        message: initialMessage,
+        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
+        collectedAnswers: { ...initialMetadataForDB.collectedAnswers },
+        questionsAnswered: initialMetadataForDB.questionsAnswered,
+        isComplete: initialMetadataForDB.isComplete,
+        chatId: finalChatIdForDB,
+        systemPrompt: initialSystemPrompt
+      };
+
+      // Save thread to database
+      try {
+        console.log(`[CHAT_API_DEBUG] Attempting to save new workshop thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        const { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', finalChatIdForDB)
+          .single();
+
+        if (lookupError && lookupError.code === 'PGRST116') {
+          const toolDetails = TOOLS[tool];
+          const threadTitle = toolDetails ? toolDetails.name : 'Workshop Generator';
+          
+          const { error: insertError } = await supabase
+            .from('threads')
+            .insert({
+              id: finalChatIdForDB,
+              user_id: userId,
+              tool_id: tool,
+              title: threadTitle,
+              metadata: initialMetadataForDB
+            });
+
+          if (insertError) {
+            console.error('[CHAT_API_DEBUG] Error inserting new workshop thread during tool init:', insertError);
+          } else {
+            console.log('[CHAT_API_DEBUG] New workshop thread saved successfully during tool init:', finalChatIdForDB);
+          }
+        } else if (existingThread) {
+          console.log('[CHAT_API_DEBUG] Workshop thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+        } else if (lookupError) {
+          console.error('[CHAT_API_DEBUG] Error looking up workshop thread during tool init:', lookupError);
+        }
+      } catch (dbSaveError) {
+        console.error('[CHAT_API_DEBUG] DB exception during workshop tool init thread save:', dbSaveError);
+      }
+
+      console.log('[CHAT_API_DEBUG] Sending initial workshop generator response (tool init)');
+      return NextResponse.json(initResponsePayload);
+    }
+
+    // Handle invalid tool IDs
+    if (isToolInit && tool && !TOOLS[tool]) {
+      console.error(`[CHAT_API_DEBUG] Tool initialization attempted for invalid tool: ${tool}`);
+      return NextResponse.json(
+        { error: `Invalid tool: ${tool}. Available tools: ${Object.keys(TOOLS).join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // NOW build profile context only for non-init requests (where we actually need it)
+    console.log('[CHAT_API_DEBUG] Building profile context for non-init request');
+    
     // Fetch profile information for authenticated users
     let userProfile = null;
-    if (userId) {
+    if (userId && !userId.startsWith('anon-')) {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('user_profiles')

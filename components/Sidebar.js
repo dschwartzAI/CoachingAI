@@ -197,14 +197,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex items-center justify-between mb-1">
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
-                  className="w-[85%] justify-start h-8 text-sm"
+                  className="w-full justify-start h-8 text-sm"
                   onClick={() => handleNewChat(null)}
                 >
                   <MessagesSquare className="h-4 w-4 mr-2" />
                   JamesBot
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(null)}>
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-4 w-4 ml-auto" />
                 </Button>
               </div>
               {tools.map((tool) => {
@@ -213,14 +211,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   <div key={tool.id} className="flex items-center justify-between mb-1">
                     <Button
                       variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                      className="w-[85%] justify-start h-8 text-sm"
+                      className="w-full justify-start h-8 text-sm"
                       onClick={() => handleToolClick(tool.id)}
                     >
                       <IconComponent className="h-4 w-4 mr-2" />
                       {tool.name}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToolClick(tool.id)}>
-                      <Plus className="h-4 w-4" />
+                      <Plus className="h-4 w-4 ml-auto" />
                     </Button>
                   </div>
                 );
