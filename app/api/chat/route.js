@@ -2557,7 +2557,7 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
     console.log('[CHAT_API_DEBUG] Starting memory classification for user:', userId);
     
     const classificationPrompt = [
-      { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "short type"}. Use "general" if unsure.' },
+      { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "memory_type"}. Valid memory_type values: "episodic" (events/experiences), "fact" (factual info), "preference" (user preferences), "artefact" (tools/resources). Use "preference" if unsure.' },
       { role: 'user', content: text }
     ];
     const cls = await openai.chat.completions.create({
