@@ -7,7 +7,7 @@ import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
-import { createSessionSummary, getCoachingContext, getMessageCount } from '@/lib/utils/memory';
+import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -2362,6 +2362,14 @@ The user's conversation history and knowledge base research are provided below.$
           console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
         } else {
           console.log('[CHAT_API_DEBUG] Thread metadata updated successfully');
+          
+          // Capture tool memory when offer is complete
+          if (toolResponsePayload.isComplete && toolResponsePayload.collectedAnswers) {
+            console.log('[CHAT_API_DEBUG] Hybrid offer complete - creating tool memory summary');
+            createToolMemorySummary(userId, chatId, 'hybrid-offer', toolResponsePayload.collectedAnswers).catch(err => {
+              console.error('[CHAT_API_DEBUG] Hybrid offer memory capture failed:', err);
+            });
+          }
         }
       }
 
@@ -2388,6 +2396,14 @@ The user's conversation history and knowledge base research are provided below.$
           console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
         } else {
           console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
+          
+          // Capture tool memory when workshop is complete
+          if (toolResponsePayload.isComplete && toolResponsePayload.collectedAnswers) {
+            console.log('[CHAT_API_DEBUG] Workshop complete - creating tool memory summary');
+            createToolMemorySummary(userId, chatId, 'workshop-generator', toolResponsePayload.collectedAnswers).catch(err => {
+              console.error('[CHAT_API_DEBUG] Workshop memory capture failed:', err);
+            });
+          }
         }
       }
     }
