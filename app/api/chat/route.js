@@ -2432,10 +2432,14 @@ The user's conversation history and knowledge base research are provided below.$
       console.log(`[CHAT_API_DEBUG] ENV CHECK BEFORE CALL: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
       
       if (contentToSaveForDB && chatId && userId) {
-        classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch((err) => {
-          console.error('[CHAT_API_DEBUG] Memory classification failed (error caught in POST route):', err.message, err.stack);
+        try {
+          console.log('[CHAT_API_DEBUG] AWAITING classifyAndSaveMemory (debug build)');
+          await classifyAndSaveMemory(contentToSaveForDB, chatId, userId);
+          console.log('[CHAT_API_DEBUG] classifyAndSaveMemory completed without throwing');
+        } catch (err) {
+          console.error('[CHAT_API_DEBUG] Memory classification failed (await path):', err.message, err.stack);
           console.error(`[CHAT_API_DEBUG] ENV CHECK INSIDE CATCH BLOCK: OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}, SUPABASE_SERVICE_ROLE_KEY present: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`);
-        });
+        }
       } else {
         console.error('[CHAT_API_DEBUG] Skipped calling classifyAndSaveMemory due to missing parameters.');
       }
