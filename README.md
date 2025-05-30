@@ -68,3 +68,47 @@ The application stores additional details about each account. These fields are:
 - **Challenges**
 
 You will be prompted to provide this information on your first login. The same form can be revisited at any time from the **Settings** page to update your profile.
+
+## Memory System
+
+CoachingAI stores chat history in Supabase and periodically condenses older
+messages. Summaries are persisted in an OpenAI vector store so the assistant can
+reference past conversations without loading the full thread.
+
+### Additional Environment Variables
+
+Add the following variables to enable the memory features:
+
+- `OPENAI_API_KEY` – API key used when summarizing and embedding messages
+- `OPENAI_VECTOR_STORE_ID` – ID of your OpenAI vector store
+- `ALLOW_ANONYMOUS_CHATS` – set to `true` to allow chats without login (use
+  `false` in production)
+
+## Database Migrations and Functions
+
+All Supabase migrations live under `supabase/migrations`. Apply them with:
+
+```bash
+npx supabase db push
+```
+
+After running migrations, deploy the scheduled function that compresses old
+memories:
+
+```bash
+npx supabase functions deploy compressMemories
+```
+
+Once deployed you can schedule it directly through the Supabase dashboard or via
+the CLI:
+
+```bash
+npx supabase functions schedule compressMemories "0 * * * *"
+```
+
+## Privacy and Cost Considerations
+
+Conversation data is stored remotely. Disable `ALLOW_ANONYMOUS_CHATS` and
+`NEXT_PUBLIC_SKIP_AUTH` to restrict access in production. Storing long histories
+and running the `compressMemories` job will consume Supabase storage and OpenAI
+credits, so adjust the schedule according to your budget.
