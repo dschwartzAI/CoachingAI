@@ -7,6 +7,7 @@ import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
+import { saveMemory, searchMemories } from '@/lib/utils/memory';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -21,6 +22,21 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+
+// Helper to embed text using OpenAI
+async function embedText(text) {
+  if (!text) return null;
+  try {
+    const embedRes = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text
+    });
+    return embedRes.data[0]?.embedding || null;
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error creating embedding:', err);
+    return null;
+  }
+}
 
 // Define the questions and their corresponding keys, in order
 const hybridOfferQuestions = [
@@ -1193,8 +1209,35 @@ export async function POST(request) {
       }
     }
 
-    // Build profile context using the centralized function from ai.js
+    // Memory summary retrieval and profile context generation
+    let memorySummary = null;
+    if (userId) {
+      try {
+        const { data: memData, error: memError } = await supabase
+          .from('memory_summaries')
+          .select('summary')
+          .eq('user_id', userId)
+          .single();
+        if (!memError && memData?.summary) {
+          memorySummary = memData.summary;
+        } else if (memError && process.env.NODE_ENV !== 'production') {
+          console.error('[CHAT_API_DEBUG] Error fetching memory summary:', memError);
+        }
+      } catch (memEx) {
+        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching memory summary:', memEx);
+      }
+    }
+
     const profileContext = await buildProfileContext(userProfile);
+
+    // (Optional) Combined profile summary – currently unused but kept for future use
+    const profileSummaryParts = [];
+    if (memorySummary) profileSummaryParts.push(memorySummary);
+    if (userProfile?.full_name) profileSummaryParts.push(userProfile.full_name);
+    if (userProfile?.occupation) profileSummaryParts.push(`Occupation: ${userProfile.occupation}`);
+    if (userProfile?.desired_mrr) profileSummaryParts.push(`Desired MRR: ${userProfile.desired_mrr}`);
+    if (userProfile?.desired_hours) profileSummaryParts.push(`Desired hours: ${userProfile.desired_hours}`);
+    const profileSummary = profileSummaryParts.join(', ');
 
     // Handle anonymous users more gracefully
     if (!userId) {
@@ -1207,6 +1250,19 @@ export async function POST(request) {
           { error: 'Authentication required' },
           { status: 401 }
         );
+      }
+    }
+
+    const userQuestion = body.userQuestion || '';
+    if (userQuestion) {
+      const embedding = await embedText(userQuestion);
+      const memoryMatches = await searchMemories(userId, embedding);
+      const relevantSnippets = (memoryMatches || []).filter(m => m.similarity > 0.8);
+      if (relevantSnippets.length > 0) {
+        relevantSnippets.forEach(snippet => {
+          const text = snippet.snippet || snippet.content || snippet.text || '';
+          if (text) messages.push({ role: 'system', content: text });
+        });
       }
     }
 
@@ -2351,7 +2407,7 @@ The user's conversation history and knowledge base research are provided below.$
           questionsAnswered: toolResponsePayload.questionsAnswered,
           currentQuestionKey: toolResponsePayload.currentQuestionKey,
           isComplete: toolResponsePayload.isComplete,
-          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length 
+          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length
         });
         const { error: threadUpdateError } = await supabase
           .from('threads')
@@ -2360,7 +2416,7 @@ The user's conversation history and knowledge base research are provided below.$
               currentQuestionKey: toolResponsePayload.currentQuestionKey,
               questionsAnswered: toolResponsePayload.questionsAnswered,
               isComplete: toolResponsePayload.isComplete,
-              collectedAnswers: toolResponsePayload.collectedAnswers 
+              collectedAnswers: toolResponsePayload.collectedAnswers
             }
           })
           .eq('id', chatId);
@@ -2370,6 +2426,9 @@ The user's conversation history and knowledge base research are provided below.$
           console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for workshop generator');
         }
       }
+
+      // Start non-blocking memory classification
+      classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch(() => {});
     }
 
     // SECTION 4: Prepare the final response to send to the client
@@ -2451,4 +2510,41 @@ function processFileSearchResults(fileSearchCall) {
       return null;
     })
     .filter(Boolean); // Remove any null results
-} 
+}
+
+// Analyze assistant text and store as memory without blocking the response
+export async function classifyAndSaveMemory(text, threadId, userId) {
+  try {
+    const classificationPrompt = [
+      { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "short type"}. Use "general" if unsure.' },
+      { role: 'user', content: text }
+    ];
+    const cls = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: classificationPrompt,
+      temperature: 0,
+      response_format: { type: 'json_object' }
+    });
+    const result = JSON.parse(cls.choices[0].message.content || '{}');
+    if (!result.should_write_memory) return;
+
+    const embed = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text
+    });
+    const embedding = embed.data[0]?.embedding;
+    if (!embedding) return;
+
+    await saveMemory({
+      userId,
+      threadId,
+      content: text,
+      embedding,
+      type: result.memory_type || 'general'
+    });
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[CHAT_API_DEBUG] Memory classification failed:', err);
+    }
+  }
+}
