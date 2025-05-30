@@ -2323,6 +2323,15 @@ The user's conversation history and knowledge base research are provided below.$
               console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
             } else {
               console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
+              
+              // Trigger memory classification for regular chat
+              try {
+                console.log('[CHAT_API_DEBUG] Triggering memory classification for regular chat');
+                await classifyAndSaveMemory(responseText, chatId, userId);
+                console.log('[CHAT_API_DEBUG] Memory classification completed for regular chat');
+              } catch (memErr) {
+                console.error('[CHAT_API_DEBUG] Memory classification failed for regular chat:', memErr.message, memErr.stack);
+              }
             }
           } catch (dbError) {
             console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
