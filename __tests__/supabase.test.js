@@ -6,6 +6,7 @@ jest.mock('@/lib/utils/supabase', () => {
 })
 
 import * as supabaseUtils from '@/lib/utils/supabase'
+// Destructure the exports object so we can spy on real implementations
 const { isProfileComplete, isUserProfileComplete, supabaseExports } = supabaseUtils
 
 beforeAll(() => {
