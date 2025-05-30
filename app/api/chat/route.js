@@ -1242,9 +1242,9 @@ export async function POST(request) {
     // Handle anonymous users more gracefully
     if (!userId) {
       if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
-        // Generate a consistent anonymous ID based on the chat ID for better tracking
-        userId = 'anon-' + (chatId.substring(0, 8));
-        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
+        // Generate a proper UUID for anonymous users for database compatibility
+        userId = uuidv4();
+        console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using generated UUID:', userId);
       } else {
         return NextResponse.json(
           { error: 'Authentication required' },
