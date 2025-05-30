@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
 import { v4 as uuidv4 } from 'uuid';
-import { saveMemory } from '@/lib/utils/memory';
+import { saveMemory, searchMemories } from '@/lib/utils/memory';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -33,25 +33,6 @@ async function embedText(text) {
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error creating embedding:', err);
     return null;
-  }
-}
-
-// Helper to search memories for a user based on an embedding
-async function searchMemories(supabase, userId, embedding) {
-  if (!embedding || !userId) return [];
-  try {
-    const { data, error } = await supabase.rpc('search_memories', {
-      embedding,
-      user_id: userId
-    });
-    if (error) {
-      if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error searching memories:', error);
-      return [];
-    }
-    return data || [];
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception searching memories:', err);
-    return [];
   }
 }
 
@@ -1271,7 +1252,7 @@ export async function POST(request) {
     const userQuestion = body.userQuestion || '';
     if (userQuestion) {
       const embedding = await embedText(userQuestion);
-      const memoryMatches = await searchMemories(supabase, userId, embedding);
+      const memoryMatches = await searchMemories(userId, embedding);
       const relevantSnippets = (memoryMatches || []).filter(m => m.similarity > 0.8);
       if (relevantSnippets.length > 0) {
         relevantSnippets.forEach(snippet => {
@@ -2486,11 +2467,11 @@ async function classifyAndSaveMemory(text, threadId, userId) {
     if (!embedding) return;
 
     await saveMemory({
-      user_id: userId,
-      thread_id: threadId,
+      userId,
+      threadId,
       content: text,
       embedding,
-      memory_type: result.memory_type || 'general'
+      type: result.memory_type || 'general'
     });
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') {
