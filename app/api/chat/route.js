@@ -1266,6 +1266,32 @@ export async function POST(request) {
       }
     }
 
+    // Add a new section for Memory Retrieval before regular chat processing
+    let retrievedMemoryContext = "";
+    if (!tool && messages && messages.length > 0 && userId) {
+      const lastUserMessage = messages[messages.length - 1];
+      if (lastUserMessage && lastUserMessage.role === 'user' && lastUserMessage.content) {
+        console.log('[CHAT_API_DEBUG] Attempting to retrieve memories for user question:', lastUserMessage.content.substring(0, 50));
+        try {
+          const questionEmbedding = await embedText(lastUserMessage.content);
+          if (questionEmbedding) {
+            const memoryMatches = await searchMemories(userId, questionEmbedding, 3, 0.75); // Get top 3 matches with similarity > 0.75
+            if (memoryMatches && memoryMatches.length > 0) {
+              retrievedMemoryContext = "\n\nRelevant information from your past conversations:\n" +
+                                     memoryMatches.map(mem => `- ${mem.content}`).join("\n");
+              console.log('[CHAT_API_DEBUG] Retrieved memories, context length:', retrievedMemoryContext.length);
+            } else {
+              console.log('[CHAT_API_DEBUG] No sufficiently relevant memories found.');
+            }
+          } else {
+            console.log('[CHAT_API_DEBUG] Could not create embedding for user question, skipping memory retrieval.');
+          }
+        } catch (memSearchErr) {
+          console.error('[CHAT_API_DEBUG] Error during memory retrieval:', memSearchErr);
+        }
+      }
+    }
+
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
       const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)${profileContext}`;
@@ -2281,6 +2307,8 @@ RESPONSE GUIDELINES:
 - Be practical and actionable, not theoretical
 - Vary your language and avoid repetitive phrases
 - If mentioning tools, do it naturally within the coaching context
+
+${retrievedMemoryContext} // Inject retrieved memories here
 
 The user's conversation history and knowledge base research are provided below.${profileContext}`;
 
