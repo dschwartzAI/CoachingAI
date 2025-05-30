@@ -2,10 +2,16 @@ import { fetchThreads, getThreads, deleteThread } from '@/lib/utils/supabase'
 
 jest.mock('@/lib/utils/supabase', () => {
   const actual = jest.requireActual('@/lib/utils/supabase')
-  return { __esModule: true, ...actual, getUserProfile: jest.fn() }
+  return { __esModule: true, ...actual }
 })
 
-import { isProfileComplete, isUserProfileComplete, getUserProfile } from '@/lib/utils/supabase'
+import * as supabaseUtils from '@/lib/utils/supabase'
+const { isProfileComplete, isUserProfileComplete, supabaseExports } = supabaseUtils
+
+beforeAll(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost';
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
+})
 
 describe('supabase utils', () => {
   it('fetchThreads is an alias for getThreads', () => {
@@ -27,8 +33,8 @@ describe('supabase utils', () => {
   })
 
   it('isUserProfileComplete uses getUserProfile', async () => {
-    getUserProfile.mockResolvedValue({ full_name: 'A', occupation: 'Dev', desired_mrr: '1', desired_hours: '2' })
+    jest.spyOn(supabaseExports, 'getUserProfile').mockResolvedValue({ full_name: 'A', occupation: 'Dev', desired_mrr: '1', desired_hours: '2' })
     await expect(isUserProfileComplete('user')).resolves.toBe(true)
-    expect(getUserProfile).toHaveBeenCalledWith('user')
+    expect(supabaseExports.getUserProfile).toHaveBeenCalledWith('user')
   })
 })
