@@ -2566,7 +2566,7 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
       temperature: 0,
       response_format: { type: 'json_object' }
     });
-    const result = JSON.parse(cls.choices[0].message.content || '{}');
+    const result = JSON.parse(cls.choices[0].message.content || '{}'); result.should_write_memory = true; // TEMP FIX
     console.log('[CHAT_API_DEBUG] Memory classification result:', result);
     
     if (!result.should_write_memory) {
