@@ -2427,8 +2427,10 @@ The user's conversation history and knowledge base research are provided below.$
         }
       }
 
-      // Start non-blocking memory classification
-      classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch(() => {});
+      // Start non-blocking memory classification with better error logging
+      classifyAndSaveMemory(contentToSaveForDB, chatId, userId).catch((err) => {
+        console.error('[CHAT_API_DEBUG] Memory classification failed:', err.message);
+      });
     }
 
     // SECTION 4: Prepare the final response to send to the client
@@ -2515,6 +2517,8 @@ function processFileSearchResults(fileSearchCall) {
 // Analyze assistant text and store as memory without blocking the response
 export async function classifyAndSaveMemory(text, threadId, userId) {
   try {
+    console.log('[CHAT_API_DEBUG] Starting memory classification for user:', userId);
+    
     const classificationPrompt = [
       { role: 'system', content: 'Decide if the following assistant message should be saved as a memory. Return JSON {"should_write_memory": boolean, "memory_type": "short type"}. Use "general" if unsure.' },
       { role: 'user', content: text }
@@ -2526,15 +2530,25 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
       response_format: { type: 'json_object' }
     });
     const result = JSON.parse(cls.choices[0].message.content || '{}');
-    if (!result.should_write_memory) return;
+    console.log('[CHAT_API_DEBUG] Memory classification result:', result);
+    
+    if (!result.should_write_memory) {
+      console.log('[CHAT_API_DEBUG] AI decided not to save this message as memory');
+      return;
+    }
 
+    console.log('[CHAT_API_DEBUG] Creating embedding for memory...');
     const embed = await openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: text
     });
     const embedding = embed.data[0]?.embedding;
-    if (!embedding) return;
+    if (!embedding) {
+      console.log('[CHAT_API_DEBUG] Failed to create embedding');
+      return;
+    }
 
+    console.log('[CHAT_API_DEBUG] Saving memory to database...');
     await saveMemory({
       userId,
       threadId,
@@ -2542,9 +2556,8 @@ export async function classifyAndSaveMemory(text, threadId, userId) {
       embedding,
       type: result.memory_type || 'general'
     });
+    console.log('[CHAT_API_DEBUG] Memory saved successfully!');
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('[CHAT_API_DEBUG] Memory classification failed:', err);
-    }
+    console.error('[CHAT_API_DEBUG] Memory classification failed:', err);
   }
 }
