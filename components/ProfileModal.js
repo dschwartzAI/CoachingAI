@@ -20,8 +20,12 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
 
   const [fullName, setFullName] = useState('');
   const [occupation, setOccupation] = useState('');
+  const [currentMrr, setCurrentMrr] = useState('');
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
+  const [businessStage, setBusinessStage] = useState('');
+  const [biggestChallenge, setBiggestChallenge] = useState('');
+  const [primaryGoal, setPrimaryGoal] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -41,8 +45,12 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
       if (data.profile) {
         setFullName(data.profile.full_name || '');
         setOccupation(data.profile.occupation || '');
+        setCurrentMrr(data.profile.current_mrr || '');
         setDesiredMrr(data.profile.desired_mrr || '');
         setDesiredHours(data.profile.desired_hours || '');
+        setBusinessStage(data.profile.business_stage || '');
+        setBiggestChallenge(data.profile.biggest_challenge || '');
+        setPrimaryGoal(data.profile.primary_goal || '');
       }
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -84,8 +92,12 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
         body: JSON.stringify({
           full_name: fullName,
           occupation,
+          current_mrr: currentMrr,
           desired_mrr: desiredMrr,
-          desired_hours: desiredHours
+          desired_hours: desiredHours,
+          business_stage: businessStage,
+          biggest_challenge: biggestChallenge,
+          primary_goal: primaryGoal
         })
       });
       
@@ -97,7 +109,7 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
       setSuccess('Profile saved successfully');
       
       // Check if profile is now complete
-      const isComplete = fullName && occupation && desiredMrr && desiredHours;
+      const isComplete = fullName && occupation && desiredMrr && desiredHours && businessStage && biggestChallenge && primaryGoal;
       if (isComplete && onProfileComplete) {
         onProfileComplete();
       }
@@ -158,6 +170,18 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
           </div>
           
           <div className="grid gap-2">
+            <Label htmlFor="currentMrr">Current Monthly Recurring Revenue</Label>
+            <Input 
+              id="currentMrr" 
+              value={currentMrr} 
+              onChange={(e) => setCurrentMrr(e.target.value)} 
+              disabled={saving}
+              placeholder="$10,000"
+              type="text"
+            />
+          </div>
+          
+          <div className="grid gap-2">
             <Label htmlFor="desiredMrr">Desired Monthly Recurring Revenue</Label>
             <Input 
               id="desiredMrr" 
@@ -181,6 +205,43 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
             />
           </div>
           
+          <div className="grid gap-2">
+            <Label htmlFor="businessStage">Business Stage</Label>
+            <Input 
+              id="businessStage" 
+              value={businessStage} 
+              onChange={(e) => setBusinessStage(e.target.value)} 
+              disabled={saving}
+              placeholder="Idea, Startup, Growth, Scale"
+            />
+          </div>
+          
+          <div className="grid gap-2">
+            <Label htmlFor="biggestChallenge">Biggest Challenge</Label>
+            <Textarea 
+              id="biggestChallenge" 
+              value={biggestChallenge} 
+              onChange={(e) => setBiggestChallenge(e.target.value)} 
+              disabled={saving}
+              placeholder="Describe your biggest challenge"
+              className="min-h-24 resize-y"
+              rows={4}
+            />
+          </div>
+          
+          <div className="grid gap-2">
+            <Label htmlFor="primaryGoal">Primary Goal</Label>
+            <Textarea 
+              id="primaryGoal" 
+              value={primaryGoal} 
+              onChange={(e) => setPrimaryGoal(e.target.value)} 
+              disabled={saving}
+              placeholder="Describe your primary goal"
+              className="min-h-24 resize-y"
+              rows={4}
+            />
+          </div>
+          
           {error && <p className="text-sm text-center text-destructive">{error}</p>}
           {success && <p className="text-sm text-center text-green-500">{success}</p>}
           
@@ -195,7 +256,7 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
             </Button>
             <Button 
               type="submit" 
-              disabled={saving || !fullName || !occupation || !desiredMrr || !desiredHours}
+              disabled={saving || !fullName || !occupation || !currentMrr || !desiredMrr || !desiredHours || !businessStage || !biggestChallenge || !primaryGoal}
             >
               {saving ? 'Saving...' : 'Save Profile'}
             </Button>
