@@ -21,6 +21,40 @@ const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
+// Helper to embed text using OpenAI
+async function embedText(text) {
+  if (!text) return null;
+  try {
+    const embedRes = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text
+    });
+    return embedRes.data[0]?.embedding || null;
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error creating embedding:', err);
+    return null;
+  }
+}
+
+// Helper to search memories for a user based on an embedding
+async function searchMemories(supabase, userId, embedding) {
+  if (!embedding || !userId) return [];
+  try {
+    const { data, error } = await supabase.rpc('search_memories', {
+      embedding,
+      user_id: userId
+    });
+    if (error) {
+      if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Error searching memories:', error);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception searching memories:', err);
+    return [];
+  }
+}
+
 // Define the questions and their corresponding keys, in order
 const hybridOfferQuestions = [
   { 
@@ -1192,7 +1226,26 @@ export async function POST(request) {
       }
     }
 
+    let memorySummary = null;
+    if (userId) {
+      try {
+        const { data: memData, error: memError } = await supabase
+          .from('memory_summaries')
+          .select('summary')
+          .eq('user_id', userId)
+          .single();
+        if (!memError && memData?.summary) {
+          memorySummary = memData.summary;
+        } else if (memError && process.env.NODE_ENV !== 'production') {
+          console.error('[CHAT_API_DEBUG] Error fetching memory summary:', memError);
+        }
+      } catch (memEx) {
+        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching memory summary:', memEx);
+      }
+    }
+
     const profileSummaryParts = [];
+    if (memorySummary) profileSummaryParts.push(memorySummary);
     if (userProfile?.full_name) profileSummaryParts.push(userProfile.full_name);
     if (userProfile?.occupation) profileSummaryParts.push(`Occupation: ${userProfile.occupation}`);
     if (userProfile?.desired_mrr) profileSummaryParts.push(`Desired MRR: ${userProfile.desired_mrr}`);
@@ -1212,6 +1265,19 @@ export async function POST(request) {
           { error: 'Authentication required' },
           { status: 401 }
         );
+      }
+    }
+
+    const userQuestion = body.userQuestion || '';
+    if (userQuestion) {
+      const embedding = await embedText(userQuestion);
+      const memoryMatches = await searchMemories(supabase, userId, embedding);
+      const relevantSnippets = (memoryMatches || []).filter(m => m.similarity > 0.8);
+      if (relevantSnippets.length > 0) {
+        relevantSnippets.forEach(snippet => {
+          const text = snippet.snippet || snippet.content || snippet.text || '';
+          if (text) messages.push({ role: 'system', content: text });
+        });
       }
     }
 

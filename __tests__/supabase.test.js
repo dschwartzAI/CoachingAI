@@ -1,5 +1,8 @@
 import { fetchThreads, getThreads, deleteThread } from '@/lib/utils/supabase'
 
+process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost'
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon'
+
 jest.mock('@/lib/utils/supabase', () => {
   const actual = jest.requireActual('@/lib/utils/supabase')
   return { __esModule: true, ...actual }
@@ -33,8 +36,7 @@ describe('supabase utils', () => {
     expect(isProfileComplete(profile)).toBe(true)
   })
 
-  it('isUserProfileComplete uses getUserProfile', async () => {
-    jest.spyOn(supabaseExports, 'getUserProfile').mockResolvedValue({ full_name: 'A', occupation: 'Dev', desired_mrr: '1', desired_hours: '2' })
+integration
     await expect(isUserProfileComplete('user')).resolves.toBe(true)
     expect(supabaseExports.getUserProfile).toHaveBeenCalledWith('user')
   })
