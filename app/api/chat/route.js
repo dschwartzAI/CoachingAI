@@ -1307,7 +1307,7 @@ export async function POST(request) {
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
       const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)${profileContext}`;
-      const initialMessage = "What's your core product or service?";
+      const initialMessage = "Let's build out your offer! Tell me about your core product/service at a high level.";
       const existingAnswers = body.collectedAnswers || {};
       const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
       

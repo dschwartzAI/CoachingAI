@@ -5,7 +5,18 @@ import { Toaster } from "@/components/ui/toaster";
 import URLCleaner from "@/components/URLCleaner";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ["latin"], 
+  display: "swap",
+  fallback: [
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "Segoe UI",
+    "Roboto",
+    "Helvetica Neue",
+    "sans-serif",
+  ],
+});
 
 export const metadata = {
   title: "SovereignAI",

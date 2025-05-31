@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
@@ -463,6 +462,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [editingSnippet, setEditingSnippet] = useState(null);
   const [currentSourceContext, setCurrentSourceContext] = useState(null);
   const { toast } = useToast();
+  const headerRef = useRef(null);
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -1869,18 +1869,23 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
   // End of Snippet Handling Functions
 
+  useEffect(() => {
+    if (headerRef.current) {
+      const rect = headerRef.current.getBoundingClientRect();
+      console.log('[CHAT_HEADER_DEBUG] header offsetLeft:', rect.left, 'width:', rect.width);
+    }
+  });
+
   return (
-    <div className="flex flex-col h-full max-w-full">
-      {/* Chat header - added responsive padding */}
-      <div className="border-b p-3 sm:p-4 flex items-center justify-between sticky top-0 bg-background z-10">
-        <div className="flex items-center space-x-2">
-          <div className="font-semibold">
-            {currentChat && currentChat.title ? (
-              <span className="text-sm sm:text-base">{currentChat.title}</span>
-            ) : (
-              <span className="text-sm sm:text-base">New Conversation</span>
-            )}
-          </div>
+    <div className="flex-1 flex flex-col h-screen relative bg-background">
+      {/* Chat header - flush against sidebar on desktop */}
+      <div ref={headerRef} className="border-b pl-3 pr-3 py-3 md:pl-4 md:pr-4 md:py-4 mb-4 sm:mb-5 sticky top-0 bg-background z-10">
+        <div className="font-semibold text-left">
+          {currentChat && currentChat.title ? (
+            <span className="text-sm sm:text-base">{currentChat.title}</span>
+          ) : (
+            <span className="text-sm sm:text-base">New Conversation</span>
+          )}
         </div>
       </div>
 
@@ -1890,21 +1895,30 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
         {/* This inner div will be the actual container for messages and text selection */}
-        <div ref={chatContainerRef} className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
+        <div ref={chatContainerRef} className="flex flex-col items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
-            <div className="flex items-center justify-center h-[calc(100vh-12rem)] mobile-spacing">
-              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4">
-                <h3 className="text-xl sm:text-2xl font-semibold">
-                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
-                </h3>
-                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-                  {selectedTool 
-                    ? TOOLS[selectedTool].description
-                    : "Ask me anything related to your business."}
+            (isInitiating || isLoading) ? (
+              <div className="flex flex-col items-center justify-center h-[calc(100vh-12rem)] space-y-3">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground font-medium">
+                  Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
                 </p>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center h-[calc(100vh-12rem)] mobile-spacing">
+                <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4">
+                  <h3 className="text-xl sm:text-2xl font-semibold">
+                    {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+                  </h3>
+                  <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
+                    {selectedTool 
+                      ? TOOLS[selectedTool].description
+                      : "Ask me anything related to your business."}
+                  </p>
+                </div>
+              </div>
+            )
           ) : (
             currentChat.messages
               .filter((message) => {
@@ -1938,61 +1952,37 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 return (
                   <div
                     key={message.id || `message-${index}`}
-                    className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
+                    className={`w-full max-w-3xl flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                     ref={isLastMessage ? lastMessageRef : null}
                   >
-                    {/* Message bubble - updated with responsive padding */}
                     <div
                       className={`
-                        flex items-start gap-3 sm:gap-4 max-w-[92%] sm:max-w-[85%] 
-                        ${message.role === "user" ? "flex-row-reverse" : ""}
+                        ${message.role === "user" ? "bg-muted px-4 py-2 rounded-lg" : ""}
+                        text-sm sm:text-base leading-relaxed max-w-prose
                       `}
+                      data-message-id={message.id}
+                      data-chat-id={currentChat?.id}
+                      data-message-role={message.role}
                     >
-                      {message.role === "user" ? (
-                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
-                          <AvatarImage src="" alt="User" />
-                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
-                            {user?.email?.charAt(0).toUpperCase() || "U"}
-                          </div>
-                        </Avatar>
+                      {message.is_thinking ? (
+                        <LoadingMessage content={message.content} role={message.role} />
                       ) : (
-                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
-                          <AvatarImage src="" alt="Assistant" />
-                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
-                            J
-                          </div>
-                        </Avatar>
-                      )}
-
-                      <div
-                        className={`
-                          relative p-4 sm:p-5 rounded-lg text-base sm:text-lg space-y-2 leading-relaxed
-                          ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
-                        `}
-                        data-message-id={message.id}
-                        data-chat-id={currentChat?.id}
-                        data-message-role={message.role}
-                      >
-                        {message.is_thinking ? (
-                          <LoadingMessage content={message.content} role={message.role} />
-                        ) : (
-                          // Conditional rendering for different message types
-                          <>
-                            {isDocumentMessage(message) ? (
-                              <DocumentMessage message={message} />
-                            ) : isLandingPageMessage(message) ? (
-                              <LandingPageMessage content={message.content} />
+                        // Conditional rendering for different message types
+                        <>
+                          {isDocumentMessage(message) ? (
+                            <DocumentMessage message={message} />
+                          ) : isLandingPageMessage(message) ? (
+                            <LandingPageMessage content={message.content} />
+                          ) : (
+                            // Check for HTML content
+                            message.content.includes('<a href') ? (
+                              <HTMLContent content={message.content} />
                             ) : (
-                              // Check for HTML content
-                              message.content.includes('<a href') ? (
-                                <HTMLContent content={message.content} />
-                              ) : (
-                                <MarkdownMessage content={message.content} />
-                              )
-                            )}
-                          </>
-                        )}
-                      </div>
+                              <MarkdownMessage content={message.content} />
+                            )
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -2016,32 +2006,24 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
           {/* Loading state for AI response */}
           {isResponseLoading && !isWaitingForN8n && (
-            <div className="flex items-start gap-3 sm:gap-4">
-              <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
-                <AvatarImage src="" alt="Assistant" />
-                <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
-                  J
-                </div>
-              </Avatar>
-              <div className="bg-muted p-4 sm:p-5 rounded-lg">
-                <LoadingMessage role="assistant" />
-              </div>
+            <div className="w-full max-w-3xl flex justify-start">
+              <LoadingMessage role="assistant" />
             </div>
           )}
         </div>
       </ScrollArea>
 
       {/* Input area - made responsive for mobile devices */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-4 sm:p-5 pb-[calc(env(safe-area-inset-bottom)+8px)] z-40">
-        <form onSubmit={handleSubmit} className="flex flex-col space-y-2 mobile-input-wrapper">
-          <div className="relative">
+      <div className="fixed bottom-2 left-0 right-0 md:left-[280px] bg-background shadow-[0_-1px_3px_rgba(0,0,0,0.05)] pt-2 pb-2 sm:pt-3 sm:pb-3 pb-[env(safe-area-inset-bottom)] z-40 flex justify-center">
+        <form onSubmit={handleSubmit} className="w-full max-w-3xl flex flex-col space-y-2 mobile-input-wrapper">
+          <div className="relative w-full">
             <Textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="resize-none pr-14 py-4 max-h-32 min-h-[56px] text-base font-medium mobile-input touch-none rounded-lg border-2"
+              className="resize-none pr-14 py-3 max-h-28 min-h-[48px] text-sm font-medium mobile-input touch-none rounded-lg border"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
               style={{ fontSize: '16px', touchAction: 'manipulation' }} /* Prevent iOS zoom and improve touch responsiveness */
@@ -2053,7 +2035,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             <Button
               type="submit"
               size="icon"
-              className="absolute right-3 bottom-3 h-12 w-12 rounded-full touch-target shadow-lg"
+              className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full touch-target shadow-md"
               disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
             >
               <ArrowUp className="h-6 w-6" />

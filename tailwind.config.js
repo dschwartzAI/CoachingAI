@@ -75,6 +75,18 @@ module.exports = {
         "accordion-up": "accordion-up 0.2s ease-out",
         "spin-slow": "spin-slow 3s linear infinite",
       },
+      fontFamily: {
+        // Global sans-serif font stack
+        sans: [
+          "Inter",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "\"Segoe UI\"",
+          "Roboto",
+          "\"Helvetica Neue\"",
+          "sans-serif",
+        ],
+      },
     },
   },
   plugins: [

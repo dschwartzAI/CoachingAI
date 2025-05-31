@@ -285,7 +285,7 @@ export default function ChatLayout() {
         onShowProfile={() => setShowProfileModal(true)}
         profileComplete={profileComplete}
       />
-      <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
+      <div className="w-full md:ml-[280px] flex-1 overflow-hidden h-screen transition-all duration-300">
         <ChatArea 
           selectedTool={selectedTool}
           currentChat={currentChat}

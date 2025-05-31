@@ -200,7 +200,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       <MobileMenuButton />
       
       <div className={`
-        w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-50
+        w-[280px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-50
         transition-transform duration-300 ease-in-out
         md:translate-x-0 md:shadow-none
         ${isMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}
@@ -210,12 +210,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       onTouchEnd={handleTouchEnd}
       >
         {/* Header with logo */}
-        <div className="p-4 flex items-center justify-between border-b">
+        <div className="p-3 flex items-center justify-between border-b">
           <div className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            <span className="font-semibold">SovereignAI</span>
+            <MessageSquare className="h-4 w-4" />
+            <span className="font-semibold text-sm">SovereignAI</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <NotificationBell 
               chats={chats}
               setCurrentChat={setCurrentChat}
@@ -224,22 +224,22 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-12 w-12 md:hidden touch-target"
+              className="h-10 w-10 md:hidden touch-target"
               onClick={() => setIsMobileOpen(false)}
             >
-              <X className="h-6 w-6" />
+              <X className="h-5 w-5" />
             </Button>
           </div>
         </div>
         
         {/* Search Bar */}
-        <div className="p-4 border-b">
+        <div className="p-3 border-b">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search chats..."
-              className="pl-8 pr-3 py-2 w-full rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent h-8"
+              className="pl-7 pr-3 py-1.5 w-full rounded-md border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent h-7"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -248,37 +248,37 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
 
         <div className="flex-grow flex flex-col overflow-hidden">
           {/* Specialized Tools Section */}
-          <div className="p-4 border-b">
-            <div className="flex items-center justify-between mb-3">
+          <div className="p-3 border-b">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center">
-                <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
-                <h2 className="text-sm font-medium">Specialized Tools</h2>
+                <Wrench className="h-4 w-4 mr-1.5 text-muted-foreground" />
+                <h4 className="font-medium text-sm">Specialized Tools</h4>
               </div>
             </div>
-            <div className="space-y-1 ml-7">
-              <div className="flex items-center justify-between mb-1">
+            <div className="space-y-0.5 ml-5">
+              <div className="flex items-center justify-between mb-0.5">
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
-                  className="w-full justify-start h-11 text-sm touch-target"
+                  className="w-full justify-start h-9 text-sm touch-target"
                   onClick={() => handleNewChat(null)}
                 >
-                  <MessagesSquare className="h-4 w-4 mr-2" />
-                  JamesBot
-                  <Plus className="h-4 w-4 ml-auto" />
+                  <MessagesSquare className="h-3.5 w-3.5 mr-1.5" />
+                  <span className="text-sm">JamesBot</span>
+                  <Plus className="h-3.5 w-3.5 ml-auto" />
                 </Button>
               </div>
               {tools.map((tool) => {
                 const IconComponent = toolIcons[tool.id] || MessageSquare;
                 return (
-                  <div key={tool.id} className="flex items-center justify-between mb-1">
+                  <div key={tool.id} className="flex items-center justify-between mb-0.5">
                     <Button
                       variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                      className="w-full justify-start h-11 text-sm touch-target"
+                      className="w-full justify-start h-9 text-sm touch-target"
                       onClick={() => handleToolClick(tool.id)}
                     >
-                      <IconComponent className="h-4 w-4 mr-2" />
-                      {tool.name}
-                      <Plus className="h-4 w-4 ml-auto" />
+                      <IconComponent className="h-3.5 w-3.5 mr-1.5" />
+                      <span className="truncate text-sm">{tool.name}</span>
+                      <Plus className="h-3.5 w-3.5 ml-auto" />
                     </Button>
                   </div>
                 );
@@ -287,43 +287,43 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
           </div>
 
           {/* Chats/Past Conversations Section */}
-          <div className="p-4 flex flex-col overflow-hidden flex-1">
-            <div className="flex items-center justify-between mb-3">
+          <div className="p-3 flex flex-col overflow-hidden flex-1">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center">
-                <MessagesSquare className="h-5 w-5 mr-2 text-muted-foreground" />
-                <h2 className="text-sm font-medium">Chats</h2>
+                <MessagesSquare className="h-4 w-4 mr-1.5 text-muted-foreground" />
+                <h4 className="font-medium text-sm">Chat History</h4>
               </div>
             </div>
             
-            <ScrollArea className="flex-1 h-full pr-4 overflow-visible hover:overflow-auto">
+            <ScrollArea className="flex-1 h-full pr-3 overflow-visible hover:overflow-auto">
               {isLoading ? (
-                <div className="flex items-center justify-center py-4 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <div className="flex items-center justify-center py-3 text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
                   <span className="text-xs">Loading...</span>
                 </div>
               ) : visibleChats.length > 0 ? (
-                <div className="space-y-1 ml-7">
+                <div className="space-y-0.5 ml-5">
                   {visibleChats.map((chat) => (
-                    <div key={chat.id} className="flex items-center mb-1">
+                    <div key={chat.id} className="flex items-center mb-0.5">
                       <button 
-                        className="mr-1 p-2 rounded hover:bg-red-100 text-red-600 min-h-[44px] min-w-[44px] flex items-center justify-center touch-target" 
+                        className="mr-1 p-1.5 rounded hover:bg-red-100 text-red-600 min-h-[36px] min-w-[36px] flex items-center justify-center touch-target" 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteChat(chat.id);
                         }}
                       >
-                        <Trash2 className="h-5 w-5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                       <Button
                         variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                        className="w-full justify-start px-2 h-11 text-sm hover:bg-muted touch-target"
+                        className="w-full justify-start px-2 h-9 text-sm hover:bg-muted touch-target"
                         onClick={() => {
                           setCurrentChat(chat);
                           setSelectedTool(chat.tool_id || null);
                         }}
                       >
                         {getChatIcon(chat)}
-                        <span className="truncate">{chat.title}</span>
+                        <span className="truncate text-sm">{chat.title || "New Chat"}</span>
                       </Button>
                     </div>
                   ))}
@@ -331,7 +331,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   {hasMoreChats && (
                     <Button 
                       variant="ghost" 
-                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-2"
+                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-1"
                       onClick={() => setExpandedChats(!expandedChats)}
                     >
                       {expandedChats ? (
@@ -343,7 +343,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   )}
                 </div>
               ) : (
-                <div className="text-center p-4 text-muted-foreground ml-7">
+                <div className="text-center p-3 text-muted-foreground ml-5">
                   <p className="text-xs">No conversations yet</p>
                 </div>
               )}
@@ -352,17 +352,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
         </div>
 
         {/* User Profile - Styled like the image */}
-        <div className="p-4 border-t mt-auto">
+        <div className="p-3 border-t mt-auto">
           {user ? (
             <>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <Avatar className="h-8 w-8 border">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Avatar className="h-7 w-7 border">
                     <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
                     <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium truncate" title={user.email}>
+                    <span className="text-xs font-medium truncate" title={user.email}>
                       {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "User"}
                     </span>
                     <span className="text-xs text-muted-foreground truncate">
@@ -370,32 +370,32 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                     </span>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
-                  <LogOut className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={signOut} title="Log Out">
+                  <LogOut className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <div className="flex flex-col gap-1 mt-2">
+              <div className="flex flex-col gap-0.5 mt-2">
                 <Button
                   variant="ghost"
-                  className="w-full justify-start h-12 text-sm mb-1 touch-target"
+                  className="w-full justify-start h-10 text-xs mb-0.5 touch-target"
                   onClick={() => {
                     setIsSnippetsModalOpen(true);
                     setIsMobileOpen(false);
                   }}
                 >
-                  <Bookmark className="h-4 w-4 mr-2" />
+                  <Bookmark className="h-3.5 w-3.5 mr-1.5" />
                   My Snippets
                 </Button>
 
                 <Button
                   variant="ghost"
-                  className="w-full justify-start h-12 text-sm mb-1 touch-target"
+                  className="w-full justify-start h-10 text-xs mb-0.5 touch-target"
                   onClick={() => {
                     router.push('/profile');
                     setIsMobileOpen(false);
                   }}
                 >
-                  <Settings className="h-4 w-4 mr-2" />
+                  <Settings className="h-3.5 w-3.5 mr-1.5" />
                   Profile Settings
                 </Button>
                 
