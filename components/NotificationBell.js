@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Bell, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +11,12 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [processedChats, setProcessedChats] = useState(new Set());
+  const [isInitialized, setIsInitialized] = useState(false);
   const { user } = useAuth();
 
   // Load notifications and processed chats from localStorage on mount
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && !isInitialized) {
       const savedNotifications = localStorage.getItem(`notifications_${user.id}`);
       if (savedNotifications) {
         try {
@@ -46,12 +47,14 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
           console.error('Error parsing saved processed chats:', error);
         }
       }
+      
+      setIsInitialized(true);
     }
-  }, [user?.id]);
+  }, [user?.id, isInitialized]);
 
   // Save notifications to localStorage whenever they change
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && isInitialized) {
       if (notifications.length > 0) {
         localStorage.setItem(`notifications_${user.id}`, JSON.stringify(notifications));
       } else {
@@ -59,42 +62,47 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
         localStorage.removeItem(`notifications_${user.id}`);
       }
     }
-  }, [notifications, user?.id]);
+  }, [notifications, user?.id, isInitialized]);
 
   // Save processed chats to localStorage whenever they change
   useEffect(() => {
-    if (user?.id && processedChats.size > 0) {
+    if (user?.id && processedChats.size > 0 && isInitialized) {
       localStorage.setItem(`processedChats_${user.id}`, JSON.stringify([...processedChats]));
     }
-  }, [processedChats, user?.id]);
+  }, [processedChats, user?.id, isInitialized]);
 
-  // Check for new document completions
+  // Memoized function to check for document completion
+  const hasDocumentCompletion = useCallback((chat) => {
+    const hasDocumentMessage = chat.messages?.some(message => 
+      message.role === 'assistant' && 
+      (message.content?.includes('Document generated successfully') ||
+       message.content?.includes('✅ Document generated successfully!')) &&
+      (message.metadata?.documentLinks?.googleDocLink || 
+       message.content?.includes('https://docs.google.com/document/'))
+    );
+    
+    // Also check thread metadata for document completion
+    const hasDocumentInMetadata = chat.metadata?.documentGenerated && 
+                                 chat.metadata?.documentLinks?.googleDocLink;
+    
+    return hasDocumentMessage || hasDocumentInMetadata;
+  }, []);
+
+  // Check for new document completions - only run when chats change and we're initialized
   useEffect(() => {
-    if (!chats || !user) return;
+    if (!chats || !user || !isInitialized) return;
 
     const newNotifications = [];
-    const newProcessedChats = new Set(processedChats);
+    const chatsToProcess = new Set();
     
     chats.forEach(chat => {
       // Skip if we've already processed this chat for notifications
       if (processedChats.has(chat.id)) return;
 
       // Check if this chat has a completed document
-      const hasDocumentMessage = chat.messages?.some(message => 
-        message.role === 'assistant' && 
-        (message.content?.includes('Document generated successfully') ||
-         message.content?.includes('✅ Document generated successfully!')) &&
-        (message.metadata?.documentLinks?.googleDocLink || 
-         message.content?.includes('https://docs.google.com/document/'))
-      );
-      
-      // Also check thread metadata for document completion
-      const hasDocumentInMetadata = chat.metadata?.documentGenerated && 
-                                   chat.metadata?.documentLinks?.googleDocLink;
-      
-      if (hasDocumentMessage || hasDocumentInMetadata) {
-        // Mark this chat as processed
-        newProcessedChats.add(chat.id);
+      if (hasDocumentCompletion(chat)) {
+        // Mark this chat as needing processing
+        chatsToProcess.add(chat.id);
         
         // Create notification
         newNotifications.push({
@@ -108,16 +116,22 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
       }
     });
 
+    // Only update state if we have new notifications
     if (newNotifications.length > 0) {
+      console.log(`[NotificationBell] Adding ${newNotifications.length} new notifications`);
       setNotifications(prev => [...newNotifications, ...prev]);
+      
+      // Update processed chats with new ones
+      setProcessedChats(prev => {
+        const updated = new Set(prev);
+        chatsToProcess.forEach(chatId => updated.add(chatId));
+        return updated;
+      });
     }
-
-    if (newProcessedChats.size > processedChats.size) {
-      setProcessedChats(newProcessedChats);
-    }
-  }, [chats, user, processedChats]);
+  }, [chats, user, isInitialized, hasDocumentCompletion]); // Removed processedChats from dependencies
 
   const removeNotification = (notificationId) => {
+    console.log(`[NotificationBell] Removing notification: ${notificationId}`);
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
   };
 
@@ -133,6 +147,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
   };
 
   const clearAllNotifications = () => {
+    console.log('[NotificationBell] Clearing all notifications');
     setNotifications([]);
     setShowNotifications(false);
     if (user?.id) {
