@@ -58,10 +58,10 @@ function PostHogPageView() {
     console.log('[PostHog PageView] Effect triggered:', { 
       pathname: !!pathname, 
       hasPosthog: !!posthog,
-      posthogReady: posthog?._loaded
+      posthogHasCapture: typeof posthog?.capture === 'function'
     })
     
-    if (pathname && posthog && posthog._loaded) {
+    if (pathname && posthog && typeof posthog.capture === 'function') {
       let url = window.origin + pathname
       if (searchParams.toString()) {
         url = url + "?" + searchParams.toString()
@@ -78,7 +78,7 @@ function PostHogPageView() {
       console.warn('[PostHog PageView] Not sending pageview:', { 
         pathname: !!pathname, 
         hasPosthog: !!posthog,
-        posthogLoaded: posthog?._loaded
+        posthogHasCapture: typeof posthog?.capture === 'function'
       })
     }
   }, [pathname, searchParams, posthog])
