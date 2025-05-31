@@ -32,7 +32,11 @@ export function PostHogProvider({ children }) {
         console.log('[PostHog] Sending initial pageview after load:', currentUrl)
         posthog.capture('$pageview', {
           '$current_url': currentUrl,
-          '$pathname': window.location.pathname
+          '$host': window.location.hostname,
+          '$pathname': window.location.pathname,
+          '$search': window.location.search,
+          '$title': document.title,
+          '$referrer': document.referrer || undefined
         })
       }
     })
@@ -68,10 +72,14 @@ function PostHogPageView() {
       }
 
       console.log('[PostHog PageView] Sending pageview for:', url)
-      // Use posthog.capture directly instead of the track wrapper
+      // Use posthog.capture directly with all required properties for Web Analytics
       posthog.capture('$pageview', { 
         '$current_url': url,
-        '$pathname': pathname
+        '$host': window.location.hostname,
+        '$pathname': pathname,
+        '$search': searchParams.toString() ? '?' + searchParams.toString() : '',
+        '$title': document.title,
+        '$referrer': document.referrer || undefined
       })
       console.log('[PostHog PageView] Pageview sent successfully')
     } else {
