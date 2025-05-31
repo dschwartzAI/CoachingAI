@@ -29,7 +29,8 @@ import {
   User,
   CheckCircle2,
   AlertCircle,
-  Bell
+  Bell,
+  Bookmark
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -37,6 +38,7 @@ import { createNewThread } from '@/lib/utils/thread';
 import { deleteThread } from '@/lib/utils/supabase';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import SnippetsModal from './SnippetsModal';
 
 // Tool icons mapping
 const toolIcons = {
@@ -50,6 +52,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   const [expandedChats, setExpandedChats] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const INITIAL_CHAT_COUNT = 6;
+  const [isSnippetsModalOpen, setIsSnippetsModalOpen] = useState(false);
 
   const tools = Object.entries(TOOLS).map(([id, tool]) => ({
     id,
@@ -315,19 +318,26 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex flex-col gap-1 mt-2">
                 <Button
                   variant="ghost"
-                  className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                  className="w-full justify-start h-9 text-sm mb-1"
                   onClick={() => {
-                    onShowProfile();
+                    setIsSnippetsModalOpen(true);
                     setIsMobileOpen(false);
                   }}
                 >
-                  <User className="h-4 w-4 mr-2" />
+                  <Bookmark className="h-4 w-4 mr-2" />
+                  My Snippets
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start h-9 text-sm mb-1"
+                  onClick={() => {
+                    router.push('/profile');
+                    setIsMobileOpen(false);
+                  }}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
                   Profile Settings
-                  {profileComplete ? (
-                    <CheckCircle2 className="h-3 w-3 ml-auto text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
-                  )}
                 </Button>
                 
                 {!profileComplete && (
@@ -355,6 +365,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
           onClick={() => setIsMobileOpen(false)}
         />
       )}
+
+      {/* Snippets Modal */}
+      <SnippetsModal 
+        isOpen={isSnippetsModalOpen} 
+        onClose={() => setIsSnippetsModalOpen(false)} 
+      />
     </>
   );
 } 

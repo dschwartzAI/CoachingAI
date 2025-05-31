@@ -15,6 +15,10 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
+import { useTextSelection } from '@/lib/hooks/use-text-selection';
+import TextSelectionMenu from '@/components/TextSelectionMenu';
+import SnippetModal from '@/components/SnippetModal';
+import { saveSnippet } from '@/lib/utils/snippets';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -440,12 +444,25 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
-  const scrollAreaRef = useRef(null);
+  const scrollAreaRef = useRef(null); // This ref is for the ScrollArea component itself, for scrollToBottom
+  const chatContainerRef = useRef(null); // This is the NEW ref for the text selection container
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
+  const {
+    selectedText,
+    selectionContext,
+    clearSelection,
+    // containerRef, // Removed from here
+    isTextSelected,
+    selectionPosition
+  } = useTextSelection(chatContainerRef); // Pass chatContainerRef to the hook
+  const [isSnippetModalOpen, setIsSnippetModalOpen] = useState(false);
+  const [editingSnippet, setEditingSnippet] = useState(null);
+  const [currentSourceContext, setCurrentSourceContext] = useState(null);
+  const { toast } = useToast();
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -1802,6 +1819,56 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }, 100);
   };
 
+  // Snippet Handling Functions
+  const handleSaveSnippet = () => {
+    if (selectedText && selectionContext) {
+      console.log("[ChatArea] Opening snippet modal for new snippet. Context:", selectionContext);
+      setCurrentSourceContext(selectionContext);
+      setEditingSnippet(null);
+      setIsSnippetModalOpen(true);
+    } else {
+      console.warn("[ChatArea] Cannot save snippet: No text selected or context missing.");
+      toast({ title: "Cannot Save Snippet", description: "Please select some text within a message first.", variant: "destructive" });
+    }
+  };
+
+  const handleSnippetSave = async (snippetData) => {
+    try {
+      const snippetWithUser = {
+        ...snippetData,
+        userId: user?.id,
+      };
+      await saveSnippet(snippetWithUser);
+      toast({ title: "Snippet Saved", description: "Your snippet has been saved successfully." });
+      setIsSnippetModalOpen(false);
+      clearSelection();
+      setEditingSnippet(null);
+      setCurrentSourceContext(null);
+    } catch (error) {
+      console.error("[ChatArea] Failed to save snippet:", error);
+      toast({ title: "Error Saving Snippet", description: error.message || "Could not save your snippet.", variant: "destructive" });
+    }
+  };
+
+  const handleSnippetModalClose = () => {
+    setIsSnippetModalOpen(false);
+    setEditingSnippet(null);
+    setCurrentSourceContext(null);
+  };
+
+  const handleCopyText = () => {
+    if (selectedText) {
+      navigator.clipboard.writeText(selectedText)
+        .then(() => toast({ title: "Copied to Clipboard", description: "Selected text has been copied." }))
+        .catch(err => {
+          console.error("[ChatArea] Failed to copy text:", err);
+          toast({ title: "Copy Failed", description: "Could not copy text to clipboard.", variant: "destructive" });
+        });
+      clearSelection();
+    }
+  };
+  // End of Snippet Handling Functions
+
   return (
     <div className="flex flex-col h-full max-w-full">
       {/* Chat header - added responsive padding */}
@@ -1818,11 +1885,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       </div>
 
       {/* Messages container - updated with responsive spacing */}
-      <ScrollArea 
-        ref={scrollAreaRef} 
+      <ScrollArea
+        ref={scrollAreaRef} // Keep this for general scroll area controls
         className="flex-1 overflow-y-auto px-2 sm:px-4"
       >
-        <div className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
+        {/* This inner div will be the actual container for messages and text selection */}
+        <div ref={chatContainerRef} className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             <div className="flex items-center justify-center h-[calc(100vh-10rem)]">
@@ -1901,6 +1969,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                           relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
                           ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
                         `}
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
                       >
                         {message.is_thinking ? (
                           <LoadingMessage content={message.content} role={message.role} />
@@ -1986,6 +2057,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           </div>
         </form>
       </div>
+
+      {/* Text Selection Menu */}
+      {isTextSelected && selectionPosition && (
+        <TextSelectionMenu
+          position={selectionPosition}
+          onSaveSnippet={handleSaveSnippet} // This should point to handleSaveSnippet to open the modal
+          onCopy={handleCopyText}
+          onClose={clearSelection} // Close menu and clear selection
+          selectedText={selectedText}
+        />
+      )}
+
+      {/* Snippet Modal */}
+      {isSnippetModalOpen && (
+        <SnippetModal
+          isOpen={isSnippetModalOpen}
+          onClose={handleSnippetModalClose}
+          onSave={handleSnippetSave} // This should point to handleSnippetSave
+          selectedText={editingSnippet ? null : selectedText}
+          existingSnippet={editingSnippet}
+          sourceContext={currentSourceContext}
+        />
+      )}
     </div>
   );
 }
