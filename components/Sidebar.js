@@ -296,6 +296,14 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start px-2 h-8 text-sm mt-2 hover:bg-muted"
+                onClick={() => router.push('/snippets')}
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Snippets
+              </Button>
             </>
           ) : (
             <Button className="w-full" onClick={() => router.push('/login')}>
