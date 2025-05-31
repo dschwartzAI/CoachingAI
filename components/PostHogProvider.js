@@ -13,7 +13,7 @@ export function PostHogProvider({ children }) {
       capture_pageview: false, // Disable automatic pageview capture, as we capture manually
       // Enable debug mode in development
       loaded: (posthog) => {
-        if (process.env.NODE_ENV === 'development') posthog.debug()
+        posthog.debug() // Enable debug mode unconditionally for now
       }
     })
   }, [])
