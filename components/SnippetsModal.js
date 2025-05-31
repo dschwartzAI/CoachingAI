@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { 
   Search,
@@ -20,7 +21,9 @@ import {
   FileText,
   Calendar,
   Filter,
-  X
+  X,
+  Plus,
+  Edit,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import SnippetModal from './SnippetModal';
@@ -177,28 +180,24 @@ export default function SnippetsModal({ isOpen, onClose }) {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[85vh] w-full flex flex-col">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Tag className="h-5 w-5" />
-              My Snippets
-              {filteredSnippets.length > 0 && (
-                <span className="text-sm text-muted-foreground">
-                  ({filteredSnippets.length} {filteredSnippets.length === 1 ? 'snippet' : 'snippets'})
-                </span>
-              )}
-            </DialogTitle>
+            <DialogTitle className="text-xl sm:text-2xl font-semibold">My Snippets</DialogTitle>
+            <DialogDescription>
+              <span className="text-base sm:text-lg">Manage your saved text snippets. Click to copy or edit.</span>
+            </DialogDescription>
           </DialogHeader>
           
           {/* Search and Filter Controls */}
           <div className="flex flex-col sm:flex-row gap-3 py-4 border-b">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search snippets by title, content, note, or tag..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-10 h-12 text-base touch-target"
+                style={{ fontSize: '16px' }}
               />
             </div>
             
@@ -228,7 +227,7 @@ export default function SnippetsModal({ isOpen, onClose }) {
           </div>
 
           {/* Snippets List */}
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 min-h-0 overflow-y-auto pr-3 touch-pan-y">
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="text-center">
@@ -257,84 +256,44 @@ export default function SnippetsModal({ isOpen, onClose }) {
                 </div>
               </div>
             ) : (
-              <div className="space-y-4 pb-4">
+              <div className="space-y-3 pb-3">
                 {filteredSnippets.map((snippet) => (
-                  <div key={snippet.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold text-lg truncate">{snippet.title}</h3>
-                          {snippet.tag && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-primary/10 text-primary">
-                              {snippet.tag}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="bg-muted rounded-md p-3 mb-3">
-                          <p className="text-sm whitespace-pre-wrap break-words">
-                            {snippet.content.length > 200 
-                              ? `${snippet.content.substring(0, 200)}...` 
-                              : snippet.content
-                            }
-                          </p>
-                        </div>
-                        
-                        {snippet.note && (
-                          <div className="mb-3">
-                            <p className="text-sm text-muted-foreground">
-                              <strong>Note:</strong> {snippet.note}
-                            </p>
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            {getSourceIcon(snippet.sourceType)}
-                            <span className="capitalize">{snippet.sourceType}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            <span>
-                              {(() => {
-                                const rawDate = snippet.createdAt || snippet.created_at || snippet.createdAt?.toString() || snippet.created_at?.toString();
-                                if (!rawDate) return 'Unknown';
-                                const parsed = new Date(rawDate);
-                                if (isNaN(parsed.getTime())) return 'Unknown';
-                                return format(parsed, 'MMM d, yyyy');
-                              })()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-1">
+                  <div key={snippet.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors touch-target">
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-medium text-base truncate flex-1 mr-2">{snippet.title}</h3>
+                      <div className="flex gap-1 flex-shrink-0">
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-10 w-10 p-0 touch-target"
                           onClick={() => handleCopy(snippet.content)}
-                          className="h-8 w-8 p-0"
+                          title="Copy content"
                         >
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-5 w-5" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-10 w-10 p-0 touch-target"
                           onClick={() => handleEdit(snippet)}
-                          className="h-8 w-8 p-0"
+                          title="Edit snippet"
                         >
-                          <Edit2 className="h-4 w-4" />
+                          <Edit className="h-5 w-5" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-10 w-10 p-0 text-red-600 hover:text-red-700 touch-target"
                           onClick={() => handleDelete(snippet.id)}
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          title="Delete snippet"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-5 w-5" />
                         </Button>
                       </div>
                     </div>
+                    <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                      {snippet.content}
+                    </p>
                   </div>
                 ))}
               </div>

@@ -53,6 +53,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const INITIAL_CHAT_COUNT = 6;
   const [isSnippetsModalOpen, setIsSnippetsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Touch gesture states for swipe to close
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
 
   const tools = Object.entries(TOOLS).map(([id, tool]) => ({
     id,
@@ -76,6 +81,13 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     setIsMobileOpen(false);
   }, [currentChat]);
 
+  useEffect(() => {
+    // Lock body scroll when sidebar is open on mobile
+    if (typeof window !== 'undefined') {
+      document.body.style.overflow = isMobileOpen ? 'hidden' : '';
+    }
+  }, [isMobileOpen]);
+
   const handleNewChat = (toolId = null) => {
     const newChat = createNewThread(toolId);
     console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
@@ -97,7 +109,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   };
 
   // Show all non-temporary chats regardless of the selected tool
-  const filteredChats = chats.filter(chat => !chat.isTemporary);
+  // Apply search query to chat titles
+  const filteredChats = chats
+    .filter(chat => !chat.isTemporary)
+    .filter(chat => chat.title.toLowerCase().includes(searchQuery.toLowerCase()));
   
   // Only show a limited number of chats unless expanded
   const visibleChats = expandedChats ? filteredChats : filteredChats.slice(0, INITIAL_CHAT_COUNT);
@@ -146,29 +161,59 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       <Button 
         variant="outline" 
         size="icon" 
-        className="h-10 w-10 rounded-full bg-background shadow-lg border"
+        className="h-12 w-12 rounded-full bg-background shadow-lg border touch-target"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
       >
-        {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {isMobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </Button>
     </div>
   );
+
+  // Handle swipe gestures for closing sidebar
+  const handleTouchStart = (e) => {
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > 50;
+    const isRightSwipe = distance < -50;
+    
+    // Close sidebar on left swipe (swipe to the left)
+    if (isLeftSwipe && isMobileOpen) {
+      setIsMobileOpen(false);
+    }
+    
+    // Reset touch states
+    setTouchStart(0);
+    setTouchEnd(0);
+  };
 
   return (
     <>
       <MobileMenuButton />
       
       <div className={`
-        w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-40
+        w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-50
         transition-transform duration-300 ease-in-out
         md:translate-x-0 md:shadow-none
         ${isMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}
-      `}>
+      `}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      >
         {/* Header with logo */}
         <div className="p-4 flex items-center justify-between border-b">
           <div className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            <span className="font-semibold">Sovereign AI</span>
+            <span className="font-semibold">SovereignAI</span>
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell 
@@ -179,14 +224,28 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
             <Button 
               variant="ghost" 
               size="icon" 
-              className="md:hidden"
+              className="h-12 w-12 md:hidden touch-target"
               onClick={() => setIsMobileOpen(false)}
             >
-              <X className="h-5 w-5" />
+              <X className="h-6 w-6" />
             </Button>
           </div>
         </div>
         
+        {/* Search Bar */}
+        <div className="p-4 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search chats..."
+              className="pl-8 pr-3 py-2 w-full rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent h-8"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
         <div className="flex-grow flex flex-col overflow-hidden">
           {/* Specialized Tools Section */}
           <div className="p-4 border-b">
@@ -200,7 +259,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex items-center justify-between mb-1">
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
-                  className="w-full justify-start h-8 text-sm"
+                  className="w-full justify-start h-11 text-sm touch-target"
                   onClick={() => handleNewChat(null)}
                 >
                   <MessagesSquare className="h-4 w-4 mr-2" />
@@ -214,7 +273,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   <div key={tool.id} className="flex items-center justify-between mb-1">
                     <Button
                       variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                      className="w-full justify-start h-8 text-sm"
+                      className="w-full justify-start h-11 text-sm touch-target"
                       onClick={() => handleToolClick(tool.id)}
                     >
                       <IconComponent className="h-4 w-4 mr-2" />
@@ -247,17 +306,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   {visibleChats.map((chat) => (
                     <div key={chat.id} className="flex items-center mb-1">
                       <button 
-                        className="mr-1 p-1 rounded hover:bg-red-100 text-red-600" 
+                        className="mr-1 p-2 rounded hover:bg-red-100 text-red-600 min-h-[44px] min-w-[44px] flex items-center justify-center touch-target" 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteChat(chat.id);
                         }}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-5 w-5" />
                       </button>
                       <Button
                         variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                        className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                        className="w-full justify-start px-2 h-11 text-sm hover:bg-muted touch-target"
                         onClick={() => {
                           setCurrentChat(chat);
                           setSelectedTool(chat.tool_id || null);
@@ -318,7 +377,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex flex-col gap-1 mt-2">
                 <Button
                   variant="ghost"
-                  className="w-full justify-start h-9 text-sm mb-1"
+                  className="w-full justify-start h-12 text-sm mb-1 touch-target"
                   onClick={() => {
                     setIsSnippetsModalOpen(true);
                     setIsMobileOpen(false);
@@ -330,7 +389,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
 
                 <Button
                   variant="ghost"
-                  className="w-full justify-start h-9 text-sm mb-1"
+                  className="w-full justify-start h-12 text-sm mb-1 touch-target"
                   onClick={() => {
                     router.push('/profile');
                     setIsMobileOpen(false);

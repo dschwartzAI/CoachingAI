@@ -8,7 +8,7 @@ import { PostHogProvider } from "@/components/PostHogProvider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Sovereign AI",
+  title: "SovereignAI",
   description: "The AI platform for your coaching business"
 };
 

@@ -1887,18 +1887,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       {/* Messages container - updated with responsive spacing */}
       <ScrollArea
         ref={scrollAreaRef} // Keep this for general scroll area controls
-        className="flex-1 overflow-y-auto px-2 sm:px-4"
+        className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
         {/* This inner div will be the actual container for messages and text selection */}
-        <div ref={chatContainerRef} className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
+        <div ref={chatContainerRef} className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
-            <div className="flex items-center justify-center h-[calc(100vh-10rem)]">
-              <div className="text-center space-y-3 sm:space-y-6 max-w-md px-4">
-                <h3 className="text-lg sm:text-xl font-semibold">
+            <div className="flex items-center justify-center h-[calc(100vh-12rem)] mobile-spacing">
+              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4">
+                <h3 className="text-xl sm:text-2xl font-semibold">
                   {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
                 </h3>
-                <p className="text-sm sm:text-base text-muted-foreground">
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
                   {selectedTool 
                     ? TOOLS[selectedTool].description
                     : "Ask me anything related to your business."}
@@ -1944,19 +1944,19 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                     {/* Message bubble - updated with responsive padding */}
                     <div
                       className={`
-                        flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
+                        flex items-start gap-3 sm:gap-4 max-w-[92%] sm:max-w-[85%] 
                         ${message.role === "user" ? "flex-row-reverse" : ""}
                       `}
                     >
                       {message.role === "user" ? (
-                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
                           <AvatarImage src="" alt="User" />
                           <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
                             {user?.email?.charAt(0).toUpperCase() || "U"}
                           </div>
                         </Avatar>
                       ) : (
-                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
+                        <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
                           <AvatarImage src="" alt="Assistant" />
                           <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
                             J
@@ -1966,7 +1966,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
                       <div
                         className={`
-                          relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
+                          relative p-4 sm:p-5 rounded-lg text-base sm:text-lg space-y-2 leading-relaxed
                           ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
                         `}
                         data-message-id={message.id}
@@ -2016,14 +2016,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
           {/* Loading state for AI response */}
           {isResponseLoading && !isWaitingForN8n && (
-            <div className="flex items-start gap-3">
-              <Avatar className="h-9 w-9 mt-0.5">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <Avatar className="h-9 w-9 sm:h-10 sm:w-10 mt-0.5 flex-shrink-0">
                 <AvatarImage src="" alt="Assistant" />
                 <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
                   J
                 </div>
               </Avatar>
-              <div className="bg-muted p-4 rounded-lg">
+              <div className="bg-muted p-4 sm:p-5 rounded-lg">
                 <LoadingMessage role="assistant" />
               </div>
             </div>
@@ -2032,7 +2032,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       </ScrollArea>
 
       {/* Input area - made responsive for mobile devices */}
-      <div className="absolute bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-3 sm:p-4">
+      <div className="fixed bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-4 sm:p-5 pb-[calc(env(safe-area-inset-bottom)+8px)] z-40">
         <form onSubmit={handleSubmit} className="flex flex-col space-y-2 mobile-input-wrapper">
           <div className="relative">
             <Textarea
@@ -2041,18 +2041,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-base font-medium mobile-input"
+              className="resize-none pr-14 py-4 max-h-32 min-h-[56px] text-base font-medium mobile-input touch-none rounded-lg border-2"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
-              style={{ fontSize: '16px' }} /* Prevent iOS zoom by ensuring min 16px font */
+              style={{ fontSize: '16px', touchAction: 'manipulation' }} /* Prevent iOS zoom and improve touch responsiveness */
+              inputMode="text"
+              autoComplete="off"
+              autoCorrect="on"
+              spellCheck="true"
             />
             <Button
               type="submit"
               size="icon"
-              className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
+              className="absolute right-3 bottom-3 h-12 w-12 rounded-full touch-target shadow-lg"
               disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="h-6 w-6" />
             </Button>
           </div>
         </form>
