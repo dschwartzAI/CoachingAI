@@ -15,7 +15,6 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
-import useChatSSE from "@/hooks/use-chat-sse";
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -86,7 +85,7 @@ function isDocumentMessage(message) {
   
   const result = hasDocumentContent || hasDocumentMetadata;
   
-  if (process.env.NODE_ENV !== "production") console.log('[isDocumentMessage] Checking message:', {
+  console.log('[isDocumentMessage] Checking message:', {
     messageId: message.id,
     hasDocumentContent,
     hasDocumentMetadata,
@@ -208,7 +207,7 @@ function HTMLContent({ content }) {
         </div>
       );
     } catch (error) {
-      if (process.env.NODE_ENV !== "production") console.error('Error processing HTML content:', error);
+      console.error('Error processing HTML content:', error);
       // Fallback to simply removing HTML tags
       return <span>{cleanContent(content).replace(/<[^>]*>/g, '')}</span>;
     }
@@ -321,7 +320,7 @@ function LandingPageMessage({ content }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch (err) {
-        if (process.env.NODE_ENV !== "production") console.error('Failed to copy:', err);
+        console.error('Failed to copy:', err);
       }
     }
   };
@@ -439,7 +438,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
-  const { eventSourceRef, closeConnection } = useChatSSE();
+  const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const prevChatIdRef = useRef();
@@ -448,16 +447,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
 
-  // Clean up SSE connection on unmount
-  useEffect(() => {
-    return () => {
-      closeConnection();
-    };
-  }, []);
-
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
+    console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
   }, [isWaitingForN8n]);
 
   // Reset state when chat or tool changes (Refactored Logic)
@@ -471,16 +463,17 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     const hasToolSwitched = currentSelectedTool !== previousSelectedTool;
     const hasContextSwitched = hasChatSwitched || hasToolSwitched;
 
-    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
-    if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
+    console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
+    console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
 
     // Only reset state and close SSE if the actual chat or tool context has changed
     if (hasContextSwitched) {
-      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
+      console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
+      setInitiationAttemptedForContext(false); // <<< ADDED THIS RESET HERE
       
       // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
-        if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
+        console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
         // Initialize state from metadata if available
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
@@ -489,7 +482,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Check document generation state
         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
-          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
+          console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
           setIsWaitingForN8n(true);
           
           // If document generation is in progress, check if we should reconnect to the stream
@@ -501,25 +494,25 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             
             if (elapsedMs < MAX_GENERATION_TIME) {
               // Document generation started recently, reconnect to the stream
-              if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation in progress (started ${Math.round(elapsedMs/1000)}s ago), reconnecting to stream...`);
+              console.log(`[ChatArea Context Change Effect] Document generation in progress (started ${Math.round(elapsedMs/1000)}s ago), reconnecting to stream...`);
               
               // Reconnect to the stream if we have the necessary data
               if (currentChat.metadata.collectedAnswers) {
                 try {
                   const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
                   connectToN8nResultStream(currentChat.id, encodedAnswers);
-                  if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Reconnected to N8n stream with thread ID: ${currentChat.id}`);
+                  console.log(`[ChatArea Context Change Effect] Reconnected to N8n stream with thread ID: ${currentChat.id}`);
                 } catch (err) {
-                  if (process.env.NODE_ENV !== "production") console.error(`[ChatArea Context Change Effect] Error reconnecting to stream:`, err);
+                  console.error(`[ChatArea Context Change Effect] Error reconnecting to stream:`, err);
                   setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
                 }
               } else {
-                if (process.env.NODE_ENV !== "production") console.warn(`[ChatArea Context Change Effect] Cannot reconnect to stream: missing collectedAnswers`);
+                console.warn(`[ChatArea Context Change Effect] Cannot reconnect to stream: missing collectedAnswers`);
                 setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
               }
             } else {
               // Document generation started a while ago, assume it's still in progress but don't reconnect
-              if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation started ${Math.round(elapsedMs/1000)}s ago, showing loading state without reconnecting`);
+              console.log(`[ChatArea Context Change Effect] Document generation started ${Math.round(elapsedMs/1000)}s ago, showing loading state without reconnecting`);
               setIsWaitingForN8n(true); // Just set the loading state
             }
           } else {
@@ -528,13 +521,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           }
         } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
           // Document generation is complete or not in progress
-          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Document generation complete or not in progress, clearing loading state`);
+          console.log(`[ChatArea Context Change Effect] Document generation complete or not in progress, clearing loading state`);
           setIsWaitingForN8n(false);
         } else {
           // Check if there are already document messages in the chat
           const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
           if (hasDocumentMessages) {
-            if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
+            console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
             setIsWaitingForN8n(false);
           } else {
             setIsWaitingForN8n(false);
@@ -542,7 +535,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
         
         // If we have metadata, this thread was already initiated in the past
-        setInitiationAttemptedForContext(true);
+        // setInitiationAttemptedForContext(true); // This line is now effectively superseded by the reset above if context truly switched
       } else {
         // Reset to default state if no metadata
         setCollectedAnswers({});
@@ -550,21 +543,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
         setCurrentQuestionKey(questionsArray[0]?.key);
         setIsWaitingForN8n(false);
-        setInitiationAttemptedForContext(false);
+        // setInitiationAttemptedForContext(false); // Already set above if hasContextSwitched
       }
 
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
-          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
-          closeConnection();
+          console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
+          eventSourceRef.current.close(); // Close any previous connection
+          eventSourceRef.current = null;
       }
     } else {
       // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
       // Re-apply state from metadata if available to ensure consistency
-      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
+      console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
       if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
          // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
-         if (process.env.NODE_ENV !== "production") console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
+         console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
          setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0].key));
@@ -606,7 +600,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Effect to initiate chat for tool-based chats
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") console.log(
+    console.log(
         `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
         `MsgCount=${currentChat?.messages?.length}, Attempted=${initiationAttemptedForContext}, ` +
         `QuestionsAnswered=${questionsAnswered}, ` +
@@ -623,12 +617,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // Skip initiation if we have metadata with questions already answered
         !(currentChat?.metadata?.questionsAnswered > 0)
        ) {
-      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
+      console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
       setInitiationAttemptedForContext(true); 
       setIsInitiating(true);
       const chatIdToUse = currentChat?.id || Date.now().toString() + "-temp";
       if (!currentChat) {
-          if (process.env.NODE_ENV !== "production") console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
+          console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
       }
       initiateToolChat(chatIdToUse, selectedTool); 
     }
@@ -644,7 +638,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Function to call the API for the first message
   const initiateToolChat = async (chatIdToInitiate, tool) => {
-      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
+      console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
       setIsLoading(true);
       // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
       
@@ -657,7 +651,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         collectedAnswers: {}, 
         currentQuestionKey: null 
       };
-      if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
+      console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
 
       try {
           const response = await fetch('/api/chat', {
@@ -666,13 +660,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               body: JSON.stringify(requestBody),
           });
 
-          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
+          console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
           if (!response.ok) {
               const errorText = await response.text(); 
               throw new Error(`API failed (${response.status}): ${errorText}`);
           }
           const data = await response.json();
-          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
+          console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
           
           const assistantMessage = { 
               role: "assistant", 
@@ -705,9 +699,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               }
           };
           
-          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Constructed updatedChat (with fixes):", JSON.stringify(updatedChat, null, 2));
+          console.log("[ChatArea Initiate Func] Constructed updatedChat object:", JSON.stringify(updatedChat, null, 2));
 
-          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
+          console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
           setChats(prev => {
               const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
               if (chatIndex > -1) {
@@ -715,15 +709,16 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                    newList[chatIndex] = updatedChat;
                    return newList;
               } else {
-                  if (process.env.NODE_ENV !== "production") console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
+                  console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
                   return [updatedChat, ...prev];
               }
           });
           setCurrentChat(updatedChat);
-          if (process.env.NODE_ENV !== "production") console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
+          console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${updatedChat.messages[0]?.content?.substring(0, 50)}..."`);
+          console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       } catch (error) {
-          if (process.env.NODE_ENV !== "production") console.error('[ChatArea Initiate Func] Error initiating chat:', error);
+          console.error('[ChatArea Initiate Func] Error initiating chat:', error);
           const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
           const errorChat = { id: chatIdToInitiate, title: "Initiation Error", messages: [errorAssistantMessage] };
           setChats(prev => { 
@@ -736,7 +731,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            });
            setCurrentChat(errorChat);
       } finally {
-          if (process.env.NODE_ENV !== "production") console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
+          console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
           setIsLoading(false);
           setIsInitiating(false); 
           textareaRef.current?.focus();
@@ -749,18 +744,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
     // Add a check here for currentChat right at the start
     if (!currentChat) {
-        if (process.env.NODE_ENV !== "production") console.error("handleSubmit aborted: currentChat is null or undefined.");
+        console.error("handleSubmit aborted: currentChat is null or undefined.");
         alert("Cannot send message: No active chat selected."); // User feedback
         return;
     }
     
     // Prevent submission if loading
     if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
+      console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
       return;
     }
 
-    if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
+    console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
       currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
       chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
       inputLength: trimmedInput.length
@@ -779,7 +774,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     const updatedMessages = [...chatToUpdate.messages, newMessage];
     const optimisticChat = { ...chatToUpdate, messages: updatedMessages };
 
-    if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
+    console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
       optimisticChatId: optimisticChat.id,
       optimisticMessageCount: optimisticChat.messages.length
     });
@@ -788,14 +783,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setCurrentChat(optimisticChat);
     setChats(prev => {
       const updated = prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat);
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
+      console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
         updatedChatIds: updated.map(c => c.id)
       });
       return updated;
     });
 
     try {
-       if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
+       console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
          threadId: currentChat.id,
          messageCount: updatedMessages.length,
          existingMessages: currentChat.messages.length,
@@ -825,7 +820,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        });
 
         if (!response.ok) {
-           if (process.env.NODE_ENV !== "production") console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
+           console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
            const errorData = await response.json().catch(() => ({ error: "Request failed with status: " + response.status }));
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
@@ -836,7 +831,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        
        if (false && contentType && contentType.includes('text/plain')) {
            // Handle streaming response for regular chat
-           if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Handling text/plain streaming response");
+           console.log("[CHAT_DEBUG] Handling text/plain streaming response");
            const reader = response.body.getReader();
            const decoder = new TextDecoder();
            let responseText = '';
@@ -847,7 +842,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                  const { done, value } = await reader.read();
                  if (done) break;
                  const chunk = decoder.decode(value, { stream: true });
-                 if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
+                 console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
                  responseText += chunk;
                  
                  // Update the UI with each chunk as it arrives
@@ -864,9 +859,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
              const finalText = decoder.decode();
              if (finalText) responseText += finalText;
              
-             if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
+             console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
            } catch (streamError) {
-             if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Stream reading error:", streamError);
+             console.error("[CHAT_DEBUG] Stream reading error:", streamError);
              responseText += "\n\nAn error occurred while reading the response.";
            }
            
@@ -880,17 +875,17 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            // Handle JSON response for tool-based chat
            try {
                data = await response.json();
-               if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] JSON response data:", {
+               console.log("[CHAT_DEBUG] JSON response data:", {
                    chatId: data.chatId,
                    messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
                });
            } catch (error) {
-               if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
+               console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
                throw new Error("Failed to parse response from server");
            }
        }
        
-        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] API response data:", {
+        console.log("[CHAT_DEBUG] API response data:", {
          responseData: data.isTextResponse ? 
            {
              chatId: data.chatId,
@@ -909,7 +904,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Check if this is an initial response that needs polling
         if (data.isInitialResponse && data.status === "processing" && data.threadId && data.runId) {
-          if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
+          console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
             threadId: data.threadId,
             runId: data.runId
           });
@@ -951,15 +946,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         const correctChatId = data.chatId; 
 
         if (!correctChatId) {
-           if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] CRITICAL: API did not return a chatId!");
+           console.error("[CHAT_DEBUG] CRITICAL: API did not return a chatId!");
            throw new Error("Chat session ID missing from server response.");
         }
 
-        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
+        console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
         
         // Log detailed information about returned answers (skip for text responses)
         if (!data.isTextResponse) {
-        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Processing returned answers:", {
+        console.log("[CHAT_DEBUG] Processing returned answers:", {
           returnedKeys: Object.keys(returnedAnswers),
           currentKeys: Object.keys(collectedAnswers),
           newAnswersCount: Object.keys(returnedAnswers).length,
@@ -1001,7 +996,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           finalCurrentChat.isComplete = isComplete;
         }
         
-        if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Final chat state constructed:", {
+        console.log("[CHAT_DEBUG] Final chat state constructed:", {
           finalChatId: finalCurrentChat.id,
           finalMessageCount: finalCurrentChat.messages.length,
           basedOnChatId: chatToUpdate.id,
@@ -1013,7 +1008,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Update the chats array, handling both existing and new chats
         setChats(prevChats => {
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
+          console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
             chatCount: prevChats.length,
             chatIds: prevChats.map(c => c.id)
           });
@@ -1021,7 +1016,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // First check if the new chat already exists in the list
           // This makes the update idempotent (safe to call multiple times)
           if (prevChats.some(chat => chat.id === correctChatId)) {
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
+            console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
             return prevChats.map(chat => 
               chat.id === correctChatId ? finalCurrentChat : chat
             );
@@ -1032,7 +1027,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             ? prevChats.filter(chat => chat.id !== tempId)
             : prevChats;
             
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
+          console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
             filteredCount: filteredChats.length,
             removedTempChat: tempId !== correctChatId,
             filteredIds: filteredChats.map(c => c.id)
@@ -1041,7 +1036,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           // Final safety check if chat exists after filtering
           const chatExists = filteredChats.some(chat => chat.id === correctChatId);
           
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Chat existence check:`, {
+          console.log(`[CHAT_DEBUG] Chat existence check:`, {
             chatExists,
             correctChatId,
             finalChatId: finalCurrentChat.id
@@ -1053,14 +1048,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             result = filteredChats.map(chat => 
               chat.id === correctChatId ? finalCurrentChat : chat
             );
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Updated existing chat in list`);
+            console.log(`[CHAT_DEBUG] Updated existing chat in list`);
           } else {
             // Add as a new chat if it doesn't exist in the list
             result = [finalCurrentChat, ...filteredChats];
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
+            console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
           }
           
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Final chats state:`, {
+          console.log(`[CHAT_DEBUG] Final chats state:`, {
             resultCount: result.length,
             resultIds: result.map(c => c.id)
           });
@@ -1069,14 +1064,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         });
 
         // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
-        if (process.env.NODE_ENV !== "production") console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
+        console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
         if (isComplete && correctChatId && selectedTool === 'hybrid-offer') {
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Hybrid offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
+            console.log(`[CHAT_DEBUG] Hybrid offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
             setIsWaitingForN8n(true);
             const encodedAnswers = encodeURIComponent(JSON.stringify(returnedAnswers || {}));
             connectToN8nResultStream(correctChatId, encodedAnswers);
         } else if (isComplete && correctChatId && selectedTool === 'workshop-generator') {
-            if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Workshop generator complete for chatId: ${correctChatId}. HTML should be displayed directly in the message.`);
+            console.log(`[CHAT_DEBUG] Workshop generator complete for chatId: ${correctChatId}. HTML should be displayed directly in the message.`);
             // Workshop generator completion is handled by the HTML generation in the API response
             // No need to trigger n8n document generation
         }
@@ -1087,11 +1082,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }, 100);
 
     } catch (error) {
-        if (process.env.NODE_ENV !== "production") console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
+        console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
         const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
         const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
         setChats(prev => {
-          if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Setting error chat state:`, {
+          console.log(`[CHAT_DEBUG] Setting error chat state:`, {
             errorChatId: errorChat.id,
             prevChatCount: prev.length
           });
@@ -1106,7 +1101,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     } finally {
       setIsLoading(false);
       setIsResponseLoading(false); // Make sure to clear response loading state
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
+      console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
       if (!isWaitingForN8n) {
          textareaRef.current?.focus();
       } 
@@ -1191,8 +1186,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Function to connect to SSE endpoint
   const connectToN8nResultStream = (chatId, encodedAnswers) => {
     if (eventSourceRef.current) {
-      if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Closing existing EventSource before creating new one.");
-      closeConnection();
+      console.log("[SSE Connect] Closing existing EventSource before creating new one.");
+      eventSourceRef.current.close(); // Close any previous connection
     }
 
     // Get the last 30 messages from the current chat
@@ -1212,8 +1207,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       chatHistory: chatHistory
     };
 
-    if (process.env.NODE_ENV !== "production") console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
-    if (process.env.NODE_ENV !== "production") console.log(`[SSE Connect] POST data:`, {
+    console.log(`[SSE Connect] Connecting to /api/n8n-result with POST request`);
+    console.log(`[SSE Connect] POST data:`, {
       chatId,
       userId: user?.id || null,
       answersDataFields: Object.keys(postData.answersData),
@@ -1240,10 +1235,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             generationStarted: new Date().toISOString()
           }
         };
-        if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Saving initial document generation message to DB:', initialMessagePayload);
+        console.log('[SSE Connect] Saving initial document generation message to DB:', initialMessagePayload);
         saveMessage(initialMessagePayload, user.id)
           .then(() => {
-            if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved initial document message to DB.');
+            console.log('[SSE Connect] Successfully saved initial document message to DB.');
             // Also update the thread metadata to indicate document generation is in progress
             return fetch('/api/update-thread-metadata', {
               method: 'POST',
@@ -1260,16 +1255,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           })
           .then(response => {
             if (!response.ok) {
-              if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
+              console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
             } else {
-              if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully updated thread metadata for document generation');
+              console.log('[SSE Connect] Successfully updated thread metadata for document generation');
             }
           })
-          .catch(err => {
-            if (process.env.NODE_ENV !== "production") {
-              console.error('[SSE Connect] Error in document generation setup:', err);
-            }
-          });
+          .catch(err => console.error('[SSE Connect] Error in document generation setup:', err));
           
         // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
         const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
@@ -1284,10 +1275,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           setCurrentChat(prevChat => ({...prevChat, messages: [...prevChat.messages, initialMessage]}));
         }
       } else {
-        if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Cannot save initial document message - no user ID');
+        console.warn('[SSE Connect] Cannot save initial document message - no user ID');
       }
     } catch (initErr) {
-      if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving initial document message:', initErr);
+      console.error('[SSE Connect] Error saving initial document message:', initErr);
     }
 
     // We need to use a custom implementation for EventSource with POST
@@ -1345,10 +1336,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               } else if (eventType === 'error') {
                 handleErrorEvent(parsedData);
               } else {
-                if (process.env.NODE_ENV !== "production") console.warn(`[SSE Connect] Unknown event type: ${eventType}`);
+                console.warn(`[SSE Connect] Unknown event type: ${eventType}`);
               }
             } catch (e) {
-              if (process.env.NODE_ENV !== "production") console.error(`[SSE Connect] Error parsing event data: ${e.message}`);
+              console.error(`[SSE Connect] Error parsing event data: ${e.message}`);
             }
           }
         });
@@ -1356,20 +1347,20 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       
       // Handle n8n_result events
       const handleN8nResult = (eventData) => {
-        if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Received n8n_result event:", JSON.stringify(eventData, null, 2));
+        console.log("[SSE Connect] Received n8n_result event:", JSON.stringify(eventData, null, 2));
         let contentToSaveToDB = null;   // For saving to DB
         let n8nResultData = null;
 
         try {
           if (eventData.success && eventData.data) {
             n8nResultData = eventData.data; // Store for later use
-            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Parsed n8n result data:", JSON.stringify(n8nResultData, null, 2));
+            console.log("[SSE Connect] Parsed n8n result data:", JSON.stringify(n8nResultData, null, 2));
             
             // Look for Google Doc link with different possible property names
             const googleDocLink = n8nResultData.googleDocLink || n8nResultData.docUrl || n8nResultData.googleDocURL || n8nResultData.documentUrl;
             
             // Log the link to debug
-            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Google Doc link extracted:", googleDocLink);
+            console.log("[SSE Connect] Google Doc link extracted:", googleDocLink);
             
             if (googleDocLink) {
               // Update n8nResultData with normalized link
@@ -1387,7 +1378,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             throw new Error(eventData.message || 'Received unsuccessful result from server.');
           }
         } catch (parseError) {
-          if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
+          console.error("[SSE Connect] Error parsing n8n_result data or constructing message:", parseError);
           contentToSaveToDB = "Document generated, but there was an issue displaying the link."; 
         }
 
@@ -1399,7 +1390,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               googleDocLink: n8nResultData?.googleDocLink
             };
             
-            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Document link to save:", documentLinks);
+            console.log("[SSE Connect] Document link to save:", documentLinks);
             
             const messagePayload = {
               thread_id: chatId,
@@ -1412,7 +1403,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 generationCompleted: new Date().toISOString()
               }
             };
-            if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Saving n8n result message to DB:', JSON.stringify(messagePayload, null, 2));
+            console.log('[SSE Connect] Saving n8n result message to DB:', JSON.stringify(messagePayload, null, 2));
             
             // Update thread metadata to indicate generation is complete
             fetch('/api/update-thread-metadata', {
@@ -1430,18 +1421,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               })
             }).then(response => {
               if (!response.ok) {
-                if (process.env.NODE_ENV !== "production") console.warn('[SSE Connect] Failed to update thread metadata after completion:', response.status);
+                console.warn('[SSE Connect] Failed to update thread metadata after completion:', response.status);
               } else {
-                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully updated thread metadata for document completion');
+                console.log('[SSE Connect] Successfully updated thread metadata for document completion');
               }
             }).catch(err => {
-              if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error updating thread metadata:', err);
+              console.error('[SSE Connect] Error updating thread metadata:', err);
             });
             
             // Call saveMessage and wait for it to complete
             saveMessage(messagePayload, user.id)
               .then(() => {
-                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', chatId);
+                console.log('[SSE Connect] Successfully saved n8n result message to DB for thread:', chatId);
                 
                 // Update the UI for other open instances of this chat
                 const documentMessage = { 
@@ -1495,22 +1486,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 // TODO: Add notification system here
                 // This is where we would trigger a notification to let the user know
                 // their document is ready, even if they're not currently viewing this chat
-                if (process.env.NODE_ENV !== "production") console.log('[SSE Connect] Document ready - notification system would trigger here');
+                console.log('[SSE Connect] Document ready - notification system would trigger here');
               })
               .catch(dbError => {
-                if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
+                console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);
               });
           } catch (dbError) {
-            if (process.env.NODE_ENV !== "production") console.error('[SSE Connect] Error preparing to save n8n result message to DB:', dbError);
+            console.error('[SSE Connect] Error preparing to save n8n result message to DB:', dbError);
           }
         } else {
-          if (process.env.NODE_ENV !== "production") console.warn(`[SSE Connect] Did not save n8n result message to DB. No user ID or content. contentExists=${!!contentToSaveToDB}, userId=${!!user?.id}`);
+          console.warn(`[SSE Connect] Did not save n8n result message to DB. No user ID or content. contentExists=${!!contentToSaveToDB}, userId=${!!user?.id}`);
         }
       };
       
       // Handle error events
       const handleErrorEvent = (eventData) => {
-        if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Received error event:", eventData);
+        console.error("[SSE Connect] Received error event:", eventData);
         
         // Always save error to DB so it persists through refreshes
         if (user?.id) {
@@ -1522,16 +1513,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           };
           
           saveMessage(errorMessagePayload, user.id)
-            .then(() => {
-              if (process.env.NODE_ENV !== "production") {
-                console.log('[SSE Connect] Successfully saved error message to DB.');
-              }
-            })
-            .catch(err => {
-              if (process.env.NODE_ENV !== "production") {
-                console.error('[SSE Connect] Error saving error message:', err);
-              }
-            });
+            .then(() => console.log('[SSE Connect] Successfully saved error message to DB.'))
+            .catch(err => console.error('[SSE Connect] Error saving error message:', err));
         }
         
         // Add an error message to the chat if we're on the relevant chat
@@ -1579,7 +1562,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       const readNextChunk = () => {
         reader.read().then(({ done, value }) => {
           if (done) {
-            if (process.env.NODE_ENV !== "production") console.log("[SSE Connect] Stream closed by server.");
+            console.log("[SSE Connect] Stream closed by server.");
             setIsWaitingForN8n(false);
             return;
           }
@@ -1588,7 +1571,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           processEvents(chunk);
           readNextChunk(); // Continue reading
         }).catch(error => {
-          if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Error reading from stream:", error);
+          console.error("[SSE Connect] Error reading from stream:", error);
           setIsWaitingForN8n(false);
           
           // Save stream error to DB
@@ -1601,16 +1584,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             };
             
             saveMessage(streamErrorPayload, user.id)
-              .then(() => {
-                if (process.env.NODE_ENV !== "production") {
-                  console.log('[SSE Connect] Successfully saved stream error message to DB.');
-                }
-              })
-              .catch(err => {
-                if (process.env.NODE_ENV !== "production") {
-                  console.error('[SSE Connect] Error saving stream error message:', err);
-                }
-              });
+              .then(() => console.log('[SSE Connect] Successfully saved stream error message to DB.'))
+              .catch(err => console.error('[SSE Connect] Error saving stream error message:', err));
           }
           
           // Add an error message to the chat
@@ -1657,7 +1632,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       readNextChunk();
     })
     .catch(error => {
-      if (process.env.NODE_ENV !== "production") console.error("[SSE Connect] Fetch error:", error);
+      console.error("[SSE Connect] Fetch error:", error);
       setIsWaitingForN8n(false);
       
       // Save connection error to DB
@@ -1670,16 +1645,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         };
         
         saveMessage(connectionErrorPayload, user.id)
-          .then(() => {
-            if (process.env.NODE_ENV !== "production") {
-              console.log('[SSE Connect] Successfully saved connection error message to DB.');
-            }
-          })
-          .catch(err => {
-            if (process.env.NODE_ENV !== "production") {
-              console.error('[SSE Connect] Error saving connection error message:', err);
-            }
-          });
+          .then(() => console.log('[SSE Connect] Successfully saved connection error message to DB.'))
+          .catch(err => console.error('[SSE Connect] Error saving connection error message:', err));
       }
       
       // Add an error message to the chat
@@ -1723,14 +1690,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
 
   const pollForAssistantResponse = async (threadId, runId, chatId, chatWithThinking, updatedMessages) => {
-    if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Starting to poll for assistant response");
+    console.log("[CHAT_DEBUG] Starting to poll for assistant response");
     
     let attempts = 0;
     const maxAttempts = 30; // 30 attempts x 2 seconds = 60 seconds max
     
     const poll = async () => {
       if (attempts >= maxAttempts) {
-        if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Polling timed out after max attempts");
+        console.error("[CHAT_DEBUG] Polling timed out after max attempts");
         // Update with an error message
         const errorMessage = { 
           role: 'assistant', 
@@ -1741,7 +1708,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       }
       
       attempts++;
-      if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Polling attempt ${attempts}/${maxAttempts}`);
+      console.log(`[CHAT_DEBUG] Polling attempt ${attempts}/${maxAttempts}`);
       
       try {
         const response = await fetch('/api/assistant-status', {
@@ -1755,12 +1722,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         });
         
         if (!response.ok) {
-          if (process.env.NODE_ENV !== "production") console.error(`[CHAT_DEBUG] Polling API error: ${response.status}`);
+          console.error(`[CHAT_DEBUG] Polling API error: ${response.status}`);
           throw new Error(`Polling request failed with status: ${response.status}`);
         }
         
         const data = await response.json();
-        if (process.env.NODE_ENV !== "production") console.log(`[CHAT_DEBUG] Polling response:`, {
+        console.log(`[CHAT_DEBUG] Polling response:`, {
           status: data.status,
           messagePreview: data.message ? data.message.substring(0, 50) + '...' : 'no message'
         });
@@ -1783,7 +1750,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // If still processing, wait and try again
         setTimeout(poll, 2000); // Poll every 2 seconds
       } catch (error) {
-        if (process.env.NODE_ENV !== "production") console.error("[CHAT_DEBUG] Error during polling:", error);
+        console.error("[CHAT_DEBUG] Error during polling:", error);
         
         // If there's an error, we'll try a few more times
         if (attempts < maxAttempts) {
@@ -1804,7 +1771,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
   
   const updateChatWithFinalResponse = (chatWithThinking, finalMessage, chatId, userMessages) => {
-    if (process.env.NODE_ENV !== "production") console.log("[CHAT_DEBUG] Updating chat with final response", {
+    console.log("[CHAT_DEBUG] Updating chat with final response", {
       chatId,
       messageLengthBeforeUpdate: chatWithThinking.messages.length,
       finalMessagePreview: finalMessage.content.substring(0, 50) + '...'
@@ -1889,7 +1856,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   
                   // Filter out generation status if document is complete
                   if (hasCompletedDocuments || isDocumentComplete) {
-                    if (process.env.NODE_ENV !== "production") console.log('[ChatArea] Filtering out generation status message - document is complete');
+                    console.log('[ChatArea] Filtering out generation status message - document is complete');
                     return false;
                   }
                 }

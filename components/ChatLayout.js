@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
+import ProfileModal from "./ProfileModal";
 import { useAuth } from "./AuthProvider";
-import { getThreads } from "@/lib/utils/supabase";
+import { getThreads, getUserProfile, isProfileComplete } from "@/lib/utils/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { FullPageLoading } from "./ui/loading";
 import { createNewThread } from "@/lib/utils/thread";
@@ -22,6 +23,9 @@ export default function ChatLayout() {
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(false);
+  const [profileChecked, setProfileChecked] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -94,6 +98,38 @@ export default function ChatLayout() {
     return defaultChat;
   };
 
+  // Check profile completion status
+  const checkProfileCompletion = async (userId) => {
+    try {
+      const profile = await getUserProfile(userId);
+      const isComplete = isProfileComplete(profile);
+      setProfileComplete(isComplete);
+      setProfileChecked(true);
+      
+      // Show modal for first-time users or incomplete profiles
+      if (!isComplete) {
+        setShowProfileModal(true);
+      }
+      
+      if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Profile completion check:', {
+        userId,
+        hasProfile: !!profile,
+        isComplete,
+        profile: profile ? { 
+          full_name: profile.full_name, 
+          occupation: !!profile.occupation,
+          desired_mrr: !!profile.desired_mrr,
+          desired_hours: !!profile.desired_hours
+        } : null
+      });
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") console.error('[ChatLayout] Error checking profile:', error);
+      setProfileChecked(true);
+      // Show modal if we can't check profile (likely new user)
+      setShowProfileModal(true);
+    }
+  };
+
   // Redirect unauthenticated users to login page
   useEffect(() => {
     if (!authLoading && !user) {
@@ -101,6 +137,13 @@ export default function ChatLayout() {
       router.replace('/login');
     }
   }, [user, authLoading, router]);
+
+  // Check profile completion when user loads
+  useEffect(() => {
+    if (user?.id && !profileChecked) {
+      checkProfileCompletion(user.id);
+    }
+  }, [user?.id, profileChecked]);
 
   // Load threads from Supabase when the component mounts or user changes
   useEffect(() => {
@@ -133,36 +176,29 @@ export default function ChatLayout() {
             questionsAnswered: t.metadata?.questionsAnswered || 0
           }))
         });
-        
-        // Format threads to ensure metadata is properly preserved
+
+        // Format the threads to include message parsing
         const formattedThreads = threads.map(thread => {
-          // Ensure metadata is included and properly structured if it exists
-          let metadata = thread.metadata;
-          if (thread.tool_id === 'hybrid-offer' && metadata) {
-            if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Thread ${thread.id} has hybrid-offer metadata:`, {
-              questionsAnswered: metadata.questionsAnswered,
-              currentQuestionKey: metadata.currentQuestionKey,
-              isComplete: metadata.isComplete
-            });
-            
-            // Make sure questionsAnswered is at least the count of collected answers
-            if (metadata.collectedAnswers && typeof metadata.collectedAnswers === 'object') {
-              const answerCount = Object.keys(metadata.collectedAnswers).length;
-              if (!metadata.questionsAnswered || metadata.questionsAnswered < answerCount) {
-                if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Fixing questionsAnswered for thread ${thread.id}: ${metadata.questionsAnswered} -> ${answerCount}`);
-                metadata.questionsAnswered = answerCount;
+          const parsedMessages = thread.messages ? 
+            thread.messages.map(message => {
+              let content = message.content;
+              if (typeof content === 'string') {
+                try {
+                  const parsed = JSON.parse(content);
+                  content = parsed;
+                } catch (e) {
+                  // If JSON parsing fails, keep content as is
+                }
               }
-            }
-          }
-          
+              return { ...message, content };
+            }) : [];
+
           return {
             ...thread,
-            metadata,
-            isTemporary: false
+            messages: parsedMessages
           };
         });
-        
-        // Don't directly overwrite chats - use our safer setter
+
         setChatsSafely(formattedThreads);
         
         // Set current chat based on history or create a new one
@@ -218,6 +254,15 @@ export default function ChatLayout() {
     }
   }, [currentChat]); // This effect runs when currentChat changes
 
+  // Handle profile completion
+  const handleProfileComplete = () => {
+    setProfileComplete(true);
+    toast({
+      title: "Profile Complete!",
+      description: "Your profile has been saved. We can now provide more personalized assistance.",
+    });
+  };
+
   // If still loading auth or no user, show loading or nothing
   if (authLoading) {
     return <FullPageLoading />;
@@ -237,6 +282,8 @@ export default function ChatLayout() {
         currentChat={currentChat}
         setCurrentChat={setCurrentChatWithTracking}
         isLoading={isLoading}
+        onShowProfile={() => setShowProfileModal(true)}
+        profileComplete={profileComplete}
       />
       <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
         <ChatArea 
@@ -248,6 +295,12 @@ export default function ChatLayout() {
           isLoading={isLoading}
         />
       </div>
+      
+      <ProfileModal
+        open={showProfileModal}
+        onOpenChange={setShowProfileModal}
+        onProfileComplete={handleProfileComplete}
+      />
     </div>
   );
 } 

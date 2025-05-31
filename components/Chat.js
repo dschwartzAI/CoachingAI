@@ -567,12 +567,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           ))}
           
           {/* Use the new LoadingMessage component with explicit response loading state */}
-          {isResponseLoading && (
-            <>
-              <LoadingMessage />
-              {if (process.env.NODE_ENV !== "production") console.log('[Chat] Rendering LoadingMessage component')}
-            </>
-          )}
+          {isResponseLoading && <LoadingMessage />}
           
           <div ref={messagesEndRef} />
         </div>

@@ -25,32 +25,41 @@ import {
   ChevronRight,
   Menu,
   X,
-  Settings
+  Settings,
+  User,
+  CheckCircle2,
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
 import { createNewThread } from '@/lib/utils/thread';
 import { deleteThread } from '@/lib/utils/supabase';
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
-// Map tool IDs to icons
+// Tool icons mapping
 const toolIcons = {
-  'hybrid-offer': <FileText className="h-4 w-4 mr-2" />,
-  'workshop-generator': <span className="mr-2">💻</span>
+  'hybrid-offer': BrainCog,
+  'workshop-generator': PenTool
 };
 
-export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading }) {
+export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading, onShowProfile, profileComplete }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const [expandedChats, setExpandedChats] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const INITIAL_CHAT_COUNT = 5;
+  const INITIAL_CHAT_COUNT = 6;
 
-  const tools = Object.values(TOOLS);
+  const tools = Object.entries(TOOLS).map(([id, tool]) => ({
+    id,
+    ...tool
+  }));
 
   // Add this to debug the thread title issue
   useEffect(() => {
     if (currentChat) {
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Current chat updated:', {
+      console.log('[Sidebar] Current chat updated:', {
         chatId: currentChat.id,
         title: currentChat.title,
         messagesCount: currentChat.messages?.length || 0,
@@ -66,13 +75,22 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
 
   const handleNewChat = (toolId = null) => {
     const newChat = createNewThread(toolId);
-    if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
-    if (process.env.NODE_ENV !== "production") console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
+    console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
+    console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
+    setChats(prevChats => [newChat, ...prevChats]);
     setCurrentChat(newChat);
+    setSelectedTool(toolId);
+    setIsMobileOpen(false);
   };
 
   const handleToolClick = (toolId) => {
-    handleNewChat(toolId);
+    const existingChat = chats.find(chat => chat.tool_id === toolId && chat.messages.length === 0);
+    if (existingChat) {
+      setCurrentChat(existingChat);
+      setSelectedTool(toolId);
+    } else {
+      handleNewChat(toolId);
+    }
   };
 
   // Show all non-temporary chats regardless of the selected tool
@@ -88,26 +106,33 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       return <MessagesSquare className="h-4 w-4 mr-2 text-muted-foreground" />;
     }
     
-    return toolIcons[chat.tool_id] || <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />;
+    const IconComponent = toolIcons[chat.tool_id] || MessageSquare;
+    return <IconComponent className="h-4 w-4 mr-2 text-muted-foreground" />;
   };
 
   // Delete chat handler
   const handleDeleteChat = async (chatId) => {
     try {
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Attempting to delete chat:', chatId);
+      console.log('[Sidebar] Attempting to delete chat:', chatId);
       await deleteThread(chatId);
-      if (process.env.NODE_ENV !== "production") console.log('[Sidebar] Chat deleted successfully:', chatId);
+      console.log('[Sidebar] Chat deleted successfully:', chatId);
       
       // Remove from UI state
       if (currentChat?.id === chatId) {
-        setCurrentChat(null);
-        setSelectedTool(null);
+        const remainingChats = chats.filter(chat => chat.id !== chatId);
+        if (remainingChats.length > 0) {
+          setCurrentChat(remainingChats[0]);
+          setSelectedTool(remainingChats[0].tool_id || null);
+        } else {
+          setCurrentChat(null);
+          setSelectedTool(null);
+        }
       }
       
       // Remove from chats list
       setChats(prev => prev.filter(chat => chat.id !== chatId));
     } catch (err) {
-      if (process.env.NODE_ENV !== "production") console.error('[Sidebar] Delete chat error:', err);
+      console.error('[Sidebar] Delete chat error:', err);
       alert('Failed to delete chat. Please try again.');
     }
   };
@@ -172,31 +197,30 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex items-center justify-between mb-1">
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
-                  className="w-[85%] justify-start h-8 text-sm"
+                  className="w-full justify-start h-8 text-sm"
                   onClick={() => handleNewChat(null)}
                 >
                   <MessagesSquare className="h-4 w-4 mr-2" />
                   JamesBot
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleNewChat(null)}>
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-4 w-4 ml-auto" />
                 </Button>
               </div>
-              {tools.map((tool) => (
-                <div key={tool.id} className="flex items-center justify-between mb-1">
-                  <Button
-                    variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                    className="w-[85%] justify-start h-8 text-sm"
-                    onClick={() => handleToolClick(tool.id)}
-                  >
-                    {toolIcons[tool.id] || <MessageSquare className="h-4 w-4 mr-2" />}
-                    {tool.name}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToolClick(tool.id)}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+              {tools.map((tool) => {
+                const IconComponent = toolIcons[tool.id] || MessageSquare;
+                return (
+                  <div key={tool.id} className="flex items-center justify-between mb-1">
+                    <Button
+                      variant={selectedTool === tool.id ? "secondary" : "ghost"}
+                      className="w-full justify-start h-8 text-sm"
+                      onClick={() => handleToolClick(tool.id)}
+                    >
+                      <IconComponent className="h-4 w-4 mr-2" />
+                      {tool.name}
+                      <Plus className="h-4 w-4 ml-auto" />
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -273,11 +297,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <div className="flex items-center gap-3 overflow-hidden">
                   <Avatar className="h-8 w-8 border">
                     <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
-                    <AvatarFallback>{user.email?.[0].toUpperCase() || "JH"}</AvatarFallback>
+                    <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
                     <span className="text-sm font-medium truncate" title={user.email}>
-                      {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "John Doe"}
+                      {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "User"}
                     </span>
                     <span className="text-xs text-muted-foreground truncate">
                       {user.email || "example@example.com"}
@@ -288,22 +312,43 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   <LogOut className="h-4 w-4" />
                 </Button>
               </div>
-              <Button
-                variant="ghost"
-                className="w-full justify-start px-2 h-8 text-sm mt-2 hover:bg-muted"
-                onClick={() => router.push('/profile')}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start px-2 h-8 text-sm mt-2 hover:bg-muted"
-                onClick={() => router.push('/snippets')}
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                Snippets
-              </Button>
+<div className="flex flex-col gap-1 mt-2">
+  <Button
+    variant="ghost"
+    className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+    onClick={() => {
+      onShowProfile();
+      setIsMobileOpen(false);
+    }}
+  >
+    <User className="h-4 w-4 mr-2" />
+    Profile Settings
+    {profileComplete ? (
+      <CheckCircle2 className="h-3 w-3 ml-auto text-green-500" />
+    ) : (
+      <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
+    )}
+  </Button>
+
+  {!profileComplete && (
+    <div className="px-2">
+      <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-md flex items-center gap-1">
+        <AlertCircle className="h-3 w-3" />
+        Complete your profile for better personalization
+      </div>
+    </div>
+  )}
+
+  <Button
+    variant="ghost"
+    className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+    onClick={() => router.push('/snippets')}
+  >
+    <FileText className="h-4 w-4 mr-2" />
+    Snippets
+  </Button>
+</div>
+ main
             </>
           ) : (
             <Button className="w-full" onClick={() => router.push('/login')}>
