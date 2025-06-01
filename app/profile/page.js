@@ -14,8 +14,10 @@ export default function ProfilePage() {
 
   const [fullName, setFullName] = useState('');
   const [occupation, setOccupation] = useState('');
+  const [currentMrr, setCurrentMrr] = useState('');
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
+  const [biggestChallenge, setBiggestChallenge] = useState('');
   const [allowMemory, setAllowMemory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -38,8 +40,10 @@ export default function ProfilePage() {
         if (data.profile) {
           setFullName(data.profile.full_name || '');
           setOccupation(data.profile.occupation || '');
+          setCurrentMrr(data.profile.current_mrr || '');
           setDesiredMrr(data.profile.desired_mrr || '');
           setDesiredHours(data.profile.desired_hours || '');
+          setBiggestChallenge(data.profile.biggest_challenge || '');
           setAllowMemory(data.profile.allow_memory ?? false);
         }
       } catch (err) {
@@ -48,35 +52,6 @@ export default function ProfilePage() {
     };
     if (user) fetchProfile();
   }, [user]);
-
-  const handleDownloadMemories = async () => {
-    try {
-      const res = await fetch('/api/memory');
-      if (!res.ok) throw new Error('Failed to fetch memories');
-      const data = await res.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'memories.json';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') console.error('Download memories failed:', err);
-    }
-  };
-
-  const handleDeleteMemories = async () => {
-    if (!confirm('Delete all memories?')) return;
-    try {
-      const res = await fetch('/api/memory', { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete memories');
-      setSuccess('Memories deleted');
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') console.error('Delete memories failed:', err);
-      setError(err.message || 'Failed to delete memories');
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,8 +65,10 @@ export default function ProfilePage() {
         body: JSON.stringify({
           full_name: fullName,
           occupation,
+          current_mrr: currentMrr,
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
+          biggest_challenge: biggestChallenge,
           allow_memory: allowMemory
         })
       });
@@ -130,12 +107,20 @@ export default function ProfilePage() {
               <Input id="occupation" value={occupation} onChange={(e) => setOccupation(e.target.value)} disabled={saving} />
             </div>
             <div className="grid gap-2">
+              <Label htmlFor="currentMrr">Current Monthly Recurring Revenue</Label>
+              <Input id="currentMrr" value={currentMrr} onChange={(e) => setCurrentMrr(e.target.value)} disabled={saving} />
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="desiredMrr">Desired Monthly Recurring Revenue</Label>
               <Input id="desiredMrr" value={desiredMrr} onChange={(e) => setDesiredMrr(e.target.value)} disabled={saving} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="desiredHours">Desired Hours per Week</Label>
               <Input id="desiredHours" value={desiredHours} onChange={(e) => setDesiredHours(e.target.value)} disabled={saving} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="biggestChallenge">Biggest Challenge</Label>
+              <Input id="biggestChallenge" value={biggestChallenge} onChange={(e) => setBiggestChallenge(e.target.value)} disabled={saving} />
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -153,14 +138,6 @@ export default function ProfilePage() {
             <Button type="submit" className="w-full" disabled={saving}>
               {saving ? 'Saving...' : 'Save Profile'}
             </Button>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={handleDownloadMemories} disabled={saving}>
-                Download memories
-              </Button>
-              <Button type="button" variant="destructive" onClick={handleDeleteMemories} disabled={saving}>
-                Delete memories
-              </Button>
-            </div>
           </form>
         </CardContent>
         {user && (
