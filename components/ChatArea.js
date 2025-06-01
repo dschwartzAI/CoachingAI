@@ -577,13 +577,35 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   }, [currentChat, selectedTool, initiationAttemptedForContext]); // Dependencies for this effect
 
-  // Effect to initiate chat for tool-based chats
+  // Effect to initiate chat for tool-based chats when there are *no* messages yet
   useEffect(() => {
-    if (currentChat?.messages?.length > 0 && (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && !initiationAttemptedForContext) {
+    if (
+      currentChat &&
+      currentChat.messages?.length === 0 &&
+      (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
+      !initiationAttemptedForContext &&
+      user?.id
+    ) {
+      console.log(`[ChatArea Auto-Initiate] Tool: ${selectedTool}, Chat ID: ${currentChat.id}. Initiating...`);
+      setIsInitiating(true);
       setInitiationAttemptedForContext(true);
-      initiateToolChat(currentChat.id, selectedTool);
+
+      initiateToolChat(currentChat.id, selectedTool)
+        .catch((error) => {
+          console.error("[ChatArea Auto-Initiate] Error during tool initiation:", error);
+          toast({
+            title: "Tool Initiation Failed",
+            description: `Could not start ${TOOLS[selectedTool].name}. Please try again.`,
+            variant: "destructive",
+          });
+        })
+        .finally(() => {
+          setIsInitiating(false);
+        });
     }
-  }, [currentChat, selectedTool, initiationAttemptedForContext]); // Dependencies for this effect
+  }, [currentChat, selectedTool, initiationAttemptedForContext, user?.id]);
+
+  // Removed the second duplicate useEffect that previously attempted initiation when messages.length > 0
 
   const initiateToolChat = async (chatIdToInitiate, tool) => {
     console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);

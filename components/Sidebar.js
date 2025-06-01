@@ -316,7 +316,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               </div>
             </div>
             
-            <ScrollArea className="flex-1 h-full pr-3 overflow-visible hover:overflow-auto">
+            <ScrollArea className="flex-1 h-full pr-3 overflow-auto touch-pan-y">
               {isLoading ? (
                 <div className="flex items-center justify-center py-3 text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
