@@ -1889,34 +1889,41 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </div>
 
-      {/* Messages container - updated with responsive spacing */}
+      {/* Messages container - updated for bottom-up flow */}
       <ScrollArea
-        ref={scrollAreaRef} // Keep this for general scroll area controls
+        ref={scrollAreaRef}
         className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
-        {/* This inner div will be the actual container for messages and text selection */}
-        <div ref={chatContainerRef} className="flex flex-col items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
+        <div 
+          ref={chatContainerRef} 
+          className={`flex flex-col ${!currentChat?.messages?.length ? 'justify-end min-h-full' : 'justify-start'} items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out`}
+        >
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
-              <div className="flex flex-col items-center justify-center h-[calc(100vh-12rem)] space-y-3">
+              <div className="flex flex-col items-center justify-center space-y-3 mb-8 animate-in fade-in-50 duration-500">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 <p className="text-sm text-muted-foreground font-medium">
                   Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
                 </p>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-[calc(100vh-12rem)] mobile-spacing">
-                <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4">
-                  <h3 className="text-xl sm:text-2xl font-semibold">
-                    {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
-                  </h3>
-                  <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-                    {selectedTool 
-                      ? TOOLS[selectedTool].description
-                      : "Ask me anything related to your business."}
-                  </p>
-                </div>
+              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4 mb-8 animate-in fade-in-50 slide-in-from-bottom-4 duration-500">
+                <h3 className="text-xl sm:text-2xl font-semibold">
+                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+                </h3>
+                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
+                  {selectedTool 
+                    ? TOOLS[selectedTool].description
+                    : "Ask me anything related to your business."}
+                </p>
+                {selectedTool && (
+                  <div className="mt-6 p-3 bg-muted/50 rounded-lg border-l-4 border-primary/30">
+                    <p className="text-sm text-muted-foreground">
+                      👋 Ready to get started? Just type your first response below!
+                    </p>
+                  </div>
+                )}
               </div>
             )
           ) : (
