@@ -1895,7 +1895,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
         {/* This inner div will be the actual container for messages and text selection */}
-        <div ref={chatContainerRef} className="flex flex-col items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
+        <div 
+          ref={chatContainerRef} 
+          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out ${currentChat?.messages?.length <= 1 ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}>
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
