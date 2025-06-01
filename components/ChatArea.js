@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, MessageCircle, User, Bot, Copy, Save, Target } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1889,14 +1889,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </div>
 
-      {/* Messages container - updated for bottom-up flow */}
+      {/* Messages container - fixed bottom-up flow */}
       <ScrollArea
         ref={scrollAreaRef}
         className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
         <div 
           ref={chatContainerRef} 
-          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out ${!currentChat?.messages?.length ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}
+          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out ${currentChat?.messages?.length <= 1 ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}
         >
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
@@ -1908,113 +1908,142 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 </p>
               </div>
             ) : (
-              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4 animate-in fade-in-50 slide-in-from-bottom-4 duration-500">
-                <h3 className="text-xl sm:text-2xl font-semibold">
-                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
-                </h3>
-                <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-                  {selectedTool 
-                    ? TOOLS[selectedTool].description
-                    : "Ask me anything related to your business."}
-                </p>
-                {selectedTool && (
-                  <div className="mt-6 p-3 bg-muted/50 rounded-lg border-l-4 border-primary/30">
-                    <p className="text-sm text-muted-foreground">
-                      👋 Ready to get started? Just type your first response below!
-                    </p>
-                  </div>
+              <div className="flex flex-col items-center justify-center space-y-6 text-center max-w-md">
+                <div className="p-4 rounded-full bg-muted/30">
+                  <MessageCircle className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium text-foreground">
+                    {selectedTool && TOOLS[selectedTool] 
+                      ? `Ready to use ${TOOLS[selectedTool].name}` 
+                      : "Ready to chat"
+                    }
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {selectedTool && TOOLS[selectedTool] 
+                      ? `Click the button below to start using the ${TOOLS[selectedTool].name} and ${TOOLS[selectedTool].description?.toLowerCase()}.`
+                      : "Start a conversation or use one of the specialized tools from the sidebar."
+                    }
+                  </p>
+                </div>
+                {selectedTool && TOOLS[selectedTool] && (
+                  <Button 
+                    onClick={() => handleToolInitiation(selectedTool)}
+                    className="animate-in fade-in-50 duration-700 bg-primary hover:bg-primary/90"
+                    size="lg"
+                  >
+                    <Target className="h-4 w-4 mr-2" />
+                    Start {TOOLS[selectedTool].name}
+                  </Button>
                 )}
               </div>
             )
           ) : (
-            currentChat.messages
-              .filter((message) => {
-                // Filter out document generation status messages if document is already complete
-                const isGenerationStatus = typeof message.content === 'string' && 
-                  message.content.includes('document-generation-status');
-                
-                if (isGenerationStatus) {
-                  // Check if there are any completed document messages in the chat
-                  const hasCompletedDocuments = currentChat.messages.some(msg => 
-                    isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
-                  );
-                  
-                  // Also check metadata for completion
-                  const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
-                    currentChat.metadata?.isGeneratingDocument === false;
-                  
-                  // Filter out generation status if document is complete
-                  if (hasCompletedDocuments || isDocumentComplete) {
-                    console.log('[ChatArea] Filtering out generation status message - document is complete');
-                    return false;
-                  }
-                }
-                
-                return true;
-              })
-              .map((message, index, filteredArray) => {
-                // Check if this is the last message in the filtered array
-                const isLastMessage = index === filteredArray.length - 1;
-                
+            // Render all messages including the first one
+            currentChat.messages.map((message, index) => {
+              const isLastMessage = index === currentChat.messages.length - 1;
+              const isUser = message.role === 'user';
+              
+              if (isDocumentMessage(message)) {
                 return (
+                  <DocumentMessage 
+                    key={`${message.id}-${index}`} 
+                    message={message} 
+                  />
+                );
+              }
+
+              if (isLandingPageMessage(message)) {
+                return (
+                  <LandingPageMessage 
+                    key={`${message.id}-${index}`} 
+                    content={message.content} 
+                  />
+                );
+              }
+
+              return (
+                <div
+                  key={`${message.id}-${index}`}
+                  className={`flex w-full max-w-4xl ${isUser ? 'justify-end' : 'justify-start'}`}
+                >
                   <div
-                    key={message.id || `message-${index}`}
-                    className={`w-full max-w-3xl flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                    ref={isLastMessage ? lastMessageRef : null}
+                    className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] ${
+                      isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'
+                    }`}
                   >
                     <div
-                      className={`
-                        ${message.role === "user" ? "bg-muted px-4 py-2 rounded-lg" : ""}
-                        text-sm sm:text-base leading-relaxed max-w-prose
-                      `}
-                      data-message-id={message.id}
-                      data-chat-id={currentChat?.id}
-                      data-message-role={message.role}
+                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        isUser
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
                     >
-                      {message.is_thinking ? (
-                        <LoadingMessage content={message.content} role={message.role} />
+                      {isUser ? (
+                        <User className="h-4 w-4" />
                       ) : (
-                        // Conditional rendering for different message types
-                        <>
-                          {isDocumentMessage(message) ? (
-                            <DocumentMessage message={message} />
-                          ) : isLandingPageMessage(message) ? (
-                            <LandingPageMessage content={message.content} />
-                          ) : (
-                            // Check for HTML content
-                            message.content.includes('<a href') ? (
-                              <HTMLContent content={message.content} />
-                            ) : (
-                              <MarkdownMessage content={message.content} />
-                            )
-                          )}
-                        </>
+                        <Bot className="h-4 w-4" />
+                      )}
+                    </div>
+
+                    <div
+                      className={`rounded-2xl px-4 py-3 shadow-sm ${
+                        isUser
+                          ? 'bg-primary text-primary-foreground ml-auto'
+                          : 'bg-muted/60 text-foreground'
+                      }`}
+                    >
+                      {isUser ? (
+                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                          {message.content}
+                        </p>
+                      ) : (
+                        <MarkdownMessage content={message.content} />
+                      )}
+                      
+                      {!isUser && isLastMessage && hasExtractableContent(message.content) && (
+                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border/30">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCopyText}
+                            className="h-8 px-3 text-xs bg-background/50 hover:bg-background/80"
+                          >
+                            <Copy className="h-3 w-3 mr-1.5" />
+                            Copy Text
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSaveSnippet}
+                            className="h-8 px-3 text-xs bg-background/50 hover:bg-background/80"
+                          >
+                            <Save className="h-3 w-3 mr-1.5" />
+                            Save Snippet
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
-                );
-              })
-          )}
-
-          {/* Show n8n document generation loader */}
-          {isWaitingForN8n && (
-            <div className="flex items-center justify-center py-6">
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
                 </div>
-                <p className="text-xs text-muted-foreground max-w-xs text-center">
-                  This may take up to 1-3 minutes. Your document is being created based on your answers.
-                </p>
-              </div>
-            </div>
+              );
+            })
           )}
 
-          {/* Loading state for AI response */}
-          {isResponseLoading && !isWaitingForN8n && (
-            <div className="w-full max-w-3xl flex justify-start">
-              <LoadingMessage role="assistant" />
+          {/* Loading indicator for ongoing conversations */}
+          {isLoading && currentChat?.messages?.length > 0 && (
+            <div className="flex w-full max-w-4xl justify-start">
+              <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%]">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                  <Bot className="h-4 w-4" />
+                </div>
+                <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
+                  <div className="flex items-center space-x-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm text-muted-foreground">Thinking...</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
