@@ -92,5 +92,15 @@ module.exports = {
   plugins: [
     require("tailwindcss-animate"),
     // require('@tailwindcss/typography'),
+    // Add touch-target utility for mobile accessibility
+    function({ addUtilities }) {
+      addUtilities({
+        '.touch-target': {
+          'min-height': '44px',
+          'min-width': '44px',
+          'touch-action': 'manipulation',
+        },
+      });
+    },
   ],
 } 

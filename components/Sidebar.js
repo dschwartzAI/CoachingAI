@@ -99,13 +99,18 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   };
 
   const handleToolClick = (toolId) => {
+    console.log('[Sidebar] Tool clicked:', toolId);
     const existingChat = chats.find(chat => chat.tool_id === toolId && chat.messages.length === 0);
     if (existingChat) {
+      console.log('[Sidebar] Using existing chat:', existingChat.id);
       setCurrentChat(existingChat);
       setSelectedTool(toolId);
     } else {
+      console.log('[Sidebar] Creating new chat for tool:', toolId);
       handleNewChat(toolId);
     }
+    // Close mobile sidebar after tool selection
+    setIsMobileOpen(false);
   };
 
   // Show all non-temporary chats regardless of the selected tool
@@ -162,7 +167,15 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
         variant="outline" 
         size="icon" 
         className="h-12 w-12 rounded-full bg-background shadow-lg border touch-target"
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        onClick={() => {
+          console.log('[Sidebar] Mobile menu button clicked, current state:', isMobileOpen);
+          setIsMobileOpen(!isMobileOpen);
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          console.log('[Sidebar] Mobile menu button touched');
+          setIsMobileOpen(!isMobileOpen);
+        }}
       >
         {isMobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </Button>
@@ -259,8 +272,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               <div className="flex items-center justify-between mb-0.5">
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
-                  className="w-full justify-start h-9 text-sm touch-target"
+                  className="w-full justify-start min-h-[44px] text-sm touch-target"
                   onClick={() => handleNewChat(null)}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    handleNewChat(null);
+                  }}
                 >
                   <MessagesSquare className="h-3.5 w-3.5 mr-1.5" />
                   <span className="text-sm">JamesBot</span>
@@ -273,8 +290,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   <div key={tool.id} className="flex items-center justify-between mb-0.5">
                     <Button
                       variant={selectedTool === tool.id ? "secondary" : "ghost"}
-                      className="w-full justify-start h-9 text-sm touch-target"
+                      className="w-full justify-start min-h-[44px] text-sm touch-target"
                       onClick={() => handleToolClick(tool.id)}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        handleToolClick(tool.id);
+                      }}
                     >
                       <IconComponent className="h-3.5 w-3.5 mr-1.5" />
                       <span className="truncate text-sm">{tool.name}</span>
