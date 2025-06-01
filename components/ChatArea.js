@@ -1896,19 +1896,19 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       >
         <div 
           ref={chatContainerRef} 
-          className={`flex flex-col ${!currentChat?.messages?.length ? 'justify-end min-h-full' : 'justify-start'} items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out`}
+          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out ${!currentChat?.messages?.length ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}
         >
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
-              <div className="flex flex-col items-center justify-center space-y-3 mb-8 animate-in fade-in-50 duration-500">
+              <div className="flex flex-col items-center justify-center space-y-3 animate-in fade-in-50 duration-500">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 <p className="text-sm text-muted-foreground font-medium">
                   Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
                 </p>
               </div>
             ) : (
-              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4 mb-8 animate-in fade-in-50 slide-in-from-bottom-4 duration-500">
+              <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4 animate-in fade-in-50 slide-in-from-bottom-4 duration-500">
                 <h3 className="text-xl sm:text-2xl font-semibold">
                   {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
                 </h3>
