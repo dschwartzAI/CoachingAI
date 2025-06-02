@@ -2336,7 +2336,8 @@ The user's conversation history and knowledge base research are provided below.$
         console.log('[CHAT_API_DEBUG] Tool mentioned:', suggestionAnalysis.shouldMention ? suggestionAnalysis.toolName : 'None');
 
         // Check if client supports streaming
-        const acceptsStreaming = request.headers.get('Accept')?.includes('text/event-stream');
+        // Temporarily disable streaming until client implementation is ready
+        const acceptsStreaming = false; // request.headers.get('Accept')?.includes('text/event-stream');
         let fullResponseText = '';
         
         if (acceptsStreaming) {
