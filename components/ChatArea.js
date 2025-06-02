@@ -642,12 +642,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       const data = await response.json();
       console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
 
-      if (data?.chatId && data?.msgPreview) {
+      if (data?.chatId && (data.msgPreview || data.message)) {
         const assistantMessage = {
           id: Date.now() + Math.random(),
-          content: data.msgPreview.includes("What's your core product") 
-            ? data.message || data.msgPreview 
-            : data.msgPreview,
+          content: data.msgPreview ? data.msgPreview : data.message,
           role: "assistant",
           isInitial: true,
           timestamp: new Date().toISOString()
