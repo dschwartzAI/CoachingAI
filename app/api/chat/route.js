@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
 import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
+import { profileCache } from '@/lib/utils/cache';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -1268,23 +1269,10 @@ export async function POST(request) {
     // NOW build profile context only for non-workshop-init requests (where we actually need it)
     console.log('[CHAT_API_DEBUG] Building profile context for non-init request');
     
-    // Fetch profile information for authenticated users
+    // Fetch profile information for authenticated users using cache
     let userProfile = null;
     if (userId && !userId.startsWith('anon-')) {
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('full_name, occupation, desired_mrr, desired_hours')
-          .eq('user_id', userId)
-          .single();
-        if (!profileError) {
-          userProfile = profileData;
-        } else if (process.env.NODE_ENV !== 'production') {
-          console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
-        }
-      } catch (profileException) {
-        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching profile:', profileException);
-      }
+      userProfile = await getCachedUserProfile(userId, supabase);
     }
 
     // Build profile context using the centralized function from ai.js
@@ -2182,58 +2170,41 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         const coachingContext = await getCoachingContext(userId);
         console.log('[CHAT_API_DEBUG] Coaching context retrieved, length:', coachingContext.length);
         
-        // STEP 1: Query the vector store to get relevant information
-        console.log('[CHAT_API_DEBUG] Step 1: Querying vector store for relevant information');
-        
         const latestUserMessage = messages.length > 0 ? messages[messages.length - 1].content : "";
-        const searchQuery = latestUserMessage; // Use the latest user message as search query
         
-        const vectorSearchResponse = await openai.responses.create({
-          model: OPENAI_MODEL,
-          input: [
-            {
-              role: "system",
-              content: `You are a knowledge retrieval assistant. Your job is to find and extract relevant information from the knowledge base to help answer the user's question. Be comprehensive but focused - include specific strategies, frameworks, tactics, and examples that relate to the user's query. Do not try to coach or provide personal advice - just extract and organize the relevant information clearly.`
-            },
-            {
-              role: "user", 
-              content: searchQuery
-            }
-          ],
-          tools: [{
-            type: "file_search",
-            vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
-            max_num_results: 8
-          }],
-          include: ["file_search_call.results"],
-          stream: false
-        });
-
-        // Extract the knowledge base information
-        let knowledgeBaseInfo = "";
-        if (vectorSearchResponse.output) {
-          for (const item of vectorSearchResponse.output) {
-            if (item.type === 'message' && item.content) {
-              for (const contentItem of item.content) {
-                if (contentItem.type === 'output_text' && contentItem.text) {
-                  knowledgeBaseInfo += contentItem.text;
-                }
+        // STEP 1 & 1.5: Run vector search and tool suggestion analysis in parallel
+        console.log('[CHAT_API_DEBUG] Step 1 & 1.5: Running vector search and tool suggestion analysis in parallel');
+        
+        const [vectorSearchResponse, toolSuggestionResponse] = await Promise.all([
+          // Vector search
+          openai.responses.create({
+            model: OPENAI_MODEL,
+            input: [
+              {
+                role: "system",
+                content: `You are a knowledge retrieval assistant. Your job is to find and extract relevant information from the knowledge base to help answer the user's question. Be comprehensive but focused - include specific strategies, frameworks, tactics, and examples that relate to the user's query. Do not try to coach or provide personal advice - just extract and organize the relevant information clearly.`
+              },
+              {
+                role: "user", 
+                content: latestUserMessage
               }
-            }
-          }
-        }
-
-        console.log('[CHAT_API_DEBUG] Step 1 complete: Retrieved knowledge base info length:', knowledgeBaseInfo.length);
-
-        // STEP 1.5: Tool Suggestion Analysis (for verbal guidance only)
-        console.log('[CHAT_API_DEBUG] Step 1.5: Analyzing for tool suggestion opportunities');
-        
-        const toolSuggestionResponse = await openai.chat.completions.create({
-          model: OPENAI_MODEL,
-          messages: [
-            {
-              role: "system",
-              content: `You are an intelligent assistant that analyzes user questions to determine if they would benefit from knowing about specific tools available in the app.
+            ],
+            tools: [{
+              type: "file_search",
+              vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
+              max_num_results: 8
+            }],
+            include: ["file_search_call.results"],
+            stream: false
+          }),
+          
+          // Tool suggestion analysis  
+          openai.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: [
+              {
+                role: "system",
+                content: `You are an intelligent assistant that analyzes user questions to determine if they would benefit from knowing about specific tools available in the app.
 
 AVAILABLE TOOLS TO MENTION:
 1. HYBRID OFFER CREATOR - This tool creates a complete, customized offer document for users. Mention when users ask about:
@@ -2266,17 +2237,34 @@ Analyze this conversation:
 Recent messages: ${messages.slice(-3).map(m => `${m.role}: ${m.content}`).join('\n')}
 
 Return JSON: { "shouldMention": boolean, "toolName": string|null, "reasoning": string }`
-            },
-            {
-              role: "user",
-              content: latestUserMessage
+              },
+              {
+                role: "user",
+                content: latestUserMessage
+              }
+            ],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+          })
+        ]);
+
+        // Extract the knowledge base information
+        let knowledgeBaseInfo = "";
+        if (vectorSearchResponse.output) {
+          for (const item of vectorSearchResponse.output) {
+            if (item.type === 'message' && item.content) {
+              for (const contentItem of item.content) {
+                if (contentItem.type === 'output_text' && contentItem.text) {
+                  knowledgeBaseInfo += contentItem.text;
+                }
+              }
             }
-          ],
-          temperature: 0.3,
-          response_format: { type: "json_object" }
-        });
+          }
+        }
 
         const suggestionAnalysis = JSON.parse(toolSuggestionResponse.choices[0].message.content);
+        
+        console.log('[CHAT_API_DEBUG] Step 1 & 1.5 complete: Retrieved knowledge base info length:', knowledgeBaseInfo.length);
         console.log('[CHAT_API_DEBUG] Tool suggestion analysis:', suggestionAnalysis);
 
         // STEP 2: Process the information through James' coaching lens
@@ -2340,57 +2328,88 @@ The user's conversation history and knowledge base research are provided below.$
           model: OPENAI_MODEL,
           messages: coachingMessages,
           temperature: 0.8, // Higher temperature for more personality
-          max_tokens: 220 // Force very concise responses
+          max_tokens: 220, // Force very concise responses
+          stream: true // Enable streaming for faster perceived response
         });
 
-        const responseText = coachingResponse.choices[0].message.content;
-        
-        console.log('[CHAT_API_DEBUG] Step 2 complete: Generated James-style response');
+        console.log('[CHAT_API_DEBUG] Step 2 complete: Generated James-style response with streaming');
         console.log('[CHAT_API_DEBUG] Tool mentioned:', suggestionAnalysis.shouldMention ? suggestionAnalysis.toolName : 'None');
 
-        // Save the response to the database
-        if (chatId && supabase) {
-          try {
-            const msgObj = { 
-              thread_id: chatId, 
-              role: 'assistant', 
-              content: responseText, 
-              timestamp: new Date().toISOString(), 
-              user_id: userId 
-            };
-            const { data: savedMsg, error: saveError } = await supabase
-              .from('messages')
-              .insert(msgObj)
-              .select()
-              .single();
-              
-            if (saveError) {
-              console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
-            } else {
-              console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
-              
-              // STEP 3: Check if we should trigger a session summary
-              const messageCount = await getMessageCount(chatId);
-              console.log('[CHAT_API_DEBUG] Current message count for thread:', messageCount);
-              
-              // Trigger session summary every 8-10 messages (when count is divisible by 9)
-              if (messageCount > 0 && messageCount % 9 === 0) {
-                console.log('[CHAT_API_DEBUG] Triggering session summary (message count:', messageCount, ')');
-                createSessionSummary(chatId, userId).catch(err => {
-                  console.error('[CHAT_API_DEBUG] Session summary failed:', err);
+        // Check if client supports streaming
+        const acceptsStreaming = request.headers.get('Accept')?.includes('text/event-stream');
+        let fullResponseText = '';
+        
+        if (acceptsStreaming) {
+          // Create a streaming response for clients that support it
+          const encoder = new TextEncoder();
+
+          const stream = new ReadableStream({
+            async start(controller) {
+              try {
+                for await (const chunk of coachingResponse) {
+                  const content = chunk.choices[0]?.delta?.content || '';
+                  if (content) {
+                    fullResponseText += content;
+                    // Send chunk to client
+                    const chunkData = JSON.stringify({ 
+                      content,
+                      type: 'chunk',
+                      chatId: chatId
+                    });
+                    controller.enqueue(encoder.encode(`data: ${chunkData}\n\n`));
+                  }
+                }
+
+                // Save the complete response to the database and handle session summary
+                await handleMessageSave(chatId, supabase, fullResponseText, userId);
+
+                // Send final completion signal
+                const completionData = JSON.stringify({ 
+                  type: 'complete',
+                  chatId: chatId,
+                  fullResponse: fullResponseText
                 });
+                controller.enqueue(encoder.encode(`data: ${completionData}\n\n`));
+                controller.close();
+
+              } catch (streamError) {
+                console.error('[CHAT_API_DEBUG] Streaming error:', streamError);
+                const errorData = JSON.stringify({ 
+                  type: 'error',
+                  error: streamError.message,
+                  chatId: chatId
+                });
+                controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
+                controller.close();
               }
             }
-          } catch (dbError) {
-            console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
-          }
-        }
+          });
 
-        // Return the response directly
-        return NextResponse.json({
-          message: responseText,
-          chatId: chatId
-        });
+          return new NextResponse(stream, {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            },
+          });
+        } else {
+          // Fallback to regular JSON response for backward compatibility
+          for await (const chunk of coachingResponse) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              fullResponseText += content;
+            }
+          }
+
+          // Save the response to the database
+          await handleMessageSave(chatId, supabase, fullResponseText, userId);
+
+          // Return the response as JSON (existing format)
+          return NextResponse.json({
+            message: fullResponseText,
+            chatId: chatId
+          });
+        }
 
       } catch (error) {
         console.error('[CHAT_API_DEBUG] Error with 2-step coaching process:', error);
@@ -2581,3 +2600,81 @@ function processFileSearchResults(fileSearchCall) {
     })
     .filter(Boolean); // Remove any null results
 } 
+
+// Cached profile fetching function
+async function getCachedUserProfile(userId, supabase) {
+  // Check cache first
+  const cacheKey = `profile_${userId}`;
+  let userProfile = profileCache.get(cacheKey);
+  
+  if (userProfile) {
+    console.log('[CHAT_API_DEBUG] Profile cache hit for user:', userId);
+    return userProfile;
+  }
+
+  // Cache miss - fetch from database
+  console.log('[CHAT_API_DEBUG] Profile cache miss, fetching from DB for user:', userId);
+  
+  try {
+    const { data: profileData, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('full_name, occupation, desired_mrr, desired_hours')
+      .eq('user_id', userId)
+      .single();
+      
+    if (!profileError && profileData) {
+      userProfile = profileData;
+      // Cache for 5 minutes
+      profileCache.set(cacheKey, userProfile, 300000);
+      console.log('[CHAT_API_DEBUG] Profile cached for user:', userId);
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
+    }
+  } catch (profileException) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[CHAT_API_DEBUG] Exception fetching profile:', profileException);
+    }
+  }
+
+  return userProfile;
+}
+
+// Helper function to save messages and handle session summaries
+async function handleMessageSave(chatId, supabase, responseText, userId) {
+  if (chatId && supabase && responseText) {
+    try {
+      const msgObj = { 
+        thread_id: chatId, 
+        role: 'assistant', 
+        content: responseText, 
+        timestamp: new Date().toISOString(), 
+        user_id: userId 
+      };
+      const { data: savedMsg, error: saveError } = await supabase
+        .from('messages')
+        .insert(msgObj)
+        .select()
+        .single();
+        
+      if (saveError) {
+        console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
+      } else {
+        console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
+        
+        // STEP 3: Check if we should trigger a session summary
+        const messageCount = await getMessageCount(chatId);
+        console.log('[CHAT_API_DEBUG] Current message count for thread:', messageCount);
+        
+        // Trigger session summary every 8-10 messages (when count is divisible by 9)
+        if (messageCount > 0 && messageCount % 9 === 0) {
+          console.log('[CHAT_API_DEBUG] Triggering session summary (message count:', messageCount, ')');
+          createSessionSummary(chatId, userId).catch(err => {
+            console.error('[CHAT_API_DEBUG] Session summary failed:', err);
+          });
+        }
+      }
+    } catch (dbError) {
+      console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
+    }
+  }
+}

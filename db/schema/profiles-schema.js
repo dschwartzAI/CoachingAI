@@ -8,7 +8,6 @@ export const userProfilesTable = pgTable("user_profiles", {
   current_mrr: text("current_mrr"),
   desired_mrr: text("desired_mrr"),
   desired_hours: text("desired_hours"),
-  business_stage: text("business_stage"),
   biggest_challenge: text("biggest_challenge"),
   primary_goal: text("primary_goal"),
   allow_memory: boolean("allow_memory").default(true).notNull(),
