@@ -151,3 +151,5 @@ Conversation data is stored remotely. Disable `ALLOW_ANONYMOUS_CHATS` and
 `NEXT_PUBLIC_SKIP_AUTH` to restrict access in production. Storing long histories
 and running the `compressMemories` job will consume Supabase storage and OpenAI
 credits, so adjust the schedule according to your budget.
+
+# Trivial change to trigger Vercel redeploy
