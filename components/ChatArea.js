@@ -427,14 +427,18 @@ function isLandingPageMessage(message) {
 }
 
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
+  // Get user from context
+  const { user } = useAuth();
+
+  // Component state
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
-  const [collectedAnswers, setCollectedAnswers] = useState({});
-  const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
-  const [questionsAnswered, setQuestionsAnswered] = useState(0); // Add questionsAnswered state
+  const [isResponseLoading, setIsResponseLoading] = useState(false);
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
+  const [collectedAnswers, setCollectedAnswers] = useState({});
+  const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
+  const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
@@ -442,7 +446,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const chatContainerRef = useRef(null); // This is the NEW ref for the text selection container
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
-  const { user } = useAuth();
+  const lastInitiatedChatIdRef = useRef(); // Track the last initiated chat ID to prevent loops
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
   const {
@@ -478,6 +482,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     // Only reset state and close SSE if the actual chat or tool context has changed
     if (hasContextSwitched) {
       setInitiationAttemptedForContext(false);
+      lastInitiatedChatIdRef.current = null; // Reset the last initiated chat ID on context switch
       
       // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
@@ -572,23 +577,41 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Update starting key if chat history already exists for hybrid-offer
   useEffect(() => {
     if (currentChat?.messages?.length > 0 && (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && !initiationAttemptedForContext) {
+      console.log(`[ChatArea] Existing messages initiation blocked - messages exist for tool: ${selectedTool}, chatId: ${currentChat.id}`);
       setInitiationAttemptedForContext(true);
-      initiateToolChat(currentChat.id, selectedTool);
+      // Don't call initiateToolChat for existing messages - tools should only init on empty chats
     }
   }, [currentChat, selectedTool, initiationAttemptedForContext]); // Dependencies for this effect
 
   // Effect to initiate chat for tool-based chats when there are *no* messages yet
   useEffect(() => {
+    console.log(`[ChatArea Auto-Initiate Effect Check] Running for tool: ${selectedTool}, chat ID: ${currentChat?.id}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] currentChat: ${!!currentChat}`);
+    if (currentChat) {
+      console.log(`[ChatArea Auto-Initiate Condition Check] currentChat.messages?.length: ${currentChat.messages?.length}`);
+    }
+    console.log(`[ChatArea Auto-Initiate Condition Check] selectedTool is tool: ${(selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator')}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] !initiationAttemptedForContext: ${!initiationAttemptedForContext}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] user?.id: ${!!user?.id}`);
+    if (currentChat) {
+      console.log(`[ChatArea Auto-Initiate Condition Check] lastInitiatedChatIdRef.current !== currentChat.id: ${lastInitiatedChatIdRef.current !== currentChat.id} (Last: ${lastInitiatedChatIdRef.current}, Current: ${currentChat.id})`);
+    }
+
     if (
       currentChat &&
       currentChat.messages?.length === 0 &&
       (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
-      !initiationAttemptedForContext &&
+      !initiationAttemptedForContext && // This should be the primary guard for a new context
       user?.id
+      // lastInitiatedChatIdRef.current !== currentChat.id // <<<< TEMPORARILY REMOVING THIS CONDITION
     ) {
-      console.log(`[ChatArea Auto-Initiate] Tool: ${selectedTool}, Chat ID: ${currentChat.id}. Initiating...`);
+      console.log(`[ChatArea Auto-Initiate SUCCESS] Tool: ${selectedTool}, Chat ID: ${currentChat.id}. Initiating...`);
       setIsInitiating(true);
-      setInitiationAttemptedForContext(true);
+      setInitiationAttemptedForContext(true); // Mark this context (chat ID + tool) as having an initiation attempt
+      // We can keep lastInitiatedChatIdRef if we want to prevent multiple calls within the *same execution path* if initiateToolChat was synchronous,
+      // but for async, and with setInitiationAttemptedForContext, it might be redundant or causing issues.
+      // Let's try without it first, relying on setInitiationAttemptedForContext and its reset in the other useEffect.
+      // lastInitiatedChatIdRef.current = currentChat.id; 
 
       initiateToolChat(currentChat.id, selectedTool)
         .catch((error) => {
@@ -615,16 +638,23 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       return;
     }
 
-    const requestBody = {
-      messages: [],
-      selectedTool: tool,
-      isToolInit: true,
-      chatId: chatIdToInitiate
-    };
+    // Prevent re-initialization if the chat already has messages
+    if (currentChat?.id === chatIdToInitiate && currentChat?.messages?.length > 0) {
+      console.log(`[ChatArea Initiate Func] Skipping initialization - chat ${chatIdToInitiate} already has ${currentChat.messages.length} messages`);
+      return;
+    }
 
-    console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
+    // We rely on the API to provide the correct initialization message.
 
     try {
+      // Still call the API to set up the thread metadata
+      const requestBody = {
+        messages: [],
+        tool: tool,
+        isToolInit: true,
+        chatId: chatIdToInitiate
+      };
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -642,50 +672,54 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       const data = await response.json();
       console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
 
-      if (data?.chatId && (data.msgPreview || data.message)) {
-        const assistantMessage = {
-          id: Date.now() + Math.random(),
-          content: data.msgPreview ? data.msgPreview : data.message,
-          role: "assistant",
-          isInitial: true,
-          timestamp: new Date().toISOString()
-        };
+      // Use the API-provided message (data.msgPreview or data.message).
+      const initialContent = data.msgPreview || data.message || "Let's build out your offer! Tell me about your core product/service at a high level.";
 
-        const existingMessages = currentChat?.messages || [];
-        const updatedChat = {
-          ...currentChat,
-          id: data.chatId,
-          messages: [...existingMessages, assistantMessage],
-          metadata: {
-            ...currentChat?.metadata,
-            collectedAnswers: data.collectedAnswers || {},
-            currentQuestionKey: data.currentQuestionKey,
-            questionsAnswered: data.questionsAnswered || 0,
-            isComplete: data.isComplete || false
-          }
-        };
+      const assistantMessage = {
+        id: Date.now() + Math.random(),
+        content: initialContent,
+        role: "assistant",
+        isInitial: true,
+        timestamp: new Date().toISOString()
+      };
 
-        console.log("[ChatArea Initiate Func] Constructed updatedChat object:", JSON.stringify(updatedChat, null, 2));
+      const existingMessages = currentChat?.messages || [];
+      const updatedChat = {
+        ...currentChat,
+        id: data.chatId || chatIdToInitiate,
+        messages: [...existingMessages, assistantMessage],
+        metadata: {
+          ...currentChat?.metadata,
+          collectedAnswers: data.collectedAnswers || {},
+          currentQuestionKey: data.currentQuestionKey,
+          questionsAnswered: data.questionsAnswered || 0,
+          isComplete: data.isComplete || false
+        }
+      };
 
-        console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
+      console.log("[ChatArea Initiate Func] Constructed updatedChat object with locked message");
 
-        setChats(prevChats => {
-          const filteredChats = prevChats.filter(chat => chat.id !== chatIdToInitiate);
-          const newChats = [...filteredChats, updatedChat];
-          return newChats;
-        });
+      // Update chats list first
+      setChats(prevChats => {
+        const filteredChats = prevChats.filter(chat => chat.id !== chatIdToInitiate);
+        const newChats = [...filteredChats, updatedChat];
+        return newChats;
+      });
 
-        // Set the current chat to the updated one
+      // Only update currentChat if we're still working with the same chat ID
+      if (currentChat?.id === chatIdToInitiate) {
         setCurrentChat(updatedChat);
-        
-        console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${updatedChat.messages[0]?.content?.substring(0, 50)}..."`);
-        console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
-
-        // Update component state from the response
-        setCollectedAnswers(data.collectedAnswers || {});
-        setCurrentQuestionKey(data.currentQuestionKey);
-        setQuestionsAnswered(data.questionsAnswered || 0);
+        console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${initialContent.substring(0, 50)}..."`);
+      } else {
+        console.log(`[ChatArea Initiate Func] Skipping setCurrentChat - chat ID changed from ${chatIdToInitiate} to ${currentChat?.id}`);
       }
+
+      console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
+
+      // Update component state from the response
+      setCollectedAnswers(data.collectedAnswers || {});
+      setCurrentQuestionKey(data.currentQuestionKey);
+      setQuestionsAnswered(data.questionsAnswered || 0);
     } catch (error) {
       console.error("[ChatArea Initiate Func] Error initiating tool chat:", error);
     } finally {
