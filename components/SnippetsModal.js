@@ -45,7 +45,9 @@ export default function SnippetsModal({ isOpen, onClose }) {
 
   // Load snippets and tags when modal opens
   useEffect(() => {
+    console.log('[SnippetsModal] Modal state changed:', { isOpen, userId: user?.id });
     if (isOpen && user?.id) {
+      console.log('[SnippetsModal] Loading snippets and tags');
       loadSnippets();
       loadTags();
     }
@@ -180,11 +182,11 @@ export default function SnippetsModal({ isOpen, onClose }) {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-3xl max-h-[85vh] w-full flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[85vh] w-[95vw] sm:w-full flex flex-col mx-auto">
           <DialogHeader>
             <DialogTitle className="text-xl sm:text-2xl font-semibold">My Snippets</DialogTitle>
             <DialogDescription>
-              <span className="text-base sm:text-lg">Manage your saved text snippets. Click to copy or edit.</span>
+              <span className="text-base sm:text-lg">Manage your saved text snippets. Tap to copy or edit.</span>
             </DialogDescription>
           </DialogHeader>
           
@@ -205,7 +207,7 @@ export default function SnippetsModal({ isOpen, onClose }) {
               <select
                 value={selectedTag}
                 onChange={(e) => setSelectedTag(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-background"
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-background min-h-[44px]"
               >
                 <option value="">All Tags</option>
                 {availableTags.map(tag => (
@@ -218,7 +220,7 @@ export default function SnippetsModal({ isOpen, onClose }) {
                   variant="outline"
                   size="sm"
                   onClick={clearFilters}
-                  className="px-3"
+                  className="px-3 min-h-[44px] touch-target"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -249,7 +251,7 @@ export default function SnippetsModal({ isOpen, onClose }) {
                     }
                   </p>
                   {(searchTerm || selectedTag) && (
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                    <Button variant="outline" size="sm" onClick={clearFilters} className="touch-target">
                       Clear Filters
                     </Button>
                   )}
@@ -265,8 +267,17 @@ export default function SnippetsModal({ isOpen, onClose }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-10 w-10 p-0 touch-target"
-                          onClick={() => handleCopy(snippet.content)}
+                          className="h-12 w-12 p-0 touch-target flex items-center justify-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCopy(snippet.content);
+                          }}
+                          onTouchEnd={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCopy(snippet.content);
+                          }}
                           title="Copy content"
                         >
                           <Copy className="h-5 w-5" />
@@ -274,8 +285,17 @@ export default function SnippetsModal({ isOpen, onClose }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-10 w-10 p-0 touch-target"
-                          onClick={() => handleEdit(snippet)}
+                          className="h-12 w-12 p-0 touch-target flex items-center justify-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEdit(snippet);
+                          }}
+                          onTouchEnd={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEdit(snippet);
+                          }}
                           title="Edit snippet"
                         >
                           <Edit className="h-5 w-5" />
@@ -283,8 +303,17 @@ export default function SnippetsModal({ isOpen, onClose }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-10 w-10 p-0 text-red-600 hover:text-red-700 touch-target"
-                          onClick={() => handleDelete(snippet.id)}
+                          className="h-12 w-12 p-0 text-red-600 hover:text-red-700 touch-target flex items-center justify-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDelete(snippet.id);
+                          }}
+                          onTouchEnd={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDelete(snippet.id);
+                          }}
                           title="Delete snippet"
                         >
                           <Trash2 className="h-5 w-5" />

@@ -1129,38 +1129,22 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
         
         if (scrollElement) {
-          // Get current scroll values
-          const currentScrollTop = scrollElement.scrollTop;
-          const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+          // Force aggressive scroll to bottom with a small delay to ensure content is rendered
+          setTimeout(() => {
+            const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+            scrollElement.scrollTop = maxScroll + 50; // Add small padding
+          }, 10);
           
-          // Force aggressive scroll to bottom immediately
-          scrollElement.scrollTop = maxScroll + 100; // Extra padding to ensure we're at the bottom
-          
-          // During streaming, be extra aggressive
-          if (isStreaming) {
-            // Force scroll again after a tiny delay to catch any race conditions
+          // Also try scrollIntoView on the last message with a delay
+          if (lastMessageRef.current) {
             setTimeout(() => {
-              const newMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = newMaxScroll + 100;
-            }, 5);
-            
-            // And one more time to be absolutely sure
-            setTimeout(() => {
-              const finalMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = finalMaxScroll + 100;
+              lastMessageRef.current.scrollIntoView({ 
+                behavior: 'instant',
+                block: 'end',
+                inline: 'nearest'
+              });
             }, 20);
           }
-        }
-        
-        // Also try scrollIntoView on the last message as backup
-        if (lastMessageRef.current) {
-          setTimeout(() => {
-            lastMessageRef.current.scrollIntoView({ 
-              behavior: 'instant',
-              block: 'end',
-              inline: 'nearest'
-            });
-          }, isStreaming ? 10 : 20);
         }
       }
     });
@@ -1204,35 +1188,61 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     streamingContent
   ]);
 
-  // Continuous auto-scroll during active streaming to ensure we keep up with fast content
+  // Auto-scroll when messages change
   useEffect(() => {
-    let scrollInterval;
-    
-    if (isStreaming && streamingContent) {
-      // Set up a continuous scroll interval during streaming
-      scrollInterval = setInterval(() => {
-        scrollToBottom();
-      }, 100); // Scroll every 100ms during active streaming
-    }
-    
-    return () => {
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
-      }
-    };
-  }, [isStreaming, streamingContent]);
+    scrollToBottom();
+  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n, isStreaming, streamingContent]);
 
-  // Immediate scroll when streaming starts
+  // Auto-scroll with delay to ensure DOM is rendered
   useEffect(() => {
-    if (isStreaming) {
-      // Scroll immediately when streaming begins
+    if (currentChat?.messages?.length > 0) {
+      // Immediate scroll
       scrollToBottom();
-      // And again after a tiny delay to catch any initial content
-      setTimeout(() => {
+      
+      // Delayed scroll to catch any late-rendering content
+      const timeoutId = setTimeout(() => {
         scrollToBottom();
-      }, 50);
+      }, 100);
+      
+      // Additional scroll for complex content like documents
+      const timeoutId2 = setTimeout(() => {
+        scrollToBottom();
+      }, 500);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+      };
     }
-  }, [isStreaming]);
+  }, [currentChat?.id, currentChat?.messages, streamingContent]);
+
+  // Dedicated useEffect for real-time streaming auto-scroll - AGGRESSIVE VERSION
+  useEffect(() => {
+    if (isStreaming && streamingContent) {
+      // Immediate scroll during streaming
+      scrollToBottom();
+      
+      // Multiple delayed scrolls to catch any rendering lag
+      const timeouts = [
+        setTimeout(() => scrollToBottom(), 10),
+        setTimeout(() => scrollToBottom(), 50),
+        setTimeout(() => scrollToBottom(), 100),
+        setTimeout(() => scrollToBottom(), 200)
+      ];
+      
+      return () => {
+        timeouts.forEach(timeout => clearTimeout(timeout));
+      };
+    }
+  }, [streamingContent, isStreaming]);
+
+  // Additional useEffect to scroll on every streaming content change
+  useEffect(() => {
+    if (isStreaming && streamingContent && streamingContent.length > 0) {
+      // Force immediate scroll on every content update
+      scrollToBottom();
+    }
+  }, [streamingContent]);
 
   // Determine if the offer creation process is complete for UI feedback
   // Check both local state and metadata for completion
@@ -1968,20 +1978,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
-              <div className="flex w-full max-w-4xl justify-start">
-                <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%]">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                  <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
-                    <div className="flex items-center space-x-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="flex flex-col items-center justify-center space-y-3 animate-in fade-in-50 duration-500">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground font-medium">
+                  Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
+                </p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center space-y-6 text-center max-w-md">

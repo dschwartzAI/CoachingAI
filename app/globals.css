@@ -129,6 +129,13 @@
     min-width: 44px;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    position: relative;
+  }
+  
+  /* Add visual feedback for touch interactions */
+  .touch-target:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease-in-out;
   }
   
   /* Improved mobile typography */
@@ -173,5 +180,47 @@
   /* Optimize selections on mobile */
   ::selection {
     background-color: hsl(var(--primary) / 0.2);
+  }
+  
+  /* Improve modal and dropdown positioning on mobile */
+  .mobile-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Better touch feedback for clickable elements */
+  [data-clickable="true"]:active,
+  button:active,
+  [role="button"]:active {
+    background-color: hsl(var(--muted) / 0.8);
+    transition: background-color 0.1s ease-in-out;
+  }
+  
+  /* Optimize scrollable areas for mobile */
+  .touch-pan-y {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  
+  /* Prevent accidental zoom on double tap */
+  .no-zoom {
+    touch-action: manipulation;
+  }
+  
+  /* Better mobile menu transitions */
+  .mobile-menu-transition {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Improve mobile input responsiveness */
+  input:focus,
+  textarea:focus {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 }

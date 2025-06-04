@@ -2334,7 +2334,7 @@ The user's conversation history and knowledge base research are provided below.$
 
         // Check if client supports streaming
         // Temporarily disable streaming until client implementation is ready
-        const acceptsStreaming = false; // request.headers.get('Accept')?.includes('text/event-stream');
+        const acceptsStreaming = request.headers.get('Accept')?.includes('text/event-stream');
         let fullResponseText = '';
         
         if (acceptsStreaming) {

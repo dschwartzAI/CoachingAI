@@ -42,6 +42,7 @@ const workshopQuestions = [
   { key: 'resourcesProvided', question: "What resources will participants receive?" }
 ];
 
+
 // Add a utility to extract links from message content
 function extractN8nLinks(content) {
   if (typeof content !== 'string') return {};
@@ -467,83 +468,88 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       setInitiationAttemptedForContext(false);
       lastInitiatedChatIdRef.current = null; // Reset the last initiated chat ID on context switch
       
+      // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
-        // Initialize state from metadata
+        // Initialize state from metadata if available
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-
-        if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
-          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
-        } else {
-          setCurrentQuestionKey(null); // Not a question-based tool
-        }
         
-        // Document generation state
+        // Check document generation state
         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
           setIsWaitingForN8n(true);
+          
+          // If document generation is in progress, check if we should reconnect to the stream
           if (currentChat.metadata.generationStartTime) {
             const startTime = new Date(currentChat.metadata.generationStartTime);
             const now = new Date();
             const elapsedMs = now - startTime;
             const MAX_GENERATION_TIME = 5 * 60 * 1000; // 5 minutes
-            if (elapsedMs < MAX_GENERATION_TIME && currentChat.metadata.collectedAnswers) {
-              try {
-                const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
-                connectToN8nResultStream(currentChat.id, encodedAnswers);
-              } catch (err) {
-                console.error(`[ChatArea] Error reconnecting to stream:`, err);
-                setIsWaitingForN8n(true); 
+            
+            if (elapsedMs < MAX_GENERATION_TIME) {
+              // Document generation started recently, reconnect to the stream
+              if (currentChat.metadata.collectedAnswers) {
+                try {
+                  const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
+                  connectToN8nResultStream(currentChat.id, encodedAnswers);
+                } catch (err) {
+                  console.error(`[ChatArea] Error reconnecting to stream:`, err);
+                  setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+                }
+              } else {
+                console.warn(`[ChatArea] Cannot reconnect to stream: missing collectedAnswers`);
+                setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
               }
             } else {
-              setIsWaitingForN8n(true); 
+              // Document generation started a while ago, assume it's still in progress but don't reconnect
+              setIsWaitingForN8n(true); // Just set the loading state
             }
           } else {
+            // No start time available, just set the loading state
             setIsWaitingForN8n(true);
           }
-        } else { // Covers documentGenerated or isGeneratingDocument is false
+        } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
+          // Document generation is complete or not in progress
           setIsWaitingForN8n(false);
+        } else {
+          // Check if there are already document messages in the chat
+          const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
+          if (hasDocumentMessages) {
+            setIsWaitingForN8n(false);
+          } else {
+            setIsWaitingForN8n(false);
+          }
         }
       } else {
-        // No metadata - reset to default for the selected context
+        // Reset to default state if no metadata
         setCollectedAnswers({});
         setQuestionsAnswered(0);
-        if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
-          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          setCurrentQuestionKey(questionsArray[0]?.key);
-        } else {
-          setCurrentQuestionKey(null); // Not a question-based tool
-        }
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(questionsArray[0]?.key);
         setIsWaitingForN8n(false);
       }
 
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
-          eventSourceRef.current.close(); 
+          eventSourceRef.current.close(); // Close any previous connection
           eventSourceRef.current = null;
       }
     } else {
-      // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata from another source)
-      // Re-apply state from metadata if available to ensure consistency, ONLY if a tool is selected
-      if (currentChat?.metadata && typeof currentChat.metadata === 'object') {
-        if (currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') {
-           setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-           const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-           setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0]?.key));
-           setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
-        } else {
-          // If not a question-based tool, ensure tool-specific states are clear
-           setCollectedAnswers(prev => Object.keys(prev).length > 0 ? {} : prev);
-           setCurrentQuestionKey(prev => prev !== null ? null : prev);
-           setQuestionsAnswered(prev => prev !== 0 ? 0 : prev);
-        }
+      // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
+      // Re-apply state from metadata if available to ensure consistency
+      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
+         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0].key));
+         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
          
-        // Document generation state check, applies regardless of tool type if metadata exists
-        if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
+         // Check document generation state
+         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
            setIsWaitingForN8n(true);
-        } else { // Covers documentGenerated or isGeneratingDocument is false
+         } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
            setIsWaitingForN8n(false);
-        }
+         }
       }
     }
 
@@ -1112,127 +1118,65 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Improved auto-scroll function
   const scrollToBottom = () => {
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
-      if (scrollAreaRef.current) {
-        const scrollArea = scrollAreaRef.current;
+    if (scrollAreaRef.current) {
+      // Try multiple methods to find the scrollable element
+      const scrollArea = scrollAreaRef.current;
+      
+      // Method 1: Look for the viewport element (Radix ScrollArea)
+      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+      
+      // Method 2: Look for any element with overflow scroll
+      if (!scrollElement) {
+        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
+      }
+      
+      // Method 3: Use the scroll area itself
+      if (!scrollElement) {
+        scrollElement = scrollArea;
+      }
+      
+      if (scrollElement) {
+        // Force scroll to bottom with multiple approaches
+        scrollElement.scrollTop = scrollElement.scrollHeight;
         
-        // Try multiple methods to find the scrollable element
-        let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-        
-        if (!scrollElement) {
-          scrollElement = scrollArea.querySelector('div[style*="overflow"]');
-        }
-        
-        if (!scrollElement) {
-          scrollElement = scrollArea;
-        }
-        
-        if (scrollElement) {
-          // Get current scroll values
-          const currentScrollTop = scrollElement.scrollTop;
-          const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-          
-          // Force aggressive scroll to bottom immediately
-          scrollElement.scrollTop = maxScroll + 100; // Extra padding to ensure we're at the bottom
-          
-          // During streaming, be extra aggressive
-          if (isStreaming) {
-            // Force scroll again after a tiny delay to catch any race conditions
-            setTimeout(() => {
-              const newMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = newMaxScroll + 100;
-            }, 5);
-            
-            // And one more time to be absolutely sure
-            setTimeout(() => {
-              const finalMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = finalMaxScroll + 100;
-            }, 20);
-          }
-        }
-        
-        // Also try scrollIntoView on the last message as backup
+        // Also try scrollIntoView on the last message if available
         if (lastMessageRef.current) {
-          setTimeout(() => {
-            lastMessageRef.current.scrollIntoView({ 
-              behavior: 'instant',
-              block: 'end',
-              inline: 'nearest'
-            });
-          }, isStreaming ? 10 : 20);
+          lastMessageRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'end' 
+          });
         }
       }
-    });
+    }
   };
 
-  // Single consolidated auto-scroll useEffect to prevent conflicts
+  // Auto-scroll when messages change
   useEffect(() => {
-    // Always scroll when messages change or streaming updates
-    const shouldScroll = 
-      currentChat?.messages?.length > 0 || 
-      isResponseLoading || 
-      isWaitingForN8n || 
-      (isStreaming && streamingContent);
+    scrollToBottom();
+  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
 
-    if (shouldScroll) {
+  // Auto-scroll with delay to ensure DOM is rendered
+  useEffect(() => {
+    if (currentChat?.messages?.length > 0) {
       // Immediate scroll
       scrollToBottom();
       
-      // Additional scroll for streaming content updates
-      if (isStreaming && streamingContent) {
-        const streamingTimeout = setTimeout(() => {
-          scrollToBottom();
-        }, 50);
-        
-        return () => clearTimeout(streamingTimeout);
-      }
-      
-      // Standard delayed scroll for other content
-      const standardTimeout = setTimeout(() => {
+      // Delayed scroll to catch any late-rendering content
+      const timeoutId = setTimeout(() => {
         scrollToBottom();
       }, 100);
       
-      return () => clearTimeout(standardTimeout);
-    }
-  }, [
-    currentChat?.messages?.length, 
-    currentChat?.id, 
-    isResponseLoading, 
-    isWaitingForN8n, 
-    isStreaming, 
-    streamingContent
-  ]);
-
-  // Continuous auto-scroll during active streaming to ensure we keep up with fast content
-  useEffect(() => {
-    let scrollInterval;
-    
-    if (isStreaming && streamingContent) {
-      // Set up a continuous scroll interval during streaming
-      scrollInterval = setInterval(() => {
+      // Additional scroll for complex content like documents
+      const timeoutId2 = setTimeout(() => {
         scrollToBottom();
-      }, 100); // Scroll every 100ms during active streaming
+      }, 500);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+      };
     }
-    
-    return () => {
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
-      }
-    };
-  }, [isStreaming, streamingContent]);
-
-  // Immediate scroll when streaming starts
-  useEffect(() => {
-    if (isStreaming) {
-      // Scroll immediately when streaming begins
-      scrollToBottom();
-      // And again after a tiny delay to catch any initial content
-      setTimeout(() => {
-        scrollToBottom();
-      }, 50);
-    }
-  }, [isStreaming]);
+  }, [currentChat?.id, currentChat?.messages]);
 
   // Determine if the offer creation process is complete for UI feedback
   // Check both local state and metadata for completion
@@ -1964,24 +1908,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         {/* This inner div will be the actual container for messages and text selection */}
         <div 
           ref={chatContainerRef} 
-          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-32 sm:mb-36 transition-all duration-300 ease-in-out ${currentChat?.messages?.length <= 1 ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}>
+          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24 transition-all duration-300 ease-in-out ${currentChat?.messages?.length <= 1 ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}>
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
-              <div className="flex w-full max-w-4xl justify-start">
-                <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%]">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                  <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
-                    <div className="flex items-center space-x-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="flex flex-col items-center justify-center space-y-3 animate-in fade-in-50 duration-500">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground font-medium">
+                  Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
+                </p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center space-y-6 text-center max-w-md">
@@ -2018,15 +1953,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
               if (isCurrentStream) {
                 return (
-                  <div
+                  <StreamingMessage
                     key={message.id}
-                    ref={isLastMessage ? lastMessageRef : null}
-                  >
-                    <StreamingMessage
-                      content={message.content}
-                      isComplete={!message.isStreaming}
-                    />
-                  </div>
+                    content={message.content}
+                    isComplete={!message.isStreaming}
+                  />
                 );
               }
 
@@ -2051,15 +1982,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               // Handle streaming messages
               if (message.isStreaming) {
                 return (
-                  <div
-                    key={message.id}
-                    ref={isLastMessage ? lastMessageRef : null}
-                  >
-                    <StreamingMessage
-                      content={message.content}
-                      isComplete={false} // This will be true once isStreaming is false
-                    />
-                  </div>
+                  <StreamingMessage
+                    key={message.id} // Use message.id as key
+                    content={message.content}
+                    isComplete={false} // This will be true once isStreaming is false
+                  />
                 );
               }
               // Handle error messages that might have come from streaming
@@ -2090,7 +2017,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   data-message-id={message.id}
                   data-chat-id={currentChat?.id}
                   data-message-role={message.role}
-                  ref={isLastMessage ? lastMessageRef : null}
                 >
                   <div
                     className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] ${

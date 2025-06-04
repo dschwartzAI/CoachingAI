@@ -352,13 +352,22 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   {hasMoreChats && (
                     <Button 
                       variant="ghost" 
-                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-1"
-                      onClick={() => setExpandedChats(!expandedChats)}
+                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-1 min-h-[44px] touch-target"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setExpandedChats(!expandedChats);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setExpandedChats(!expandedChats);
+                      }}
                     >
                       {expandedChats ? (
-                        <>Show less <ChevronDown className="h-3 w-3 ml-1" /></>
+                        <>Show less <ChevronUp className="h-3 w-3 ml-1" /></>
                       ) : (
-                        <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronRight className="h-3 w-3 ml-1" /></>
+                        <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronDown className="h-3 w-3 ml-1" /></>
                       )}
                     </Button>
                   )}
@@ -399,7 +408,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <Button
                   variant="ghost"
                   className="w-full justify-start h-10 text-xs mb-0.5 touch-target"
-                  onClick={() => {
+                  onClick={(e) => {
+                    console.log('[Sidebar] Snippets button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsSnippetsModalOpen(true);
+                    setIsMobileOpen(false);
+                  }}
+                  onTouchEnd={(e) => {
+                    console.log('[Sidebar] Snippets button touched');
+                    e.preventDefault();
+                    e.stopPropagation();
                     setIsSnippetsModalOpen(true);
                     setIsMobileOpen(false);
                   }}
