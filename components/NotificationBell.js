@@ -252,20 +252,20 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
                        -translate-x-1/2 md:translate-x-0
                        top-16 md:top-full"
           >
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-sm">Notifications</h3>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">Notifications</h3>
                 <div className="flex items-center gap-1">
-                  {notifications.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearAllNotifications}
+              {notifications.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllNotifications}
                       className="text-xs h-8 px-2 touch-target"
-                    >
-                      Clear all
-                    </Button>
-                  )}
+                >
+                  Clear all
+                </Button>
+              )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -276,46 +276,46 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
-              
-              {notifications.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No notifications
-                </p>
-              ) : (
+            </div>
+            
+            {notifications.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No notifications
+              </p>
+            ) : (
                 <div className="space-y-2 max-h-64 overflow-y-auto touch-pan-y">
-                  {notifications.map((notification) => (
-                    <div
-                      key={notification.id}
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
                       className="p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors touch-target active:bg-muted/60"
-                      onClick={() => handleNotificationClick(notification)}
+                    onClick={() => handleNotificationClick(notification)}
                       onTouchEnd={(e) => {
                         e.preventDefault();
                         handleNotificationClick(notification);
                       }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                            <p className="text-sm font-medium truncate">
-                              Document Ready
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Your {notification.chatTitle} document is ready to view
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {notification.timestamp.toLocaleTimeString()}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                          <p className="text-sm font-medium truncate">
+                            Document Ready
                           </p>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeNotification(notification.id);
-                          }}
+                        <p className="text-xs text-muted-foreground">
+                          Your {notification.chatTitle} document is ready to view
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {notification.timestamp.toLocaleTimeString()}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNotification(notification.id);
+                        }}
                           onTouchEnd={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -323,16 +323,16 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
                           }}
                           className="h-8 w-8 p-0 flex-shrink-0 touch-target"
                           aria-label="Remove notification"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         </>
       )}
     </div>

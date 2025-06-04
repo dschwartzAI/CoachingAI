@@ -2178,33 +2178,33 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         const [vectorSearchResponse, toolSuggestionResponse] = await Promise.all([
           // Vector search
           openai.responses.create({
-            model: OPENAI_MODEL,
-            input: [
-              {
-                role: "system",
-                content: `You are a knowledge retrieval assistant. Your job is to find and extract relevant information from the knowledge base to help answer the user's question. Be comprehensive but focused - include specific strategies, frameworks, tactics, and examples that relate to the user's query. Do not try to coach or provide personal advice - just extract and organize the relevant information clearly.`
-              },
-              {
-                role: "user", 
+          model: OPENAI_MODEL,
+          input: [
+            {
+              role: "system",
+              content: `You are a knowledge retrieval assistant. Your job is to find and extract relevant information from the knowledge base to help answer the user's question. Be comprehensive but focused - include specific strategies, frameworks, tactics, and examples that relate to the user's query. Do not try to coach or provide personal advice - just extract and organize the relevant information clearly.`
+            },
+            {
+              role: "user", 
                 content: latestUserMessage
-              }
-            ],
-            tools: [{
-              type: "file_search",
-              vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
-              max_num_results: 8
-            }],
-            include: ["file_search_call.results"],
-            stream: false
+            }
+          ],
+          tools: [{
+            type: "file_search",
+            vector_store_ids: [process.env.OPENAI_VECTOR_STORE_ID || "vs_67df294659c48191bffbe978d27fc6f7"],
+            max_num_results: 8
+          }],
+          include: ["file_search_call.results"],
+          stream: false
           }),
           
           // Tool suggestion analysis  
           openai.chat.completions.create({
-            model: OPENAI_MODEL,
-            messages: [
-              {
-                role: "system",
-                content: `You are an intelligent assistant that analyzes user questions to determine if they would benefit from knowing about specific tools available in the app.
+          model: OPENAI_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: `You are an intelligent assistant that analyzes user questions to determine if they would benefit from knowing about specific tools available in the app.
 
 AVAILABLE TOOLS TO MENTION:
 1. HYBRID OFFER CREATOR - This tool creates a complete, customized offer document for users. Mention when users ask about:
@@ -2237,14 +2237,14 @@ Analyze this conversation:
 Recent messages: ${messages.slice(-3).map(m => `${m.role}: ${m.content}`).join('\n')}
 
 Return JSON: { "shouldMention": boolean, "toolName": string|null, "reasoning": string }`
-              },
-              {
-                role: "user",
-                content: latestUserMessage
-              }
-            ],
-            temperature: 0.3,
-            response_format: { type: "json_object" }
+            },
+            {
+              role: "user",
+              content: latestUserMessage
+            }
+          ],
+          temperature: 0.3,
+          response_format: { type: "json_object" }
           })
         ]);
 
@@ -2389,7 +2389,7 @@ The user's conversation history and knowledge base research are provided below.$
               'Cache-Control': 'no-cache',
               'Connection': 'keep-alive',
             },
-          });
+                });
         } else {
           // Fallback to regular JSON response for backward compatibility
           for await (const chunk of coachingResponse) {
@@ -2403,10 +2403,10 @@ The user's conversation history and knowledge base research are provided below.$
           await handleMessageSave(chatId, supabase, fullResponseText, userId);
 
           // Return the response as JSON (existing format)
-          return NextResponse.json({
+        return NextResponse.json({
             message: fullResponseText,
-            chatId: chatId
-          });
+          chatId: chatId
+        });
         }
 
       } catch (error) {
@@ -2675,4 +2675,4 @@ async function handleMessageSave(chatId, supabase, responseText, userId) {
       console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
     }
   }
-}
+} 
