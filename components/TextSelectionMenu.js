@@ -1,17 +1,17 @@
 "use client";
 
+import React from 'react';
 import { Bookmark, Copy, Share } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
-export default function TextSelectionMenu({ 
+const TextSelectionMenu = React.forwardRef(({
   position, 
   onSaveSnippet, 
   onCopy, 
   onShare,
   selectedText,
-  menuRef 
-}) {
+}, ref) => {
   if (!selectedText) {
     return null;
   }
@@ -38,8 +38,8 @@ export default function TextSelectionMenu({
 
   return (
     <Card
-      ref={menuRef}
-      className="fixed z-50 p-2 shadow-lg border bg-background"
+      ref={ref}
+      className="fixed z-50 p-2 shadow-lg border bg-background text-selection-menu"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -81,4 +81,8 @@ export default function TextSelectionMenu({
       </div>
     </Card>
   );
-} 
+});
+
+TextSelectionMenu.displayName = 'TextSelectionMenu';
+
+export default TextSelectionMenu; 

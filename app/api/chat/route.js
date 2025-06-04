@@ -9,6 +9,7 @@ import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
 import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
 import { profileCache } from '@/lib/utils/cache';
+import { runAssistant } from '@/lib/assistants/assistant-client';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -2321,93 +2322,35 @@ The user's conversation history and knowledge base research are provided below.$
           { role: "user", content: `Here's our conversation so far:\n\n${messages.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n\n')}\n\nRelevant information from knowledge base:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : 'Provide coaching based on their question using the knowledge base information.'}\n\nRespond as James, coaching them on their specific situation.` }
         ];
 
-        const coachingResponse = await openai.chat.completions.create({
-          model: OPENAI_MODEL,
-          messages: coachingMessages,
-          temperature: 0.8, // Higher temperature for more personality
-          max_tokens: 220, // Force very concise responses
-          stream: true // Enable streaming for faster perceived response
+        // ---------------------------
+        // NEW: Use Assistants API
+        // ---------------------------
+        console.log('[CHAT_API_DEBUG] Step 2: Using Assistants API via helper');
+
+        const additionalInstructions = `${JAMES_COACHING_SYSTEM}
+
+${coachingContext}
+
+Relevant knowledge base info:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : ''}`;
+
+        const assistantRes = await runAssistant({
+          userMessage: latestUserMessage,
+          threadId: null, // TODO: persist per-chat thread
+          additionalInstructions,
         });
 
-        console.log('[CHAT_API_DEBUG] Step 2 complete: Generated James-style response with streaming');
-        console.log('[CHAT_API_DEBUG] Tool mentioned:', suggestionAnalysis.shouldMention ? suggestionAnalysis.toolName : 'None');
+        console.log('[CHAT_API_DEBUG] Step 2 complete: Assistant response received');
 
-        // Check if client supports streaming
-        // Temporarily disable streaming until client implementation is ready
-        const acceptsStreaming = request.headers.get('Accept')?.includes('text/event-stream');
-        let fullResponseText = '';
-        
-        if (acceptsStreaming) {
-          // Create a streaming response for clients that support it
-          const encoder = new TextEncoder();
+        let fullResponseText = assistantRes.response;
 
-          const stream = new ReadableStream({
-            async start(controller) {
-              try {
-                for await (const chunk of coachingResponse) {
-                  const content = chunk.choices[0]?.delta?.content || '';
-                  if (content) {
-                    fullResponseText += content;
-                    // Send chunk to client
-                    const chunkData = JSON.stringify({ 
-                      content,
-                      type: 'chunk',
-                      chatId: chatId
-                    });
-                    controller.enqueue(encoder.encode(`data: ${chunkData}\n\n`));
-                  }
-                }
+        // Save the response to the database
+        await handleMessageSave(chatId, supabase, fullResponseText, userId);
 
-                // Save the complete response to the database and handle session summary
-                await handleMessageSave(chatId, supabase, fullResponseText, userId);
-
-                // Send final completion signal
-                const completionData = JSON.stringify({ 
-                  type: 'complete',
-                  chatId: chatId,
-                  fullResponse: fullResponseText
-                });
-                controller.enqueue(encoder.encode(`data: ${completionData}\n\n`));
-                controller.close();
-
-              } catch (streamError) {
-                console.error('[CHAT_API_DEBUG] Streaming error:', streamError);
-                const errorData = JSON.stringify({ 
-                  type: 'error',
-                  error: streamError.message,
-                  chatId: chatId
-                });
-                controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
-                controller.close();
-              }
-            }
-          });
-
-          return new NextResponse(stream, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-            },
-                });
-        } else {
-          // Fallback to regular JSON response for backward compatibility
-          for await (const chunk of coachingResponse) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-              fullResponseText += content;
-            }
-          }
-
-          // Save the response to the database
-          await handleMessageSave(chatId, supabase, fullResponseText, userId);
-
-          // Return the response as JSON (existing format)
+        // Return JSON (streaming disabled for first cut)
         return NextResponse.json({
-            message: fullResponseText,
-          chatId: chatId
+          message: fullResponseText,
+          chatId: chatId,
         });
-        }
 
       } catch (error) {
         console.error('[CHAT_API_DEBUG] Error with 2-step coaching process:', error);

@@ -12,6 +12,7 @@ Create a `.env.local` file in the project root and define the following variable
 - `N8N_WEBHOOK_URL` – serverless functions send data to this n8n webhook
 - `NEXT_PUBLIC_N8N_WEBHOOK_URL` – client side webhook for the hybrid offer tool
 - `NEXT_PUBLIC_N8N_WORKSHOP_WEBHOOK_URL` – webhook used by the workshop generator
+- `OPENAI_ASSISTANT_ID` – ID of your pre-configured OpenAI Assistant (James Camp Coaching Assistant)
 
 Example:
 
@@ -22,6 +23,7 @@ N8N_WEBHOOK_URL=https://n8n.example.com/webhook/abc123
 NEXT_PUBLIC_N8N_WEBHOOK_URL=https://n8n.example.com/webhook/hybrid
 NEXT_PUBLIC_N8N_WORKSHOP_WEBHOOK_URL=https://n8n.example.com/webhook/workshop
 NEXT_PUBLIC_SKIP_AUTH=true
+OPENAI_ASSISTANT_ID=asst_RiCJhsiJXfe9ASzXNkb2Q1Qo
 ```
 
 ## Running Locally
