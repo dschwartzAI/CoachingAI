@@ -204,8 +204,18 @@ export default function ChatLayout() {
         // Set current chat based on history or create a new one
         if (formattedThreads.length > 0) {
           if (!currentChat) {
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to the first loaded thread:', formattedThreads[0].id);
-            setCurrentChatWithTracking(formattedThreads[0]);
+            // Prioritize the most recent regular chat (non-tool) over tool-based chats
+            const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
+            const selectedChat = mostRecentRegularChat || formattedThreads[0];
+            
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to:', {
+              id: selectedChat.id,
+              title: selectedChat.title,
+              tool_id: selectedChat.tool_id,
+              isRegularChat: !selectedChat.tool_id,
+              wasPrioritized: !!mostRecentRegularChat
+            });
+            setCurrentChatWithTracking(selectedChat);
           } else {
             if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
           }
