@@ -433,7 +433,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     selectedText,
     selectionContext,
     isTextSelected,
-    selectionPosition
+    selectionPosition,
+    clearSelection
   } = useTextSelection(chatContainerRef); // Pass chatContainerRef to the hook
   const [isSnippetModalOpen, setIsSnippetModalOpen] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState(null);
@@ -473,8 +474,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
 
         if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
-          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
         } else {
           setCurrentQuestionKey(null); // Not a question-based tool
         }
@@ -488,29 +489,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             const elapsedMs = now - startTime;
             const MAX_GENERATION_TIME = 5 * 60 * 1000; // 5 minutes
             if (elapsedMs < MAX_GENERATION_TIME && currentChat.metadata.collectedAnswers) {
-              try {
-                const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
-                connectToN8nResultStream(currentChat.id, encodedAnswers);
-              } catch (err) {
+                try {
+                  const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
+                  connectToN8nResultStream(currentChat.id, encodedAnswers);
+                } catch (err) {
                 console.error(`[ChatArea] Error reconnecting to stream:`, err);
                 setIsWaitingForN8n(true); 
+                }
+              } else {
+              setIsWaitingForN8n(true); 
               }
             } else {
-              setIsWaitingForN8n(true); 
-            }
-          } else {
             setIsWaitingForN8n(true);
           }
         } else { // Covers documentGenerated or isGeneratingDocument is false
-          setIsWaitingForN8n(false);
-        }
+            setIsWaitingForN8n(false);
+          }
       } else {
         // No metadata - reset to default for the selected context
         setCollectedAnswers({});
         setQuestionsAnswered(0);
         if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
-          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          setCurrentQuestionKey(questionsArray[0]?.key);
+        const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+        setCurrentQuestionKey(questionsArray[0]?.key);
         } else {
           setCurrentQuestionKey(null); // Not a question-based tool
         }
@@ -527,10 +528,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       // Re-apply state from metadata if available to ensure consistency, ONLY if a tool is selected
       if (currentChat?.metadata && typeof currentChat.metadata === 'object') {
         if (currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') {
-           setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
-           const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
            setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0]?.key));
-           setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+         setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
         } else {
           // If not a question-based tool, ensure tool-specific states are clear
            setCollectedAnswers(prev => Object.keys(prev).length > 0 ? {} : prev);
@@ -539,11 +540,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }
          
         // Document generation state check, applies regardless of tool type if metadata exists
-        if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
+         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
            setIsWaitingForN8n(true);
         } else { // Covers documentGenerated or isGeneratingDocument is false
            setIsWaitingForN8n(false);
-        }
+         }
       }
     }
 
@@ -558,7 +559,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       console.log(`[ChatArea] Existing messages initiation blocked - messages exist for tool: ${selectedTool}, chatId: ${currentChat.id}`);
       setInitiationAttemptedForContext(true);
       // Don't call initiateToolChat for existing messages - tools should only init on empty chats
-    }
+      }
   }, [currentChat, selectedTool, initiationAttemptedForContext]); // Dependencies for this effect
 
   // Effect to initiate chat for tool-based chats when there are *no* messages yet
@@ -578,11 +579,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     if (
       currentChat &&
       currentChat.messages?.length === 0 &&
-      (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
       !initiationAttemptedForContext && // This should be the primary guard for a new context
       user?.id
       // lastInitiatedChatIdRef.current !== currentChat.id // <<<< TEMPORARILY REMOVING THIS CONDITION
-    ) {
+       ) {
       console.log(`[ChatArea Auto-Initiate SUCCESS] Tool: ${selectedTool}, Chat ID: ${currentChat.id}. Initiating...`);
       setIsInitiating(true);
       setInitiationAttemptedForContext(true); // Mark this context (chat ID + tool) as having an initiation attempt
@@ -609,7 +610,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Removed the second duplicate useEffect that previously attempted initiation when messages.length > 0
 
   const initiateToolChat = async (chatIdToInitiate, tool) => {
-    console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
+      console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
     
     if (!user?.id) {
       console.error("User not authenticated");
@@ -638,43 +639,43 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestBody),
-      });
+              body: JSON.stringify(requestBody),
+          });
 
-      console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
+          console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
 
-      if (!response.ok) {
+          if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
-      }
+          }
 
-      const data = await response.json();
-      console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
+          const data = await response.json();
+          console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
 
       // Use the API-provided message (data.msgPreview or data.message).
       const initialContent = data.msgPreview || data.message || "Let's build out your offer! Tell me about your core product/service at a high level.";
-
-      const assistantMessage = {
+          
+          const assistantMessage = { 
         id: Date.now() + Math.random(),
         content: initialContent,
-        role: "assistant",
+              role: "assistant", 
         isInitial: true,
         timestamp: new Date().toISOString()
       };
 
       const existingMessages = currentChat?.messages || [];
-      const updatedChat = {
+          const updatedChat = {
         ...currentChat,
         id: data.chatId || chatIdToInitiate,
         messages: [...existingMessages, assistantMessage],
-        metadata: {
+              metadata: {
           ...currentChat?.metadata,
           collectedAnswers: data.collectedAnswers || {},
           currentQuestionKey: data.currentQuestionKey,
           questionsAnswered: data.questionsAnswered || 0,
           isComplete: data.isComplete || false
-        }
-      };
-
+              }
+          };
+          
       console.log("[ChatArea Initiate Func] Constructed updatedChat object with locked message");
 
       // Update chats list first
@@ -686,25 +687,25 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
       // Only update currentChat if we're still working with the same chat ID
       if (currentChat?.id === chatIdToInitiate) {
-        setCurrentChat(updatedChat);
+          setCurrentChat(updatedChat);
         console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${initialContent.substring(0, 50)}..."`);
       } else {
         console.log(`[ChatArea Initiate Func] Skipping setCurrentChat - chat ID changed from ${chatIdToInitiate} to ${currentChat?.id}`);
       }
 
-      console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
+          console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       // Update component state from the response
       setCollectedAnswers(data.collectedAnswers || {});
       setCurrentQuestionKey(data.currentQuestionKey);
       setQuestionsAnswered(data.questionsAnswered || 0);
-    } catch (error) {
+      } catch (error) {
       console.error("[ChatArea Initiate Func] Error initiating tool chat:", error);
-    } finally {
-      console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
+      } finally {
+          console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
       // The initiationAttemptedForContext flag should remain true regardless of success/failure
       // to prevent repeated attempts
-    }
+      }
   };
 
   const handleSubmit = async (e) => {
@@ -766,7 +767,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         streamingClient.streamChat({
           messages: updatedMessages, // Send messages up to the user's new message
-          tool: selectedTool,
+           tool: selectedTool,
           currentQuestionKey: currentQuestionKey,
           questionsAnswered: questionsAnswered,
           collectedAnswers: collectedAnswers,
@@ -861,8 +862,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       }
       
       // ... (rest of the handleSubmit for non-streaming tools)
-
-      const response = await fetch('/api/chat', {
+            
+       const response = await fetch('/api/chat', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
@@ -885,12 +886,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        const contentType = response.headers.get('Content-Type');
        let data;
        
-       // Handle JSON response for tool-based chat
-       try {
-           data = await response.json();
-       } catch (error) {
-           console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
-           throw new Error("Failed to parse response from server");
+           // Handle JSON response for tool-based chat
+           try {
+               data = await response.json();
+           } catch (error) {
+               console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
+               throw new Error("Failed to parse response from server");
        }
        
         console.log("[CHAT_DEBUG] API response data:", {
@@ -1114,21 +1115,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const scrollToBottom = () => {
     // Use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
-      if (scrollAreaRef.current) {
-        const scrollArea = scrollAreaRef.current;
-        
+    if (scrollAreaRef.current) {
+      const scrollArea = scrollAreaRef.current;
+      
         // Try multiple methods to find the scrollable element
-        let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-        
-        if (!scrollElement) {
-          scrollElement = scrollArea.querySelector('div[style*="overflow"]');
-        }
-        
-        if (!scrollElement) {
-          scrollElement = scrollArea;
-        }
-        
-        if (scrollElement) {
+      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+      
+      if (!scrollElement) {
+        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
+      }
+      
+      if (!scrollElement) {
+        scrollElement = scrollArea;
+      }
+      
+      if (scrollElement) {
           // Get current scroll values
           const currentScrollTop = scrollElement.scrollTop;
           const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
@@ -1155,11 +1156,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // Also try scrollIntoView on the last message as backup
         if (lastMessageRef.current) {
           setTimeout(() => {
-            lastMessageRef.current.scrollIntoView({ 
+          lastMessageRef.current.scrollIntoView({ 
               behavior: 'instant',
               block: 'end',
               inline: 'nearest'
-            });
+          });
           }, isStreaming ? 10 : 20);
         }
       }
@@ -1214,8 +1215,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         scrollToBottom();
       }, 100); // Scroll every 100ms during active streaming
     }
-    
-    return () => {
+      
+      return () => {
       if (scrollInterval) {
         clearInterval(scrollInterval);
       }
@@ -1916,11 +1917,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   });
 
-  const clearSelection = () => {
-    setIsTextSelected(false);
-    setSelectedText('');
-    setSelectionPosition(null);
-  };
+
 
   // Helper function to save messages to database
   const handleMessageSave = async (chatId, message, userId) => {
@@ -1977,7 +1974,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                     <div className="flex items-center space-x-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span className="text-sm text-muted-foreground">
-                        Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
+                  Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
                       </span>
                     </div>
                   </div>
@@ -2087,9 +2084,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 <div
                   key={message.id} // Use message.id as key
                   className={`flex w-full max-w-4xl ${isUser ? 'justify-end' : 'justify-start'}`}
-                  data-message-id={message.id}
-                  data-chat-id={currentChat?.id}
-                  data-message-role={message.role}
+                      data-message-id={message.id}
+                      data-chat-id={currentChat?.id}
+                      data-message-role={message.role}
                   ref={isLastMessage ? lastMessageRef : null}
                 >
                   <div
@@ -2122,14 +2119,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                           {message.content}
                         </p>
-                      ) : (
-                        <MarkdownMessage content={message.content} />
+                            ) : (
+                              <MarkdownMessage content={message.content} />
                       )}
                     </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })
           )}
 
           {/* Loading indicator for AI response (not user input loading) */}
@@ -2143,8 +2140,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   <div className="flex items-center space-x-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     <span className="text-sm text-muted-foreground">Thinking...</span>
-                  </div>
-                </div>
+              </div>
+            </div>
               </div>
             </div>
           )}
