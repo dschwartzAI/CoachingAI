@@ -18,7 +18,7 @@ export default function ProfilePage() {
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
   const [biggestChallenge, setBiggestChallenge] = useState('');
-  const [allowMemory, setAllowMemory] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -44,7 +44,7 @@ export default function ProfilePage() {
           setDesiredMrr(data.profile.desired_mrr || '');
           setDesiredHours(data.profile.desired_hours || '');
           setBiggestChallenge(data.profile.biggest_challenge || '');
-          setAllowMemory(data.profile.allow_memory ?? false);
+
         }
       } catch (err) {
         if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -69,7 +69,7 @@ export default function ProfilePage() {
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
           biggest_challenge: biggestChallenge,
-          allow_memory: allowMemory
+          allow_memory: true
         })
       });
       const data = await res.json();
@@ -122,17 +122,7 @@ export default function ProfilePage() {
               <Label htmlFor="biggestChallenge">Biggest Challenge</Label>
               <Input id="biggestChallenge" value={biggestChallenge} onChange={(e) => setBiggestChallenge(e.target.value)} disabled={saving} />
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="allowMemory"
-                type="checkbox"
-                className="h-4 w-4"
-                checked={allowMemory}
-                onChange={(e) => setAllowMemory(e.target.checked)}
-                disabled={saving}
-              />
-              <Label htmlFor="allowMemory">Allow coaching memory</Label>
-            </div>
+
             {error && <p className="text-sm text-center text-destructive">{error}</p>}
             {success && <p className="text-sm text-center text-green-500">{success}</p>}
             <Button type="submit" className="w-full" disabled={saving}>

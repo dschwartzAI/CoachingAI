@@ -38,7 +38,7 @@ export async function POST(request) {
   }
 
   const body = await request.json()
-    const { full_name, occupation, current_mrr, desired_mrr, desired_hours, biggest_challenge, allow_memory } = body
+    const { full_name, occupation, current_mrr, desired_mrr, desired_hours, biggest_challenge } = body
 
   const { data, error } = await supabase
     .from('user_profiles')
@@ -50,7 +50,7 @@ export async function POST(request) {
       desired_mrr,
       desired_hours,
       biggest_challenge,
-      allow_memory
+      allow_memory: true
       })
     .select()
 
