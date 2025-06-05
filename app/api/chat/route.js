@@ -8,8 +8,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
 import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
-import { profileCache } from '@/lib/utils/cache';
-import { runAssistant } from '@/lib/assistants/assistant-client';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -1270,10 +1268,23 @@ export async function POST(request) {
     // NOW build profile context only for non-workshop-init requests (where we actually need it)
     console.log('[CHAT_API_DEBUG] Building profile context for non-init request');
     
-    // Fetch profile information for authenticated users using cache
+    // Fetch profile information for authenticated users
     let userProfile = null;
     if (userId && !userId.startsWith('anon-')) {
-      userProfile = await getCachedUserProfile(userId, supabase);
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('full_name, occupation, desired_mrr, desired_hours')
+          .eq('user_id', userId)
+          .single();
+        if (!profileError) {
+          userProfile = profileData;
+        } else if (process.env.NODE_ENV !== 'production') {
+          console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
+        }
+      } catch (profileException) {
+        if (process.env.NODE_ENV !== 'production') console.error('[CHAT_API_DEBUG] Exception fetching profile:', profileException);
+      }
     }
 
     // Build profile context using the centralized function from ai.js
@@ -2171,14 +2182,13 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         const coachingContext = await getCoachingContext(userId);
         console.log('[CHAT_API_DEBUG] Coaching context retrieved, length:', coachingContext.length);
         
+        // STEP 1: Query the vector store to get relevant information
+        console.log('[CHAT_API_DEBUG] Step 1: Querying vector store for relevant information');
+        
         const latestUserMessage = messages.length > 0 ? messages[messages.length - 1].content : "";
+        const searchQuery = latestUserMessage; // Use the latest user message as search query
         
-        // STEP 1 & 1.5: Run vector search and tool suggestion analysis in parallel
-        console.log('[CHAT_API_DEBUG] Step 1 & 1.5: Running vector search and tool suggestion analysis in parallel');
-        
-        const [vectorSearchResponse, toolSuggestionResponse] = await Promise.all([
-          // Vector search
-          openai.responses.create({
+        const vectorSearchResponse = await openai.responses.create({
           model: OPENAI_MODEL,
           input: [
             {
@@ -2187,7 +2197,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
             },
             {
               role: "user", 
-                content: latestUserMessage
+              content: searchQuery
             }
           ],
           tools: [{
@@ -2197,10 +2207,28 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           }],
           include: ["file_search_call.results"],
           stream: false
-          }),
-          
-          // Tool suggestion analysis  
-          openai.chat.completions.create({
+        });
+
+        // Extract the knowledge base information
+        let knowledgeBaseInfo = "";
+        if (vectorSearchResponse.output) {
+          for (const item of vectorSearchResponse.output) {
+            if (item.type === 'message' && item.content) {
+              for (const contentItem of item.content) {
+                if (contentItem.type === 'output_text' && contentItem.text) {
+                  knowledgeBaseInfo += contentItem.text;
+                }
+              }
+            }
+          }
+        }
+
+        console.log('[CHAT_API_DEBUG] Step 1 complete: Retrieved knowledge base info length:', knowledgeBaseInfo.length);
+
+        // STEP 1.5: Tool Suggestion Analysis (for verbal guidance only)
+        console.log('[CHAT_API_DEBUG] Step 1.5: Analyzing for tool suggestion opportunities');
+        
+        const toolSuggestionResponse = await openai.chat.completions.create({
           model: OPENAI_MODEL,
           messages: [
             {
@@ -2246,26 +2274,9 @@ Return JSON: { "shouldMention": boolean, "toolName": string|null, "reasoning": s
           ],
           temperature: 0.3,
           response_format: { type: "json_object" }
-          })
-        ]);
-
-        // Extract the knowledge base information
-        let knowledgeBaseInfo = "";
-        if (vectorSearchResponse.output) {
-          for (const item of vectorSearchResponse.output) {
-            if (item.type === 'message' && item.content) {
-              for (const contentItem of item.content) {
-                if (contentItem.type === 'output_text' && contentItem.text) {
-                  knowledgeBaseInfo += contentItem.text;
-                }
-              }
-            }
-          }
-        }
+        });
 
         const suggestionAnalysis = JSON.parse(toolSuggestionResponse.choices[0].message.content);
-        
-        console.log('[CHAT_API_DEBUG] Step 1 & 1.5 complete: Retrieved knowledge base info length:', knowledgeBaseInfo.length);
         console.log('[CHAT_API_DEBUG] Tool suggestion analysis:', suggestionAnalysis);
 
         // STEP 2: Process the information through James' coaching lens
@@ -2287,9 +2298,12 @@ CORE PRINCIPLES (weave naturally into advice, don't list):
 • Don't sell "clarity" or "confidence"—sell mechanisms and outcomes
 • Business should feed life, not consume it
 
-VOICE GUIDANCE (no canned catch-phrases):
-• Write in James's direct, energetic tone without repeatedly using the same signature lines.
-• Humor and bluntness should feel natural, not forced. Mention signature phrases only if the user brings them up first.
+SIGNATURE PHRASES (use sparingly, max 1-2 per response, only when they fit naturally):
+• "Let me be blunt..."
+• "This isn't about the thing, it's about how people feel about the thing."
+• "The fastest way to get rich is also the fastest way to burn out."
+• "Don't sell the seat on the plane—sell the destination."
+• "It's not that it's hard—it's just harder for people who haven't done the Reps."
 
 TOOL MENTIONS: ${suggestionAnalysis.shouldMention ? `
 The user's question relates to our ${suggestionAnalysis.toolName}. You should:
@@ -2322,34 +2336,60 @@ The user's conversation history and knowledge base research are provided below.$
           { role: "user", content: `Here's our conversation so far:\n\n${messages.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n\n')}\n\nRelevant information from knowledge base:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : 'Provide coaching based on their question using the knowledge base information.'}\n\nRespond as James, coaching them on their specific situation.` }
         ];
 
-        // ---------------------------
-        // NEW: Use Assistants API
-        // ---------------------------
-        console.log('[CHAT_API_DEBUG] Step 2: Using Assistants API via helper');
-
-        const additionalInstructions = `${JAMES_COACHING_SYSTEM}
-
-${coachingContext}
-
-Relevant knowledge base info:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : ''}`;
-
-        const assistantRes = await runAssistant({
-          userMessage: latestUserMessage,
-          threadId: null, // TODO: persist per-chat thread
-          additionalInstructions,
+        const coachingResponse = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: coachingMessages,
+          temperature: 0.8, // Higher temperature for more personality
+          max_tokens: 220 // Force very concise responses
         });
 
-        console.log('[CHAT_API_DEBUG] Step 2 complete: Assistant response received');
-
-        let fullResponseText = assistantRes.response;
+        const responseText = coachingResponse.choices[0].message.content;
+        
+        console.log('[CHAT_API_DEBUG] Step 2 complete: Generated James-style response');
+        console.log('[CHAT_API_DEBUG] Tool mentioned:', suggestionAnalysis.shouldMention ? suggestionAnalysis.toolName : 'None');
 
         // Save the response to the database
-        await handleMessageSave(chatId, supabase, fullResponseText, userId);
+        if (chatId && supabase) {
+          try {
+            const msgObj = { 
+              thread_id: chatId, 
+              role: 'assistant', 
+              content: responseText, 
+              timestamp: new Date().toISOString(), 
+              user_id: userId 
+            };
+            const { data: savedMsg, error: saveError } = await supabase
+              .from('messages')
+              .insert(msgObj)
+              .select()
+              .single();
+              
+            if (saveError) {
+              console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
+            } else {
+              console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
+              
+              // STEP 3: Check if we should trigger a session summary
+              const messageCount = await getMessageCount(chatId);
+              console.log('[CHAT_API_DEBUG] Current message count for thread:', messageCount);
+              
+              // Trigger session summary every 8-10 messages (when count is divisible by 9)
+              if (messageCount > 0 && messageCount % 9 === 0) {
+                console.log('[CHAT_API_DEBUG] Triggering session summary (message count:', messageCount, ')');
+                createSessionSummary(chatId, userId).catch(err => {
+                  console.error('[CHAT_API_DEBUG] Session summary failed:', err);
+                });
+              }
+            }
+          } catch (dbError) {
+            console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
+          }
+        }
 
-        // Return JSON (streaming disabled for first cut)
+        // Return the response directly
         return NextResponse.json({
-          message: fullResponseText,
-          chatId: chatId,
+          message: responseText,
+          chatId: chatId
         });
 
       } catch (error) {
@@ -2540,82 +2580,4 @@ function processFileSearchResults(fileSearchCall) {
       return null;
     })
     .filter(Boolean); // Remove any null results
-} 
-
-// Cached profile fetching function
-async function getCachedUserProfile(userId, supabase) {
-  // Check cache first
-  const cacheKey = `profile_${userId}`;
-  let userProfile = profileCache.get(cacheKey);
-  
-  if (userProfile) {
-    console.log('[CHAT_API_DEBUG] Profile cache hit for user:', userId);
-    return userProfile;
-  }
-
-  // Cache miss - fetch from database
-  console.log('[CHAT_API_DEBUG] Profile cache miss, fetching from DB for user:', userId);
-  
-  try {
-    const { data: profileData, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('full_name, occupation, desired_mrr, desired_hours')
-      .eq('user_id', userId)
-      .single();
-      
-    if (!profileError && profileData) {
-      userProfile = profileData;
-      // Cache for 5 minutes
-      profileCache.set(cacheKey, userProfile, 300000);
-      console.log('[CHAT_API_DEBUG] Profile cached for user:', userId);
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.error('[CHAT_API_DEBUG] Error fetching user profile:', profileError);
-    }
-  } catch (profileException) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('[CHAT_API_DEBUG] Exception fetching profile:', profileException);
-    }
-  }
-
-  return userProfile;
-}
-
-// Helper function to save messages and handle session summaries
-async function handleMessageSave(chatId, supabase, responseText, userId) {
-  if (chatId && supabase && responseText) {
-    try {
-      const msgObj = { 
-        thread_id: chatId, 
-        role: 'assistant', 
-        content: responseText, 
-        timestamp: new Date().toISOString(), 
-        user_id: userId 
-      };
-      const { data: savedMsg, error: saveError } = await supabase
-        .from('messages')
-        .insert(msgObj)
-        .select()
-        .single();
-        
-      if (saveError) {
-        console.error('[CHAT_API_DEBUG] Error saving message:', saveError);
-      } else {
-        console.log('[CHAT_API_DEBUG] Message saved:', { id: savedMsg?.id });
-        
-        // STEP 3: Check if we should trigger a session summary
-        const messageCount = await getMessageCount(chatId);
-        console.log('[CHAT_API_DEBUG] Current message count for thread:', messageCount);
-        
-        // Trigger session summary every 8-10 messages (when count is divisible by 9)
-        if (messageCount > 0 && messageCount % 9 === 0) {
-          console.log('[CHAT_API_DEBUG] Triggering session summary (message count:', messageCount, ')');
-          createSessionSummary(chatId, userId).catch(err => {
-            console.error('[CHAT_API_DEBUG] Session summary failed:', err);
-          });
-        }
-      }
-    } catch (dbError) {
-      console.error('[CHAT_API_DEBUG] DB error saving message:', dbError);
-    }
-  }
 } 

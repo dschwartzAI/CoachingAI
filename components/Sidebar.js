@@ -316,7 +316,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               </div>
             </div>
             
-            <ScrollArea className="flex-1 h-full pr-3 overflow-auto touch-pan-y">
+            <ScrollArea className="flex-1 h-full pr-3 overflow-visible hover:overflow-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-3 text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -352,22 +352,13 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   {hasMoreChats && (
                     <Button 
                       variant="ghost" 
-                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-1 min-h-[44px] touch-target"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setExpandedChats(!expandedChats);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setExpandedChats(!expandedChats);
-                      }}
+                      className="w-full text-xs text-muted-foreground flex items-center justify-center mt-1"
+                      onClick={() => setExpandedChats(!expandedChats)}
                     >
                       {expandedChats ? (
-                        <>Show less <ChevronUp className="h-3 w-3 ml-1" /></>
+                        <>Show less <ChevronDown className="h-3 w-3 ml-1" /></>
                       ) : (
-                        <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronDown className="h-3 w-3 ml-1" /></>
+                        <>See more chats ({filteredChats.length - INITIAL_CHAT_COUNT}) <ChevronRight className="h-3 w-3 ml-1" /></>
                       )}
                     </Button>
                   )}
@@ -408,17 +399,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <Button
                   variant="ghost"
                   className="w-full justify-start h-10 text-xs mb-0.5 touch-target"
-                  onClick={(e) => {
-                    console.log('[Sidebar] Snippets button clicked');
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsSnippetsModalOpen(true);
-                    setIsMobileOpen(false);
-                  }}
-                  onTouchEnd={(e) => {
-                    console.log('[Sidebar] Snippets button touched');
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     setIsSnippetsModalOpen(true);
                     setIsMobileOpen(false);
                   }}
