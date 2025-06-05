@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -279,53 +279,23 @@ function DocumentMessage({ message }) {
   );
 }
 
-// Helper function to check if a message contains landing page HTML
-function isLandingPageMessage(message) {
-  return message.content && 
-    (message.content.includes('<!DOCTYPE html>') || message.content.includes("```html"));
-}
-
 // Add a component for rendering HTML landing pages
 function LandingPageMessage({ content }) {
-  const [showPreview, setShowPreview] = useState(true); // Default to TRUE to show preview
+  const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // Extract HTML code from the message content
+  const extractHTMLCode = (text) => {
+    // Look for HTML code blocks or complete HTML documents
+    const htmlMatch = text.match(/```html\n([\s\S]*?)\n```/) || 
+                     text.match(/```\n(<!DOCTYPE html[\s\S]*?<\/html>)\n```/) ||
+                     text.match(/(<!DOCTYPE html[\s\S]*?<\/html>)/);
+    
+    return htmlMatch ? htmlMatch[1] : null;
+  };
 
-  let htmlCode = null;
-  let introText = content;
-
-  const htmlBlockStartMarker = "```html";
-  const htmlBlockEndMarker = "```";
-  const doctypeMarker = "<!DOCTYPE html>";
-
-  let startIndex = content.indexOf(htmlBlockStartMarker);
-  if (startIndex === -1) {
-    startIndex = content.indexOf(doctypeMarker);
-  }
-
-  if (startIndex !== -1) {
-    let tempContent = content.substring(startIndex);
-    if (tempContent.startsWith(htmlBlockStartMarker)) {
-      const actualHtmlStart = htmlBlockStartMarker.length;
-      const endIndex = tempContent.indexOf(htmlBlockEndMarker, actualHtmlStart);
-      if (endIndex !== -1) {
-        htmlCode = tempContent.substring(actualHtmlStart, endIndex).trim();
-        introText = content.substring(0, startIndex).trim();
-      } else { // Malformed or just raw HTML starting with ```html but no end
-        htmlCode = tempContent.substring(actualHtmlStart).trim();
-        introText = content.substring(0, startIndex).trim();
-      }
-    } else if (tempContent.startsWith(doctypeMarker)) {
-      htmlCode = tempContent.trim();
-      introText = content.substring(0, startIndex).trim();
-    }
-  } else {
-    // No clear HTML markers found, assume whole content might be intro or non-LP message passed here by mistake
-    introText = content;
-    htmlCode = null;
-  }
-  // Final cleanup for introText if it was empty
-  if (introText && introText.trim().length === 0) introText = null;
-
+  const htmlCode = extractHTMLCode(content);
+  
   const copyToClipboard = async () => {
     if (htmlCode) {
       try {
@@ -352,65 +322,88 @@ function LandingPageMessage({ content }) {
     }
   };
 
-  return (
-    <div className="w-full flex flex-col items-center py-2"> {/* Centering the whole block */}
-      {introText && (
-        <div className="flex w-full max-w-4xl justify-start mb-4 px-3 sm:px-4"> 
-          <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
-              <MarkdownMessage content={introText} />
-            </div>
-          </div>
-        </div>
-      )}
+  if (!htmlCode) {
+    // If no HTML code found, render as regular markdown
+    return <MarkdownMessage content={content} />;
+  }
 
-      {htmlCode && (
-        <div className="w-full max-w-5xl p-4 border rounded-lg bg-gray-100 dark:bg-gray-800 shadow-md mx-3 sm:mx-4"> {/* Wider block for HTML tools */}
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-200">Landing Page HTML</h4>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowPreview(!showPreview)} className="text-xs">
-                {showPreview ? 'Hide Preview' : 'Show Preview'}
-              </Button>
-              <Button variant="outline" size="sm" onClick={copyToClipboard} className="text-xs">{copied ? 'Copied!' : 'Copy HTML'}</Button>
-              <Button variant="outline" size="sm" onClick={downloadHTML} className="text-xs"><Download className="h-3 w-3 mr-1" />Download</Button>
-            </div>
-          </div>
-          {showPreview && (
-            <div className="mb-4">
-              <div className="border rounded bg-white" style={{ height: '400px', width: '100%', overflow: 'auto' }}>
-                <iframe srcDoc={htmlCode} className="w-full h-full rounded" title="Landing Page Preview" sandbox="allow-scripts allow-same-origin" />
-              </div>
-            </div>
-          )}
-          <div className="bg-gray-50 dark:bg-gray-700 rounded p-3 text-xs font-mono overflow-x-auto max-h-80"> {/* Increased max-h */}
-            <pre className="whitespace-pre-wrap">{htmlCode}</pre>
-          </div>
-          <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-            <p><strong>Instructions:</strong></p>
-            <ol className="list-decimal list-inside space-y-1 mt-1">{/* ...instructions... */}</ol>
-          </div>
-        </div>
-      )}
+  return (
+    <div className="space-y-4">
+      {/* Regular message content without the HTML code block */}
+      <div>
+        <MarkdownMessage content={content.replace(/```html\n[\s\S]*?\n```/g, '').replace(/```\n<!DOCTYPE html[\s\S]*?<\/html>\n```/g, '').replace(/<!DOCTYPE html[\s\S]*?<\/html>/g, '').trim()} />
+      </div>
       
-      {/* Fallback if this component was rendered for non-HTML content by mistake */}
-      {!introText && !htmlCode && (
-         <div className="flex w-full max-w-4xl justify-start mb-4 px-3 sm:px-4">
-          <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
-              <MarkdownMessage content={content} /> 
-            </div>
+      {/* HTML Code Section */}
+      <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-sm">Landing Page HTML</h4>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+              className="text-xs"
+            >
+              {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyToClipboard}
+              className="text-xs"
+            >
+              {copied ? 'Copied!' : 'Copy HTML'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadHTML}
+              className="text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Download
+            </Button>
           </div>
         </div>
-      )}
+        
+        {showPreview && (
+          <div className="mb-4">
+            <div className="border rounded bg-white" style={{ height: '400px' }}>
+              <iframe
+                srcDoc={htmlCode}
+                className="w-full h-full rounded"
+                title="Landing Page Preview"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        )}
+        
+        <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+          <pre className="whitespace-pre-wrap">{htmlCode}</pre>
+        </div>
+        
+        <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+          <p><strong>Instructions:</strong></p>
+          <ol className="list-decimal list-inside space-y-1 mt-1">
+            <li>Copy the HTML code above</li>
+            <li>In HighLevel, go to Sites → Pages → Create New Page</li>
+            <li>Choose "Custom Code" or "Blank Page"</li>
+            <li>Paste the HTML code into the custom code section</li>
+            <li>Save and publish your landing page</li>
+          </ol>
+        </div>
+      </div>
     </div>
   );
+}
+
+// Add a function to check if a message contains landing page HTML
+function isLandingPageMessage(message) {
+  return message.content && 
+    message.content.includes('<html>') && 
+    message.content.includes('<!DOCTYPE html>');
 }
 
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
@@ -446,9 +439,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isSnippetModalOpen, setIsSnippetModalOpen] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState(null);
   const [currentSourceContext, setCurrentSourceContext] = useState(null);
+  const [preservedSelectedText, setPreservedSelectedText] = useState(''); // Add this to preserve text
   const { toast } = useToast();
   const headerRef = useRef(null);
-  const textSelectionMenuRef = useRef(null); // Ref for the TextSelectionMenu
+  const textSelectionMenuRef = useRef(null);
   
   // Streaming state
   const [streamingContent, setStreamingContent] = useState('');
@@ -1871,24 +1865,37 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Snippet Handling Functions
   const handleSaveSnippet = () => {
     if (selectedText && selectionContext) {
+      console.log("[ChatArea] Opening snippet modal for new snippet. Selected text:", selectedText);
+      console.log("[ChatArea] Selection context:", selectionContext);
+      
+      // Preserve the selected text before potentially clearing the selection
+      setPreservedSelectedText(selectedText);
       setCurrentSourceContext(selectionContext);
       setEditingSnippet(null);
       setIsSnippetModalOpen(true);
     } else {
+      console.warn("[ChatArea] Cannot save snippet: No text selected or context missing.");
+      console.warn("[ChatArea] selectedText:", selectedText);
+      console.warn("[ChatArea] selectionContext:", selectionContext);
       toast({ title: "Cannot Save Snippet", description: "Please select some text within a message first.", variant: "destructive" });
     }
   };
 
   const handleSnippetSave = async (snippetData) => {
     try {
-      const snippetWithUser = { ...snippetData, userId: user?.id };
+      const snippetWithUser = {
+        ...snippetData,
+        userId: user?.id,
+      };
       await saveSnippet(snippetWithUser);
       toast({ title: "Snippet Saved", description: "Your snippet has been saved successfully." });
       setIsSnippetModalOpen(false);
-      clearSelection(); 
+      clearSelection();
       setEditingSnippet(null);
       setCurrentSourceContext(null);
+      setPreservedSelectedText(''); // Clear preserved text after save
     } catch (error) {
+      console.error("[ChatArea] Failed to save snippet:", error);
       toast({ title: "Error Saving Snippet", description: error.message || "Could not save your snippet.", variant: "destructive" });
     }
   };
@@ -1897,41 +1904,21 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setIsSnippetModalOpen(false);
     setEditingSnippet(null);
     setCurrentSourceContext(null);
-    clearSelection(); // Clear selection when modal is closed without saving
+    setPreservedSelectedText(''); // Clear preserved text on close
   };
 
   const handleCopyText = () => {
     if (selectedText) {
       navigator.clipboard.writeText(selectedText)
         .then(() => toast({ title: "Copied to Clipboard", description: "Selected text has been copied." }))
-        .catch(err => toast({ title: "Copy Failed", description: "Could not copy text to clipboard.", variant: "destructive" }));
-      clearSelection(); // Ensure selection is cleared after copying
+        .catch(err => {
+          console.error("[ChatArea] Failed to copy text:", err);
+          toast({ title: "Copy Failed", description: "Could not copy text to clipboard.", variant: "destructive" });
+        });
+      clearSelection();
     }
   };
-  
-  // Effect to handle clicks outside the text selection menu to close it
-  // This relies on the useTextSelection hook's own mouseup listener to clear selection
-  // when a click results in no text being selected. The menu visibility is tied to isTextSelected.
-  // No additional click-outside listener needed here if useTextSelection is robust.
-
-  useEffect(() => {
-    const handleClickOutsideMenu = (event) => {
-      if (isTextSelected && textSelectionMenuRef.current && !textSelectionMenuRef.current.contains(event.target)) {
-        // If menu is open and click is outside menu, check if a new selection was made.
-        // If not, it means the click was likely intended to dismiss the menu.
-        setTimeout(() => { // Allow browser to process potential new selection
-          const currentDOMSelection = window.getSelection()?.toString().trim();
-          if (!currentDOMSelection) {
-            clearSelection();
-          }
-        }, 0);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutsideMenu);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideMenu);
-    };
-  }, [isTextSelected, clearSelection, textSelectionMenuRef]); // textSelectionMenuRef is stable
+  // End of Snippet Handling Functions
 
   useEffect(() => {
     if (headerRef.current) {
@@ -2031,78 +2018,120 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               const isLastMessage = index === currentChat.messages.length - 1;
               const isUser = message.role === 'user';
               
+              // Always render the streaming component for the message that is (or was)
+              // streamed in this cycle. This prevents layout replacement when the
+              // stream finishes, eliminating the visual "jump".
               const isCurrentStream = streamingMessageId && message.id === streamingMessageId;
 
-              // Special rendering for LandingPageMessage - RENDER DIRECTLY WITHOUT BUBBLE WRAPPER
-              if (isLandingPageMessage(message)) {
+              if (isCurrentStream) {
                 return (
-                  <LandingPageMessage 
-                    key={`${message.id}-landing-${index}`} 
-                    content={message.content} 
-                  />
+                  <div
+                    key={message.id}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <StreamingMessage
+                      content={message.content}
+                      isComplete={!message.isStreaming}
+                      messageId={message.id}
+                      chatId={currentChat?.id}
+                      messageRole={message.role}
+                    />
+                  </div>
                 );
               }
 
-              // Standard message rendering starts here (WITH BUBBLE WRAPPER)
-              // Handle streaming messages
-              if (message.isStreaming || isCurrentStream) { // Consolidate streaming check
+              if (isDocumentMessage(message)) {
                 return (
                   <div
-                    key={message.id} // Use message.id as key
-                    className={`flex w-full max-w-4xl ${isUser ? 'justify-end' : 'justify-start'}`}
+                    key={`${message.id}-${index}`}
+                    className={`flex w-full max-w-4xl justify-start`}
                     data-message-id={message.id}
                     data-chat-id={currentChat?.id}
                     data-message-role={message.role}
                     ref={isLastMessage ? lastMessageRef : null}
                   >
-                    {/* This inner div is the actual bubble for streaming messages */}
-                    <div
-                      className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] ${
-                        isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'
-                      }`}
-                    >
-                       <div
-                        className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                          isUser
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {isUser ? (
-                          <User className="h-4 w-4" />
-                        ) : (
-                          <Bot className="h-4 w-4" />
-                        )}
+                    <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                        <Bot className="h-4 w-4" />
                       </div>
-                      <div
-                        className={`rounded-2xl px-4 py-3 shadow-sm ${
-                          isUser
-                            ? 'bg-primary text-primary-foreground ml-auto'
-                            : 'bg-muted/60 text-foreground'
-                        }`}
+                      <div 
+                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
                       >
-                        <StreamingMessage
-                          content={message.content}
-                          isComplete={!message.isStreaming} // isStreaming will be false when stream ends
-                        />
+                        <DocumentMessage message={message} />
                       </div>
                     </div>
                   </div>
                 );
               }
-              // Handle error messages that might have come from streaming or other issues
+
+              if (isLandingPageMessage(message)) {
+                return (
+                  <div
+                    key={`${message.id}-${index}`}
+                    className={`flex w-full max-w-4xl justify-start`}
+                    data-message-id={message.id}
+                    data-chat-id={currentChat?.id}
+                    data-message-role={message.role}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div 
+                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        <LandingPageMessage content={message.content} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Handle streaming messages
+              if (message.isStreaming) {
+                return (
+                  <div
+                    key={message.id}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <StreamingMessage
+                      content={message.content}
+                      isComplete={false} // This will be true once isStreaming is false
+                      messageId={message.id}
+                      chatId={currentChat?.id}
+                      messageRole={message.role}
+                    />
+                  </div>
+                );
+              }
+              // Handle error messages that might have come from streaming
               if (message.isError) {
                  return (
                   <div
                     key={message.id}
-                    className={`flex w-full max-w-4xl justify-start`} // Errors are always from assistant (left)
+                    className={`flex w-full max-w-4xl justify-start`}
+                    data-message-id={message.id}
+                    data-chat-id={currentChat?.id}
+                    data-message-role={message.role}
                     ref={isLastMessage ? lastMessageRef : null}
                   >
                     <div className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row`}>
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground`}>
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}>
+                      <div 
+                        className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                           {message.content}
                         </p>
@@ -2112,7 +2141,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 );
               }
 
-              // Standard, non-streaming, non-error, non-landing page messages
               return (
                 <div
                   key={message.id} // Use message.id as key
@@ -2147,6 +2175,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                           ? 'bg-primary text-primary-foreground ml-auto'
                           : 'bg-muted/60 text-foreground'
                       }`}
+                      data-message-id={message.id}
+                      data-chat-id={currentChat?.id}
+                      data-message-role={message.role}
                     >
                       {isUser ? (
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
@@ -2215,11 +2246,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       {/* Text Selection Menu */}
       {isTextSelected && selectionPosition && (
         <TextSelectionMenu
-          ref={textSelectionMenuRef} // Pass the ref here
+          ref={textSelectionMenuRef}
           position={selectionPosition}
           onSaveSnippet={handleSaveSnippet}
           onCopy={handleCopyText}
-          onClose={clearSelection} // CRITICAL: This ensures menu closes
+          onClearSelection={clearSelection}
           selectedText={selectedText}
         />
       )}
@@ -2230,7 +2261,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           isOpen={isSnippetModalOpen}
           onClose={handleSnippetModalClose}
           onSave={handleSnippetSave} // This should point to handleSnippetSave
-          selectedText={editingSnippet ? null : selectedText}
+          selectedText={editingSnippet ? null : preservedSelectedText}
           existingSnippet={editingSnippet}
           sourceContext={currentSourceContext}
         />

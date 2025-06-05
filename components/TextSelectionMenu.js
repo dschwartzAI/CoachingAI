@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Bookmark, Copy, Share } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -10,11 +10,28 @@ const TextSelectionMenu = React.forwardRef(({
   onSaveSnippet, 
   onCopy, 
   onShare,
+  onClearSelection,
   selectedText,
 }, ref) => {
   if (!selectedText) {
     return null;
   }
+
+  // Clear selection when clicking outside the menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (ref?.current && !ref.current.contains(event.target)) {
+        if (onClearSelection) {
+          onClearSelection();
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [ref, onClearSelection]);
 
   const handleCopy = async () => {
     if (navigator.clipboard) {

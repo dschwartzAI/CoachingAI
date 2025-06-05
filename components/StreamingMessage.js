@@ -9,7 +9,10 @@ import MarkdownMessage from '@/components/markdown-message';
 export default function StreamingMessage({ 
   content = '', 
   isComplete = false, 
-  className 
+  className,
+  messageId,
+  chatId,
+  messageRole = 'assistant'
 }) {
   const [showCursor, setShowCursor] = useState(false);
   const isCompleteRef = useRef(isComplete);
@@ -54,7 +57,12 @@ export default function StreamingMessage({
           <Bot className="h-4 w-4" />
         </div>
         
-        <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
+        <div 
+          className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+          data-message-id={messageId}
+          data-chat-id={chatId}
+          data-message-role={messageRole}
+        >
           <div className="relative">
             {showLoadingDots ? (
               // Show loading dots when no content yet

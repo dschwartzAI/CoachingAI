@@ -42,7 +42,7 @@ import SnippetsModal from './SnippetsModal';
 
 // Tool icons mapping
 const toolIcons = {
-  'hybrid-offer': BrainCog,
+  'hybrid-offer': LineChart,
   'workshop-generator': PenTool
 };
 
@@ -431,12 +431,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   variant="ghost"
                   className="w-full justify-start h-10 text-xs mb-0.5 touch-target"
                   onClick={() => {
-                    router.push('/profile');
+                    onShowProfile();
                     setIsMobileOpen(false);
                   }}
                 >
                   <Settings className="h-3.5 w-3.5 mr-1.5" />
                   Profile Settings
+                  {profileComplete ? (
+                    <CheckCircle2 className="h-3 w-3 ml-auto text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
+                  )}
                 </Button>
                 
                 {!profileComplete && (
