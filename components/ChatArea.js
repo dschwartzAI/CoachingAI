@@ -395,20 +395,6 @@ function LandingPageMessage({ content }) {
           </div>
         </div>
       )}
-      
-      {/* Fallback if this component was rendered for non-HTML content by mistake */}
-      {!introText && !htmlCode && (
-         <div className="flex w-full max-w-4xl justify-start mb-4 px-3 sm:px-4">
-          <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
-              <MarkdownMessage content={content} /> 
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
