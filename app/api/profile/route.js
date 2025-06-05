@@ -1,5 +1,27 @@
 import { NextResponse } from 'next/server'
-import { createSupabaseClient } from '@/lib/utils/supabase'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+function createSupabaseClient() {
+  const cookieStore = cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value
+        },
+        set(name, value, options) {
+          cookieStore.set({ name, value, ...options })
+        },
+        remove(name, options) {
+          cookieStore.set({ name, value: '', ...options })
+        },
+      },
+    }
+  )
+}
 
 export async function GET() {
   try {
@@ -50,7 +72,7 @@ export async function POST(request) {
         desired_mrr,
         desired_hours,
         biggest_challenge,
-        allow_memory
+        allow_memory: allow_memory !== undefined ? allow_memory : true
       })
       .select()
 

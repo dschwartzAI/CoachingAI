@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, MessageCircle, User, Bot, Copy, Save, Target } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,6 +18,9 @@ import { useTextSelection } from '@/lib/hooks/use-text-selection';
 import TextSelectionMenu from '@/components/TextSelectionMenu';
 import SnippetModal from '@/components/SnippetModal';
 import { saveSnippet } from '@/lib/utils/snippets';
+import { streamingClient } from '@/lib/utils/streaming';
+import StreamingMessage from '@/components/StreamingMessage';
+import MarkdownMessage from '@/components/markdown-message';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -38,29 +41,6 @@ const workshopQuestions = [
   { key: 'topicsAndActivities', question: "What topics and activities will you cover?" },
   { key: 'resourcesProvided', question: "What resources will participants receive?" }
 ];
-
-// Add a component for rendering markdown messages
-function MarkdownMessage({ content }) {
-  return (
-    <ReactMarkdown
-      //className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
-      remarkPlugins={[remarkGfm]}
-      components={{
-        // Allow <a> tags to be rendered properly
-        a: ({ node, ...props }) => (
-          <a 
-            {...props} 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="text-blue-600 hover:underline"
-          />
-        )
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-}
 
 // Add a utility to extract links from message content
 function extractN8nLinks(content) {
@@ -421,25 +401,24 @@ function LandingPageMessage({ content }) {
 
 // Add a function to check if a message contains landing page HTML
 function isLandingPageMessage(message) {
-  if (typeof message.content !== 'string') return false;
-  
-  // Check if the message contains HTML code blocks or complete HTML documents
-  const hasHTMLCode = message.content.includes('```html') || 
-                     message.content.includes('<!DOCTYPE html') ||
-                     (message.content.includes('<html') && message.content.includes('</html>'));
-  
-  return hasHTMLCode;
+  return message.content && 
+    message.content.includes('<html>') && 
+    message.content.includes('<!DOCTYPE html>');
 }
 
 export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
+  // Get user from context
+  const { user } = useAuth();
+
+  // Component state
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
-  const [collectedAnswers, setCollectedAnswers] = useState({});
-  const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
-  const [questionsAnswered, setQuestionsAnswered] = useState(0); // Add questionsAnswered state
+  const [isResponseLoading, setIsResponseLoading] = useState(false);
   const [isInitiating, setIsInitiating] = useState(false);
   const [initiationAttemptedForContext, setInitiationAttemptedForContext] = useState(false);
+  const [collectedAnswers, setCollectedAnswers] = useState({});
+  const [currentQuestionKey, setCurrentQuestionKey] = useState(null);
+  const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
@@ -447,29 +426,35 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const chatContainerRef = useRef(null); // This is the NEW ref for the text selection container
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
-  const { user } = useAuth();
+  const lastInitiatedChatIdRef = useRef(); // Track the last initiated chat ID to prevent loops
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
   const {
     selectedText,
     selectionContext,
-    clearSelection,
-    // containerRef, // Removed from here
     isTextSelected,
-    selectionPosition
+    selectionPosition,
+    clearSelection
   } = useTextSelection(chatContainerRef); // Pass chatContainerRef to the hook
   const [isSnippetModalOpen, setIsSnippetModalOpen] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState(null);
   const [currentSourceContext, setCurrentSourceContext] = useState(null);
+  const [preservedSelectedText, setPreservedSelectedText] = useState(''); // Add this to preserve text
   const { toast } = useToast();
   const headerRef = useRef(null);
+  const textSelectionMenuRef = useRef(null);
+  
+  // Streaming state
+  const [streamingContent, setStreamingContent] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState(null);
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
     console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
   }, [isWaitingForN8n]);
 
-  // Reset state when chat or tool changes (Refactored Logic)
+  // Reset state when chat or tool changes
   useEffect(() => {
     const currentChatId = currentChat?.id;
     const previousChatId = prevChatIdRef.current;
@@ -480,278 +465,248 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     const hasToolSwitched = currentSelectedTool !== previousSelectedTool;
     const hasContextSwitched = hasChatSwitched || hasToolSwitched;
 
-    console.log(`[ChatArea Context Change Effect] Triggered. ChatId: ${currentChatId}, Tool: ${currentSelectedTool}`);
-    console.log(`[ChatArea Context Change Effect] Context Switch Check: ChatSwitched=${hasChatSwitched}, ToolSwitched=${hasToolSwitched}`);
-
     // Only reset state and close SSE if the actual chat or tool context has changed
     if (hasContextSwitched) {
-      console.log(`[ChatArea Context Change Effect] Context switched. Resetting state.`);
-      setInitiationAttemptedForContext(false); // <<< ADDED THIS RESET HERE
+      setInitiationAttemptedForContext(false);
+      lastInitiatedChatIdRef.current = null; // Reset the last initiated chat ID on context switch
       
-      // Check if the thread has metadata to initialize properly
       if (currentChat?.metadata) {
-        console.log(`[ChatArea Context Change Effect] Initializing from thread metadata:`, currentChat.metadata);
-        // Initialize state from metadata if available
+        // Initialize state from metadata
         setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
+        setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+
+        if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || questionsArray[0]?.key);
-        setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+        } else {
+          setCurrentQuestionKey(null); // Not a question-based tool
+        }
         
-        // Check document generation state
+        // Document generation state
         if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
-          console.log(`[ChatArea Context Change Effect] Detected active document generation, restoring state...`);
           setIsWaitingForN8n(true);
-          
-          // If document generation is in progress, check if we should reconnect to the stream
           if (currentChat.metadata.generationStartTime) {
             const startTime = new Date(currentChat.metadata.generationStartTime);
             const now = new Date();
             const elapsedMs = now - startTime;
             const MAX_GENERATION_TIME = 5 * 60 * 1000; // 5 minutes
-            
-            if (elapsedMs < MAX_GENERATION_TIME) {
-              // Document generation started recently, reconnect to the stream
-              console.log(`[ChatArea Context Change Effect] Document generation in progress (started ${Math.round(elapsedMs/1000)}s ago), reconnecting to stream...`);
-              
-              // Reconnect to the stream if we have the necessary data
-              if (currentChat.metadata.collectedAnswers) {
+            if (elapsedMs < MAX_GENERATION_TIME && currentChat.metadata.collectedAnswers) {
                 try {
                   const encodedAnswers = encodeURIComponent(JSON.stringify(currentChat.metadata.collectedAnswers));
                   connectToN8nResultStream(currentChat.id, encodedAnswers);
-                  console.log(`[ChatArea Context Change Effect] Reconnected to N8n stream with thread ID: ${currentChat.id}`);
                 } catch (err) {
-                  console.error(`[ChatArea Context Change Effect] Error reconnecting to stream:`, err);
-                  setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+                console.error(`[ChatArea] Error reconnecting to stream:`, err);
+                setIsWaitingForN8n(true); 
                 }
               } else {
-                console.warn(`[ChatArea Context Change Effect] Cannot reconnect to stream: missing collectedAnswers`);
-                setIsWaitingForN8n(true); // Keep the waiting state even if reconnection fails
+              setIsWaitingForN8n(true); 
               }
             } else {
-              // Document generation started a while ago, assume it's still in progress but don't reconnect
-              console.log(`[ChatArea Context Change Effect] Document generation started ${Math.round(elapsedMs/1000)}s ago, showing loading state without reconnecting`);
-              setIsWaitingForN8n(true); // Just set the loading state
-            }
-          } else {
-            // No start time available, just set the loading state
             setIsWaitingForN8n(true);
           }
-        } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
-          // Document generation is complete or not in progress
-          console.log(`[ChatArea Context Change Effect] Document generation complete or not in progress, clearing loading state`);
-          setIsWaitingForN8n(false);
-        } else {
-          // Check if there are already document messages in the chat
-          const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
-          if (hasDocumentMessages) {
-            console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
-            setIsWaitingForN8n(false);
-          } else {
+        } else { // Covers documentGenerated or isGeneratingDocument is false
             setIsWaitingForN8n(false);
           }
-        }
-        
-        // If we have metadata, this thread was already initiated in the past
-        // setInitiationAttemptedForContext(true); // This line is now effectively superseded by the reset above if context truly switched
       } else {
-        // Reset to default state if no metadata
+        // No metadata - reset to default for the selected context
         setCollectedAnswers({});
         setQuestionsAnswered(0);
+        if (currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'hybrid-offer') {
         const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
         setCurrentQuestionKey(questionsArray[0]?.key);
+        } else {
+          setCurrentQuestionKey(null); // Not a question-based tool
+        }
         setIsWaitingForN8n(false);
-        // setInitiationAttemptedForContext(false); // Already set above if hasContextSwitched
       }
 
       // Close EventSource only if context switched
       if (eventSourceRef.current) {
-          console.log("[ChatArea Context Change Effect] Closing existing EventSource due to context switch.");
-          eventSourceRef.current.close(); // Close any previous connection
+          eventSourceRef.current.close(); 
           eventSourceRef.current = null;
       }
     } else {
-      // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
-      // Re-apply state from metadata if available to ensure consistency
-      console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
-      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
-         // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
-         console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
+      // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata from another source)
+      // Re-apply state from metadata if available to ensure consistency, ONLY if a tool is selected
+      if (currentChat?.metadata && typeof currentChat.metadata === 'object') {
+        if (currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') {
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
          const questionsArray = currentSelectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-         setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0].key));
+           setCurrentQuestionKey(currentChat.metadata.currentQuestionKey || (currentChat.metadata.isComplete ? null : questionsArray[0]?.key));
          setQuestionsAnswered(currentChat.metadata.questionsAnswered || 0);
+        } else {
+          // If not a question-based tool, ensure tool-specific states are clear
+           setCollectedAnswers(prev => Object.keys(prev).length > 0 ? {} : prev);
+           setCurrentQuestionKey(prev => prev !== null ? null : prev);
+           setQuestionsAnswered(prev => prev !== 0 ? 0 : prev);
+        }
          
-         // Check document generation state
+        // Document generation state check, applies regardless of tool type if metadata exists
          if (currentChat.metadata.isGeneratingDocument === true && !currentChat.metadata.documentGenerated) {
            setIsWaitingForN8n(true);
-         } else if (currentChat.metadata.documentGenerated === true || currentChat.metadata.isGeneratingDocument === false) {
+        } else { // Covers documentGenerated or isGeneratingDocument is false
            setIsWaitingForN8n(false);
          }
-         // Otherwise don't change isWaitingForN8n
       }
     }
 
     // Update refs for the next render *after* all checks
     prevChatIdRef.current = currentChatId;
     prevSelectedToolRef.current = currentSelectedTool;
-
   }, [currentChat, selectedTool]); // Keep dependencies: effect needs to run when chat or tool potentially changes
 
   // Update starting key if chat history already exists for hybrid-offer
-  // This effect might be redundant if the above effect correctly initializes from metadata.
-  // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
-      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && currentChat?.messages?.length > 0) {
-          // A more robust way would be to persist/load answers+key with the chat 
-          // For now, just don't reset to first key if history exists
-          if (!currentQuestionKey) {
-              const questionsArray = selectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-              setCurrentQuestionKey(questionsArray[questionsAnswered]?.key || questionsArray[0].key); // Use questions answered to determine key
-          }
-      } else if (selectedTool === 'hybrid-offer') {
-          setCurrentQuestionKey(hybridOfferQuestions[0].key);
-      } else if (selectedTool === 'workshop-generator') {
-          setCurrentQuestionKey(workshopQuestions[0].key);
+    if (currentChat?.messages?.length > 0 && (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && !initiationAttemptedForContext) {
+      console.log(`[ChatArea] Existing messages initiation blocked - messages exist for tool: ${selectedTool}, chatId: ${currentChat.id}`);
+      setInitiationAttemptedForContext(true);
+      // Don't call initiateToolChat for existing messages - tools should only init on empty chats
       }
-  }, [currentChat?.id, currentChat?.messages?.length, selectedTool, questionsAnswered]); // Re-run if chat loads or questions answered changes
+  }, [currentChat, selectedTool, initiationAttemptedForContext]); // Dependencies for this effect
 
-  // Effect to initiate chat for tool-based chats
+  // Effect to initiate chat for tool-based chats when there are *no* messages yet
   useEffect(() => {
-    console.log(
-        `[ChatArea Initiation Check Effect] Tool=${selectedTool}, ChatID=${currentChat?.id}, ` +
-        `MsgCount=${currentChat?.messages?.length}, Attempted=${initiationAttemptedForContext}, ` +
-        `QuestionsAnswered=${questionsAnswered}, ` +
-        `Initiating=${isInitiating}, Loading=${isLoading}`
-    );
-    if (
-        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
-        !initiationAttemptedForContext && 
-        !isInitiating &&
-        !isLoading &&
-        // Ensure it's genuinely a new chat for the tool, or an existing empty one for this tool
-        (!currentChat || !currentChat.messages || currentChat.messages.length === 0) &&
-        (!currentChat || currentChat.tool_id === selectedTool) && // Also ensure current chat is for this tool if it exists
-        // Skip initiation if we have metadata with questions already answered
-        !(currentChat?.metadata?.questionsAnswered > 0)
-       ) {
-      console.log(`[ChatArea Initiation Check] Conditions met. Attempting initiation...`);
-      setInitiationAttemptedForContext(true); 
-      setIsInitiating(true);
-      const chatIdToUse = currentChat?.id || Date.now().toString() + "-temp";
-      if (!currentChat) {
-          console.warn(`[Initiation Check] currentChat is null/undefined. Using temporary ID: ${chatIdToUse}.`);
-      }
-      initiateToolChat(chatIdToUse, selectedTool); 
+    console.log(`[ChatArea Auto-Initiate Effect Check] Running for tool: ${selectedTool}, chat ID: ${currentChat?.id}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] currentChat: ${!!currentChat}`);
+    if (currentChat) {
+      console.log(`[ChatArea Auto-Initiate Condition Check] currentChat.messages?.length: ${currentChat.messages?.length}`);
     }
-  }, [
-    selectedTool,
-    currentChat,
-    currentChat?.messages?.length,
-    initiationAttemptedForContext,
-    isInitiating,
-    isLoading,
-    questionsAnswered,
-  ]);
+    console.log(`[ChatArea Auto-Initiate Condition Check] selectedTool is tool: ${(selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator')}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] !initiationAttemptedForContext: ${!initiationAttemptedForContext}`);
+    console.log(`[ChatArea Auto-Initiate Condition Check] user?.id: ${!!user?.id}`);
+    if (currentChat) {
+      console.log(`[ChatArea Auto-Initiate Condition Check] lastInitiatedChatIdRef.current !== currentChat.id: ${lastInitiatedChatIdRef.current !== currentChat.id} (Last: ${lastInitiatedChatIdRef.current}, Current: ${currentChat.id})`);
+    }
 
-  // Function to call the API for the first message
+    if (
+      currentChat &&
+      currentChat.messages?.length === 0 &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
+      !initiationAttemptedForContext && // This should be the primary guard for a new context
+      user?.id
+      // lastInitiatedChatIdRef.current !== currentChat.id // <<<< TEMPORARILY REMOVING THIS CONDITION
+       ) {
+      console.log(`[ChatArea Auto-Initiate SUCCESS] Tool: ${selectedTool}, Chat ID: ${currentChat.id}. Initiating...`);
+      setIsInitiating(true);
+      setInitiationAttemptedForContext(true); // Mark this context (chat ID + tool) as having an initiation attempt
+      // We can keep lastInitiatedChatIdRef if we want to prevent multiple calls within the *same execution path* if initiateToolChat was synchronous,
+      // but for async, and with setInitiationAttemptedForContext, it might be redundant or causing issues.
+      // Let's try without it first, relying on setInitiationAttemptedForContext and its reset in the other useEffect.
+      // lastInitiatedChatIdRef.current = currentChat.id; 
+
+      initiateToolChat(currentChat.id, selectedTool)
+        .catch((error) => {
+          console.error("[ChatArea Auto-Initiate] Error during tool initiation:", error);
+          toast({
+            title: "Tool Initiation Failed",
+            description: `Could not start ${TOOLS[selectedTool].name}. Please try again.`,
+            variant: "destructive",
+          });
+        })
+        .finally(() => {
+          setIsInitiating(false);
+        });
+    }
+  }, [currentChat, selectedTool, initiationAttemptedForContext, user?.id]);
+
+  // Removed the second duplicate useEffect that previously attempted initiation when messages.length > 0
+
   const initiateToolChat = async (chatIdToInitiate, tool) => {
       console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
-      setIsLoading(true);
-      // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
-      
+    
+    if (!user?.id) {
+      console.error("User not authenticated");
+      return;
+    }
+
+    // Prevent re-initialization if the chat already has messages
+    if (currentChat?.id === chatIdToInitiate && currentChat?.messages?.length > 0) {
+      console.log(`[ChatArea Initiate Func] Skipping initialization - chat ${chatIdToInitiate} already has ${currentChat.messages.length} messages`);
+      return;
+    }
+
+    // We rely on the API to provide the correct initialization message.
+
+    try {
+      // Still call the API to set up the thread metadata
       const requestBody = {
-        messages: [], // For init, messages should be empty
+        messages: [],
         tool: tool,
         isToolInit: true,
-        chatId: chatIdToInitiate, // Use the passed chatId, which could be temp or real
-        // Ensure collectedAnswers and currentQuestionKey are not sent or are explicitly empty for a true init
-        collectedAnswers: {}, 
-        currentQuestionKey: null 
+        chatId: chatIdToInitiate
       };
-      console.log(`[ChatArea Initiate Func] Calling fetch for initial message. Request Body:`, JSON.stringify(requestBody));
 
-      try {
-          const response = await fetch('/api/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
               body: JSON.stringify(requestBody),
           });
 
           console.log(`[ChatArea Initiate Func] Fetch response status: ${response.status}`);
+
           if (!response.ok) {
-              const errorText = await response.text(); 
-              throw new Error(`API failed (${response.status}): ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
           }
+
           const data = await response.json();
           console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
+
+      // Use the API-provided message (data.msgPreview or data.message).
+      const initialContent = data.msgPreview || data.message || "Let's build out your offer! Tell me about your core product/service at a high level.";
           
           const assistantMessage = { 
+        id: Date.now() + Math.random(),
+        content: initialContent,
               role: "assistant", 
-              content: data.message || "Let's start creating your hybrid offer."
-          };
-          
-          // IMPORTANT FIXES HERE:
-          const finalChatId = data.chatId; // Use the permanent ID from the API response
-          const originalToolId = selectedTool; // selectedTool should be 'hybrid-offer' at this point
-          
-          // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
-          const returnedAnswers = data.collectedAnswers || {};
-          const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? questionsArray[0].key : null);
-          const initialQuestionsAnswered = data.questionsAnswered || 0;
-          const initialIsComplete = data.isComplete || false;
+        isInitial: true,
+        timestamp: new Date().toISOString()
+      };
 
+      const existingMessages = currentChat?.messages || [];
           const updatedChat = {
-              id: finalChatId,      // NEW: Use the permanent ID from API
-              title: TOOLS[originalToolId]?.name || "New Chat", // Use tool name for title, or a fallback
-              tool_id: originalToolId, // NEW: Ensure tool_id is set
-              messages: [assistantMessage], 
-              isTemporary: false, // It's now a real chat in the DB
-              // Initialize metadata based on API response
+        ...currentChat,
+        id: data.chatId || chatIdToInitiate,
+        messages: [...existingMessages, assistantMessage],
               metadata: {
-                  currentQuestionKey: nextQuestionKey,
-                  questionsAnswered: initialQuestionsAnswered,
-                  collectedAnswers: returnedAnswers,
-                  isComplete: initialIsComplete
+          ...currentChat?.metadata,
+          collectedAnswers: data.collectedAnswers || {},
+          currentQuestionKey: data.currentQuestionKey,
+          questionsAnswered: data.questionsAnswered || 0,
+          isComplete: data.isComplete || false
               }
           };
           
-          console.log("[ChatArea Initiate Func] Constructed updatedChat object:", JSON.stringify(updatedChat, null, 2));
+      console.log("[ChatArea Initiate Func] Constructed updatedChat object with locked message");
 
-          console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
-          setChats(prev => {
-              const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
-              if (chatIndex > -1) {
-                   const newList = [...prev];
-                   newList[chatIndex] = updatedChat;
-                   return newList;
-              } else {
-                  console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
-                  return [updatedChat, ...prev];
-              }
-          });
+      // Update chats list first
+      setChats(prevChats => {
+        const filteredChats = prevChats.filter(chat => chat.id !== chatIdToInitiate);
+        const newChats = [...filteredChats, updatedChat];
+        return newChats;
+      });
+
+      // Only update currentChat if we're still working with the same chat ID
+      if (currentChat?.id === chatIdToInitiate) {
           setCurrentChat(updatedChat);
-          console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${updatedChat.messages[0]?.content?.substring(0, 50)}..."`);
+        console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${initialContent.substring(0, 50)}..."`);
+      } else {
+        console.log(`[ChatArea Initiate Func] Skipping setCurrentChat - chat ID changed from ${chatIdToInitiate} to ${currentChat?.id}`);
+      }
+
           console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
+      // Update component state from the response
+      setCollectedAnswers(data.collectedAnswers || {});
+      setCurrentQuestionKey(data.currentQuestionKey);
+      setQuestionsAnswered(data.questionsAnswered || 0);
       } catch (error) {
-          console.error('[ChatArea Initiate Func] Error initiating chat:', error);
-          const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
-          const errorChat = { id: chatIdToInitiate, title: "Initiation Error", messages: [errorAssistantMessage] };
-          setChats(prev => { 
-               const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
-               if(chatIndex > -1) { 
-                   const newList = [...prev];
-                   newList[chatIndex] = errorChat;
-                   return newList;
-               } else return [errorChat, ...prev];
-           });
-           setCurrentChat(errorChat);
+      console.error("[ChatArea Initiate Func] Error initiating tool chat:", error);
       } finally {
           console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
-          setIsLoading(false);
-          setIsInitiating(false); 
-          textareaRef.current?.focus();
+      // The initiationAttemptedForContext flag should remain true regardless of success/failure
+      // to prevent repeated attempts
       }
   };
 
@@ -759,80 +714,167 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     if (e) e.preventDefault();
     const trimmedInput = input.trim();
 
-    // Add a check here for currentChat right at the start
     if (!currentChat) {
         console.error("handleSubmit aborted: currentChat is null or undefined.");
-        alert("Cannot send message: No active chat selected."); // User feedback
+        alert("Cannot send message: No active chat selected.");
         return;
     }
     
-    // Prevent submission if loading
     if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
       console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
       return;
     }
 
-    console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
-      currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
-      chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
-      inputLength: trimmedInput.length
-    });
-
-    // Set both loading states immediately for better visual feedback
     setIsLoading(true);
     setIsResponseLoading(true);
 
-    const newMessage = { role: "user", content: trimmedInput };
+    const userMessage = { role: "user", content: trimmedInput, id: `user-${Date.now()}` }; // Added ID to user message for stable key
     setInput("");
 
-    let chatToUpdate = currentChat; // Use the guaranteed currentChat
-    const tempId = chatToUpdate.id; // Store the temporary ID for reference
-
-    const updatedMessages = [...chatToUpdate.messages, newMessage];
+    let chatToUpdate = currentChat;
+    const updatedMessages = [...chatToUpdate.messages, userMessage];
     const optimisticChat = { ...chatToUpdate, messages: updatedMessages };
 
-    console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
-      optimisticChatId: optimisticChat.id,
-      optimisticMessageCount: optimisticChat.messages.length
-    });
-
-    // Optimistic update
     setCurrentChat(optimisticChat);
-    setChats(prev => {
-      const updated = prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat);
-      console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
-        updatedChatIds: updated.map(c => c.id)
-      });
-      return updated;
-    });
+    setChats(prev => prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat));
+    
+    // Save user message to DB
+    if (user?.id) {
+      handleMessageSave(chatToUpdate.id, userMessage, user.id);
+    }
 
     try {
-       console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
-         threadId: currentChat.id,
-         messageCount: updatedMessages.length,
-         existingMessages: currentChat.messages.length,
-         currentQuestionKey,
-         questionsAnswered,
-         requestBody: JSON.stringify({
-           messageCount: updatedMessages.length,
+      if (!selectedTool) {
+        console.log('[CHAT_DEBUG] Using streaming for regular chat');
+        
+        const tempStreamingId = `streaming-${Date.now()}`;
+        setStreamingMessageId(tempStreamingId); // Store the ID of the streaming message
+        setStreamingContent('');
+        setIsStreaming(true);
+        
+        const initialStreamingMessage = {
+          id: tempStreamingId, 
+          role: 'assistant', 
+          content: '', 
+          isStreaming: true 
+        };
+
+        const tempChatWithStreamingPlaceholder = {
+          ...optimisticChat, // Use optimisticChat which already has the user message
+          messages: [...optimisticChat.messages, initialStreamingMessage]
+        };
+        
+        setCurrentChat(tempChatWithStreamingPlaceholder);
+        setChats(prev => prev.map(chat => chat.id === chatToUpdate.id ? tempChatWithStreamingPlaceholder : chat));
+        
+        streamingClient.streamChat({
+          messages: updatedMessages, // Send messages up to the user's new message
            tool: selectedTool,
-           currentQuestionKey,
-           questionsAnswered,
-           hasCollectedAnswers: !!collectedAnswers,
-           chatId: currentChat.id
-         })
-       });
+          currentQuestionKey: currentQuestionKey,
+          questionsAnswered: questionsAnswered,
+          collectedAnswers: collectedAnswers,
+          chatId: chatToUpdate.id,
+          onChunk: (chunk, fullContent) => {
+            setStreamingContent(fullContent);
+            setCurrentChat(prevChat => {
+              if (!prevChat || !prevChat.messages) return prevChat;
+              const newMessages = prevChat.messages.map(msg => 
+                msg.id === tempStreamingId ? { ...msg, content: fullContent, isStreaming: true } : msg
+              );
+              return { ...prevChat, messages: newMessages };
+            });
+            setChats(prev => prev.map(c => {
+              if (c.id === chatToUpdate.id) {
+                const newMessages = c.messages.map(msg => 
+                  msg.id === tempStreamingId ? { ...msg, content: fullContent, isStreaming: true } : msg
+                );
+                return { ...c, messages: newMessages };
+              }
+              return c;
+            }));
+          },
+          onComplete: (data) => {
+            console.log('[CHAT_DEBUG] Streaming completed from client, final data:', data);
+            setIsStreaming(false);
+            setIsResponseLoading(false); // Already set by finally, but good to be explicit
+            // setIsLoading(false); //isLoading is for user input, isResponseLoading for AI response
+            
+            const finalContent = data.message;
+            const finalChatId = data.chatId || chatToUpdate.id;
+
+            setCurrentChat(prevChat => {
+              if (!prevChat || !prevChat.messages) return prevChat;
+              const newMessages = prevChat.messages.map(msg => 
+                msg.id === tempStreamingId ? { ...msg, content: finalContent, isStreaming: false } : msg // Keep the same ID, just update content and streaming status
+              );
+              return { ...prevChat, id: finalChatId, messages: newMessages };
+            });
+
+            setChats(prev => prev.map(c => {
+              if (c.id === chatToUpdate.id || c.id === finalChatId) {
+                const newMessages = c.messages.map(msg => 
+                  msg.id === tempStreamingId ? { ...msg, content: finalContent, isStreaming: false } : msg // Keep the same ID, just update content and streaming status
+                );
+                return { ...c, id: finalChatId, messages: newMessages };
+              }
+              return c;
+            }));
+            
+            // Save the *finalized* assistant message to database
+            if (user?.id) {
+              const finalAssistantMessage = {
+                id: tempStreamingId, // Use the same ID that's in the UI state
+                role: 'assistant',
+                content: finalContent
+              };
+              handleMessageSave(finalChatId, finalAssistantMessage, user.id);
+            }
+            // NOTE: we purposely KEEP streamingMessageId so the same StreamingMessage
+            // component continues to render this message even after completion. It will
+            // be overwritten the next time a new streaming cycle starts.
+          },
+          onError: (error) => {
+            console.error('[CHAT_DEBUG] Streaming error:', error);
+            setIsStreaming(false);
+            // setIsLoading(false);
+            // isResponseLoading is cleared in finally
+
+            setCurrentChat(prevChat => {
+              if (!prevChat || !prevChat.messages) return prevChat;
+              const newMessages = prevChat.messages.map(msg => 
+                msg.id === tempStreamingId ? { ...msg, content: `Sorry, an error occurred: ${error.message}`, isStreaming: false, isError: true } : msg // Keep the same ID
+              );
+              return { ...prevChat, messages: newMessages };
+            });
+            setChats(prev => prev.map(c => {
+              if (c.id === chatToUpdate.id) {
+                const newMessages = c.messages.map(msg => 
+                  msg.id === tempStreamingId ? { ...msg, content: `Sorry, an error occurred: ${error.message}`, isStreaming: false, isError: true } : msg // Keep the same ID
+                );
+                return { ...c, messages: newMessages };
+              }
+              return c;
+            }));
+            // Keep streamingMessageId until the next user message starts a new stream
+          }
+        });
+        
+        // setIsLoading(false); // User input is submitted, AI response is now loading.
+        return; 
+      }
+      
+      // ... (rest of the handleSubmit for non-streaming tools)
             
        const response = await fetch('/api/chat', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
-               messages: updatedMessages,
+               messages: updatedMessages, // This already includes the user's new message
                tool: selectedTool,
                currentQuestionKey: currentQuestionKey,
                questionsAnswered: questionsAnswered,
                collectedAnswers: collectedAnswers,
-               chatId: currentChat.id // Explicitly include the chatId
+               chatId: chatToUpdate.id 
            }),
        });
 
@@ -846,60 +888,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        const contentType = response.headers.get('Content-Type');
        let data;
        
-       if (false && contentType && contentType.includes('text/plain')) {
-           // Handle streaming response for regular chat
-           console.log("[CHAT_DEBUG] Handling text/plain streaming response");
-           const reader = response.body.getReader();
-           const decoder = new TextDecoder();
-           let responseText = '';
-           
-           // Read the streamed response
-           try {
-             while (true) {
-                 const { done, value } = await reader.read();
-                 if (done) break;
-                 const chunk = decoder.decode(value, { stream: true });
-                 console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
-                 responseText += chunk;
-                 
-                 // Update the UI with each chunk as it arrives
-                 const tempAssistantMessage = { role: 'assistant', content: responseText, isStreaming: true };
-                 const updatedChatTemp = {
-                   ...chatToUpdate,
-                   id: response.headers.get('X-Chat-Id') || tempId,
-                   messages: [...updatedMessages, tempAssistantMessage],
-                 };
-                 setCurrentChat(updatedChatTemp);
-             }
-             
-             // Final decoding to flush any remaining bytes
-             const finalText = decoder.decode();
-             if (finalText) responseText += finalText;
-             
-             console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
-           } catch (streamError) {
-             console.error("[CHAT_DEBUG] Stream reading error:", streamError);
-             responseText += "\n\nAn error occurred while reading the response.";
-           }
-           
-           // Create a simple data object that mimics the structure of the JSON response
-           data = {
-               message: responseText,
-               chatId: response.headers.get('X-Chat-Id') || currentChat.id,
-               isTextResponse: true // Flag to indicate this is a plain text response
-           };
-       } else {
            // Handle JSON response for tool-based chat
            try {
                data = await response.json();
-               console.log("[CHAT_DEBUG] JSON response data:", {
-                   chatId: data.chatId,
-                   messagePreview: typeof data.message === 'string' ? data.message.substring(0, 50) + '...' : 'non-string message',
-               });
            } catch (error) {
                console.error("[CHAT_DEBUG] Error parsing JSON response:", error);
                throw new Error("Failed to parse response from server");
-           }
        }
        
         console.log("[CHAT_DEBUG] API response data:", {
@@ -921,11 +915,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         // Check if this is an initial response that needs polling
         if (data.isInitialResponse && data.status === "processing" && data.threadId && data.runId) {
-          console.log("[CHAT_DEBUG] Received initial response, starting polling for completion", {
-            threadId: data.threadId,
-            runId: data.runId
-          });
-          
           // Add a temporary thinking message
           const thinkingMessage = { 
             role: 'assistant', 
@@ -952,8 +941,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
         // Create assistant message
         const assistantMessage = typeof data.message === 'string' 
-            ? { role: 'assistant', content: data.message }
-            : data.message || { role: 'assistant', content: "I couldn't generate a proper response." };
+            ? { role: 'assistant', content: data.message, id: `assistant-${Date.now()}` } // Add ID
+            : data.message || { role: 'assistant', content: "I couldn't generate a proper response.", id: `assistant-error-${Date.now()}` }; // Add ID
             
         // Use returned data or default values for text responses
         const returnedAnswers = data.isTextResponse ? {} : (data.collectedAnswers || collectedAnswers || {});
@@ -967,7 +956,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
            throw new Error("Chat session ID missing from server response.");
         }
 
-        console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with tempId: ${tempId}, equal: ${correctChatId === tempId}`);
+        console.log(`[CHAT_DEBUG] Received chatId from API: ${correctChatId}, comparing with current chat ID: ${chatToUpdate.id}, equal: ${correctChatId === chatToUpdate.id}`);
         
         // Log detailed information about returned answers (skip for text responses)
         if (!data.isTextResponse) {
@@ -1039,15 +1028,12 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             );
           }
           
-          // Next, remove any temporary version of this chat
-          const filteredChats = tempId !== correctChatId 
-            ? prevChats.filter(chat => chat.id !== tempId)
-            : prevChats;
+          // For tool-based chats, we don't need to filter temp chats since they use the same ID
+          const filteredChats = prevChats;
             
-          console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
-            filteredCount: filteredChats.length,
-            removedTempChat: tempId !== correctChatId,
-            filteredIds: filteredChats.map(c => c.id)
+          console.log(`[CHAT_DEBUG] Using existing chats without filtering:`, {
+            chatCount: filteredChats.length,
+            chatIds: filteredChats.map(c => c.id)
           });
             
           // Final safety check if chat exists after filtering
@@ -1065,16 +1051,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             result = filteredChats.map(chat => 
               chat.id === correctChatId ? finalCurrentChat : chat
             );
-            console.log(`[CHAT_DEBUG] Updated existing chat in list`);
           } else {
-            // Add as a new chat if it doesn't exist in the list
+            // Add new chat to the list
             result = [finalCurrentChat, ...filteredChats];
-            console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
           }
           
-          console.log(`[CHAT_DEBUG] Final chats state:`, {
+          console.log(`[CHAT_DEBUG] Final setChats result:`, {
             resultCount: result.length,
-            resultIds: result.map(c => c.id)
+            resultIds: result.map(c => c.id),
+            operation: chatExists ? 'update' : 'add'
           });
           
           return result;
@@ -1100,27 +1085,23 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
     } catch (error) {
         console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
-        const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
-        const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
-        setChats(prev => {
-          console.log(`[CHAT_DEBUG] Setting error chat state:`, {
-            errorChatId: errorChat.id,
-            prevChatCount: prev.length
-          });
-          return prev.map(chat => chat.id === errorChat.id ? errorChat : chat);
-        });
+        const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}`, id: `error-${Date.now()}` };
+        const errorChat = { 
+          ...chatToUpdate, // Base it on the state *before* optimistic user message was added if that's cleaner
+          messages: [...chatToUpdate.messages.filter(m => m.id !== userMessage.id), userMessage, errorAssistantMessage] 
+        };
+        setChats(prev => prev.map(chat => chat.id === errorChat.id ? errorChat : chat));
         setCurrentChat(errorChat);
         
-        // Trigger scroll after error message
         setTimeout(() => {
           scrollToBottom();
         }, 100);
     } finally {
-      setIsLoading(false);
-      setIsResponseLoading(false); // Make sure to clear response loading state
+      setIsLoading(false); // For user input
+      setIsResponseLoading(false); // For AI response
       console.log(`[CHAT_DEBUG] handleSubmit completed, loading states cleared`);
-      if (!isWaitingForN8n) {
-         textareaRef.current?.focus();
+      if (!isWaitingForN8n && textareaRef.current) {
+         textareaRef.current.focus();
       } 
     }
   };
@@ -1134,65 +1115,127 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   // Improved auto-scroll function
   const scrollToBottom = () => {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
     if (scrollAreaRef.current) {
-      // Try multiple methods to find the scrollable element
       const scrollArea = scrollAreaRef.current;
       
-      // Method 1: Look for the viewport element (Radix ScrollArea)
+        // Try multiple methods to find the scrollable element
       let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
       
-      // Method 2: Look for any element with overflow scroll
       if (!scrollElement) {
         scrollElement = scrollArea.querySelector('div[style*="overflow"]');
       }
       
-      // Method 3: Use the scroll area itself
       if (!scrollElement) {
         scrollElement = scrollArea;
       }
       
       if (scrollElement) {
-        // Force scroll to bottom with multiple approaches
-        scrollElement.scrollTop = scrollElement.scrollHeight;
+          // Get current scroll values
+          const currentScrollTop = scrollElement.scrollTop;
+          const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+          
+          // Force aggressive scroll to bottom immediately
+          scrollElement.scrollTop = maxScroll + 100; // Extra padding to ensure we're at the bottom
+          
+          // During streaming, be extra aggressive
+          if (isStreaming) {
+            // Force scroll again after a tiny delay to catch any race conditions
+            setTimeout(() => {
+              const newMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+              scrollElement.scrollTop = newMaxScroll + 100;
+            }, 5);
+            
+            // And one more time to be absolutely sure
+            setTimeout(() => {
+              const finalMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+              scrollElement.scrollTop = finalMaxScroll + 100;
+            }, 20);
+          }
+        }
         
-        // Also try scrollIntoView on the last message if available
+        // Also try scrollIntoView on the last message as backup
         if (lastMessageRef.current) {
+          setTimeout(() => {
           lastMessageRef.current.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'end' 
+              behavior: 'instant',
+              block: 'end',
+              inline: 'nearest'
           });
+          }, isStreaming ? 10 : 20);
         }
       }
-    }
+    });
   };
 
-  // Auto-scroll when messages change
+  // Single consolidated auto-scroll useEffect to prevent conflicts
   useEffect(() => {
-    scrollToBottom();
-  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
+    // Always scroll when messages change or streaming updates
+    const shouldScroll = 
+      currentChat?.messages?.length > 0 || 
+      isResponseLoading || 
+      isWaitingForN8n || 
+      (isStreaming && streamingContent);
 
-  // Auto-scroll with delay to ensure DOM is rendered
-  useEffect(() => {
-    if (currentChat?.messages?.length > 0) {
+    if (shouldScroll) {
       // Immediate scroll
       scrollToBottom();
       
-      // Delayed scroll to catch any late-rendering content
-      const timeoutId = setTimeout(() => {
+      // Additional scroll for streaming content updates
+      if (isStreaming && streamingContent) {
+        const streamingTimeout = setTimeout(() => {
+          scrollToBottom();
+        }, 50);
+        
+        return () => clearTimeout(streamingTimeout);
+      }
+      
+      // Standard delayed scroll for other content
+      const standardTimeout = setTimeout(() => {
         scrollToBottom();
       }, 100);
       
-      // Additional scroll for complex content like documents
-      const timeoutId2 = setTimeout(() => {
+      return () => clearTimeout(standardTimeout);
+    }
+  }, [
+    currentChat?.messages?.length, 
+    currentChat?.id, 
+    isResponseLoading, 
+    isWaitingForN8n, 
+    isStreaming, 
+    streamingContent
+  ]);
+
+  // Continuous auto-scroll during active streaming to ensure we keep up with fast content
+  useEffect(() => {
+    let scrollInterval;
+    
+    if (isStreaming && streamingContent) {
+      // Set up a continuous scroll interval during streaming
+      scrollInterval = setInterval(() => {
         scrollToBottom();
-      }, 500);
+      }, 100); // Scroll every 100ms during active streaming
+    }
       
       return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(timeoutId2);
-      };
+      if (scrollInterval) {
+        clearInterval(scrollInterval);
+      }
+    };
+  }, [isStreaming, streamingContent]);
+
+  // Immediate scroll when streaming starts
+  useEffect(() => {
+    if (isStreaming) {
+      // Scroll immediately when streaming begins
+      scrollToBottom();
+      // And again after a tiny delay to catch any initial content
+      setTimeout(() => {
+        scrollToBottom();
+      }, 50);
     }
-  }, [currentChat?.id, currentChat?.messages]);
+  }, [isStreaming]);
 
   // Determine if the offer creation process is complete for UI feedback
   // Check both local state and metadata for completion
@@ -1822,12 +1865,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   // Snippet Handling Functions
   const handleSaveSnippet = () => {
     if (selectedText && selectionContext) {
-      console.log("[ChatArea] Opening snippet modal for new snippet. Context:", selectionContext);
+      console.log("[ChatArea] Opening snippet modal for new snippet. Selected text:", selectedText);
+      console.log("[ChatArea] Selection context:", selectionContext);
+      
+      // Preserve the selected text before potentially clearing the selection
+      setPreservedSelectedText(selectedText);
       setCurrentSourceContext(selectionContext);
       setEditingSnippet(null);
       setIsSnippetModalOpen(true);
     } else {
       console.warn("[ChatArea] Cannot save snippet: No text selected or context missing.");
+      console.warn("[ChatArea] selectedText:", selectedText);
+      console.warn("[ChatArea] selectionContext:", selectionContext);
       toast({ title: "Cannot Save Snippet", description: "Please select some text within a message first.", variant: "destructive" });
     }
   };
@@ -1844,6 +1893,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       clearSelection();
       setEditingSnippet(null);
       setCurrentSourceContext(null);
+      setPreservedSelectedText(''); // Clear preserved text after save
     } catch (error) {
       console.error("[ChatArea] Failed to save snippet:", error);
       toast({ title: "Error Saving Snippet", description: error.message || "Could not save your snippet.", variant: "destructive" });
@@ -1854,6 +1904,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setIsSnippetModalOpen(false);
     setEditingSnippet(null);
     setCurrentSourceContext(null);
+    setPreservedSelectedText(''); // Clear preserved text on close
   };
 
   const handleCopyText = () => {
@@ -1876,6 +1927,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   });
 
+
+
+  // Helper function to save messages to database
+  const handleMessageSave = async (chatId, message, userId) => {
+    try {
+      console.log('[CHAT_DEBUG] Saving message to database:', { chatId, role: message.role });
+      
+      const messagePayload = {
+        thread_id: chatId,
+        role: message.role,
+        content: message.content,
+        timestamp: new Date().toISOString(),
+        user_id: userId
+      };
+      
+      // Use the imported saveMessage utility
+      const savedMessage = await saveMessage(messagePayload, userId);
+      console.log('[CHAT_DEBUG] Message saved successfully:', savedMessage.id);
+    } catch (error) {
+      console.error('[CHAT_DEBUG] Error saving message:', error);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-screen relative bg-background">
       {/* Chat header - flush against sidebar on desktop */}
@@ -1889,125 +1963,250 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </div>
 
-      {/* Messages container - updated with responsive spacing */}
+      {/* Messages container - fixed bottom-up flow */}
       <ScrollArea
-        ref={scrollAreaRef} // Keep this for general scroll area controls
+        ref={scrollAreaRef}
         className="flex-1 overflow-y-auto px-3 sm:px-4 touch-pan-y"
       >
         {/* This inner div will be the actual container for messages and text selection */}
-        <div ref={chatContainerRef} className="flex flex-col items-center space-y-4 sm:space-y-6 py-4 sm:py-6 mb-20 sm:mb-24">
+        <div 
+          ref={chatContainerRef} 
+          className={`flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-6 mb-32 sm:mb-36 transition-all duration-300 ease-in-out ${currentChat?.messages?.length <= 1 ? 'min-h-[calc(100vh-200px)] justify-end items-center' : 'justify-start items-center'}`}>
           {/* First message or empty state when no messages */}
           {!currentChat?.messages?.length ? (
             (isInitiating || isLoading) ? (
-              <div className="flex flex-col items-center justify-center h-[calc(100vh-12rem)] space-y-3">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                <p className="text-sm text-muted-foreground font-medium">
+              <div className="flex w-full max-w-4xl justify-start">
+                <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%]">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                  <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">
                   Initializing {selectedTool ? TOOLS[selectedTool].name : "chat"}…
-                </p>
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-[calc(100vh-12rem)] mobile-spacing">
-                <div className="text-center space-y-4 sm:space-y-6 max-w-md px-4">
-                  <h3 className="text-xl sm:text-2xl font-semibold">
-                    {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+              <div className="flex flex-col items-center justify-center space-y-6 text-center max-w-md">
+                <div className="p-4 rounded-full bg-muted/30">
+                  <MessageCircle className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium text-foreground">
+                    {selectedTool && TOOLS[selectedTool] 
+                      ? `Ready to use ${TOOLS[selectedTool].name}` 
+                      : "Ready to chat"
+                    }
                   </h3>
-                  <p className="text-base sm:text-lg text-muted-foreground leading-relaxed">
-                    {selectedTool 
-                      ? TOOLS[selectedTool].description
-                      : "Ask me anything related to your business."}
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {selectedTool && TOOLS[selectedTool] 
+                      ? `${TOOLS[selectedTool].name} will start automatically. ${TOOLS[selectedTool].description || ''}`
+                      : "Start a conversation or use one of the specialized tools from the sidebar."
+                    }
                   </p>
                 </div>
+                {/* Removed the explicit Start Tool button here to restore automatic initialization */}
               </div>
             )
           ) : (
-            currentChat.messages
-              .filter((message) => {
-                // Filter out document generation status messages if document is already complete
-                const isGenerationStatus = typeof message.content === 'string' && 
-                  message.content.includes('document-generation-status');
-                
-                if (isGenerationStatus) {
-                  // Check if there are any completed document messages in the chat
-                  const hasCompletedDocuments = currentChat.messages.some(msg => 
-                    isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
-                  );
-                  
-                  // Also check metadata for completion
-                  const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
-                    currentChat.metadata?.isGeneratingDocument === false;
-                  
-                  // Filter out generation status if document is complete
-                  if (hasCompletedDocuments || isDocumentComplete) {
-                    console.log('[ChatArea] Filtering out generation status message - document is complete');
-                    return false;
-                  }
-                }
-                
-                return true;
-              })
-              .map((message, index, filteredArray) => {
-                // Check if this is the last message in the filtered array
-                const isLastMessage = index === filteredArray.length - 1;
-                
+            // Render all messages including the first one
+            currentChat.messages.map((message, index) => {
+              const isLastMessage = index === currentChat.messages.length - 1;
+              const isUser = message.role === 'user';
+              
+              // Always render the streaming component for the message that is (or was)
+              // streamed in this cycle. This prevents layout replacement when the
+              // stream finishes, eliminating the visual "jump".
+              const isCurrentStream = streamingMessageId && message.id === streamingMessageId;
+
+              if (isCurrentStream) {
                 return (
                   <div
-                    key={message.id || `message-${index}`}
-                    className={`w-full max-w-3xl flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                    key={message.id}
                     ref={isLastMessage ? lastMessageRef : null}
                   >
+                    <StreamingMessage
+                      content={message.content}
+                      isComplete={!message.isStreaming}
+                      messageId={message.id}
+                      chatId={currentChat?.id}
+                      messageRole={message.role}
+                    />
+                  </div>
+                );
+              }
+
+              if (isDocumentMessage(message)) {
+                return (
+                  <div
+                    key={`${message.id}-${index}`}
+                    className={`flex w-full max-w-4xl justify-start`}
+                    data-message-id={message.id}
+                    data-chat-id={currentChat?.id}
+                    data-message-role={message.role}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div 
+                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        <DocumentMessage message={message} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isLandingPageMessage(message)) {
+                return (
+                  <div
+                    key={`${message.id}-${index}`}
+                    className={`flex w-full max-w-4xl justify-start`}
+                    data-message-id={message.id}
+                    data-chat-id={currentChat?.id}
+                    data-message-role={message.role}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div 
+                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        <LandingPageMessage content={message.content} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Handle streaming messages
+              if (message.isStreaming) {
+                return (
+                  <div
+                    key={message.id}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <StreamingMessage
+                      content={message.content}
+                      isComplete={false} // This will be true once isStreaming is false
+                      messageId={message.id}
+                      chatId={currentChat?.id}
+                      messageRole={message.role}
+                    />
+                  </div>
+                );
+              }
+              // Handle error messages that might have come from streaming
+              if (message.isError) {
+                 return (
+                  <div
+                    key={message.id}
+                    className={`flex w-full max-w-4xl justify-start`}
+                    data-message-id={message.id}
+                    data-chat-id={currentChat?.id}
+                    data-message-role={message.role}
+                    ref={isLastMessage ? lastMessageRef : null}
+                  >
+                    <div className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] flex-row`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground`}>
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div 
+                        className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                          {message.content}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={message.id} // Use message.id as key
+                  className={`flex w-full max-w-4xl ${isUser ? 'justify-end' : 'justify-start'}`}
+                      data-message-id={message.id}
+                      data-chat-id={currentChat?.id}
+                      data-message-role={message.role}
+                  ref={isLastMessage ? lastMessageRef : null}
+                >
+                  <div
+                    className={`flex items-start space-x-3 max-w-[85%] sm:max-w-[80%] ${
+                      isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'
+                    }`}
+                  >
                     <div
-                      className={`
-                        ${message.role === "user" ? "bg-muted px-4 py-2 rounded-lg" : ""}
-                        text-sm sm:text-base leading-relaxed max-w-prose
-                      `}
+                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        isUser
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {isUser ? (
+                        <User className="h-4 w-4" />
+                      ) : (
+                        <Bot className="h-4 w-4" />
+                      )}
+                    </div>
+
+                    <div
+                      className={`rounded-2xl px-4 py-3 shadow-sm ${
+                        isUser
+                          ? 'bg-primary text-primary-foreground ml-auto'
+                          : 'bg-muted/60 text-foreground'
+                      }`}
                       data-message-id={message.id}
                       data-chat-id={currentChat?.id}
                       data-message-role={message.role}
                     >
-                      {message.is_thinking ? (
-                        <LoadingMessage content={message.content} role={message.role} />
-                      ) : (
-                        // Conditional rendering for different message types
-                        <>
-                          {isDocumentMessage(message) ? (
-                            <DocumentMessage message={message} />
-                          ) : isLandingPageMessage(message) ? (
-                            <LandingPageMessage content={message.content} />
-                          ) : (
-                            // Check for HTML content
-                            message.content.includes('<a href') ? (
-                              <HTMLContent content={message.content} />
+                      {isUser ? (
+                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                          {message.content}
+                        </p>
                             ) : (
                               <MarkdownMessage content={message.content} />
-                            )
-                          )}
-                        </>
                       )}
+                    </div>
                     </div>
                   </div>
                 );
               })
           )}
 
-          {/* Show n8n document generation loader */}
-          {isWaitingForN8n && (
-            <div className="flex items-center justify-center py-6">
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
+          {/* Loading indicator for AI response (not user input loading) */}
+          {isResponseLoading && !isStreaming && currentChat?.messages?.length > 0 && (
+            <div className="flex w-full max-w-4xl justify-start">
+              <div className="flex items-start space-x-3 max-w-[85%] sm:max-w-[80%]">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
+                  <Bot className="h-4 w-4" />
                 </div>
-                <p className="text-xs text-muted-foreground max-w-xs text-center">
-                  This may take up to 1-3 minutes. Your document is being created based on your answers.
-                </p>
+                <div className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground">
+                  <div className="flex items-center space-x-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm text-muted-foreground">Thinking...</span>
               </div>
             </div>
-          )}
-
-          {/* Loading state for AI response */}
-          {isResponseLoading && !isWaitingForN8n && (
-            <div className="w-full max-w-3xl flex justify-start">
-              <LoadingMessage role="assistant" />
+              </div>
             </div>
           )}
         </div>
@@ -2047,10 +2246,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       {/* Text Selection Menu */}
       {isTextSelected && selectionPosition && (
         <TextSelectionMenu
+          ref={textSelectionMenuRef}
           position={selectionPosition}
-          onSaveSnippet={handleSaveSnippet} // This should point to handleSaveSnippet to open the modal
+          onSaveSnippet={handleSaveSnippet}
           onCopy={handleCopyText}
-          onClose={clearSelection} // Close menu and clear selection
+          onClearSelection={clearSelection}
           selectedText={selectedText}
         />
       )}
@@ -2061,7 +2261,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           isOpen={isSnippetModalOpen}
           onClose={handleSnippetModalClose}
           onSave={handleSnippetSave} // This should point to handleSnippetSave
-          selectedText={editingSnippet ? null : selectedText}
+          selectedText={editingSnippet ? null : preservedSelectedText}
           existingSnippet={editingSnippet}
           sourceContext={currentSourceContext}
         />
