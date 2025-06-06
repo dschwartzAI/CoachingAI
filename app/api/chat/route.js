@@ -1829,7 +1829,7 @@ export async function POST(request) {
       }
       
       // Update variables for later use
-      collectedAnswers = tempCollectedAnswers;
+      Object.assign(collectedAnswers, tempCollectedAnswers);
       const finalQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
       let finalNextQuestionKey = toolResponsePayload.currentQuestionKey;
       let finalIsComplete = toolResponsePayload.isComplete;
@@ -2186,7 +2186,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         }
         
         // Update variables for later use
-        collectedAnswers = tempCollectedAnswers;
+        Object.assign(collectedAnswers, tempCollectedAnswers);
       }
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using 2-step coaching process for regular chat');
