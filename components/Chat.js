@@ -305,7 +305,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const userInput = inputRef.current.value.trim();
+    const userInput = message.trim();
     if (!userInput || isLoading || isResponseLoading) {
       if (process.env.NODE_ENV !== "production") console.log('[Chat] Submit prevented:', {
         hasInput: !!userInput,
@@ -342,7 +342,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
 
       // At this point, the message has already been saved as part of thread initialization
       if (process.env.NODE_ENV !== "production") console.log('[Chat] User message already saved during thread initialization');
-      inputRef.current.value = '';
+      setMessage('');
       setError(null);
 
       // Need to get AI response for the first message
@@ -406,7 +406,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
     // Add temp ID for optimistic update
     const tempId = `temp-${Date.now()}`;
     setMessages(prev => [...prev, { ...userMessagePayload, id: tempId }]);
-    inputRef.current.value = '';
+    setMessage('');
     setError(null);
 
     try {
@@ -579,6 +579,8 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
             <Textarea
               placeholder="What can I help with?"
               className="flex-1 resize-none min-h-[60px] px-4 py-3 pr-12 rounded-2xl bg-muted border-0 focus-visible:ring-1 focus-visible:ring-primary"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

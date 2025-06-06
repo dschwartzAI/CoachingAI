@@ -14,10 +14,7 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
-import { useTextSelection } from '@/lib/hooks/use-text-selection';
-import TextSelectionMenu from '@/components/TextSelectionMenu';
-import SnippetModal from '@/components/SnippetModal';
-import { saveSnippet } from '@/lib/utils/snippets';
+
 import { streamingClient } from '@/lib/utils/streaming';
 import StreamingMessage from '@/components/StreamingMessage';
 import MarkdownMessage from '@/components/markdown-message';
@@ -422,27 +419,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
-  const scrollAreaRef = useRef(null); // This ref is for the ScrollArea component itself, for scrollToBottom
-  const chatContainerRef = useRef(null); // This is the NEW ref for the text selection container
+  const scrollAreaRef = useRef(null); 
+  const headerRef = useRef(null);
+  const chatContainerRef = useRef(null);
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
   const lastInitiatedChatIdRef = useRef(); // Track the last initiated chat ID to prevent loops
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
-  const {
-    selectedText,
-    selectionContext,
-    isTextSelected,
-    selectionPosition,
-    clearSelection
-  } = useTextSelection(chatContainerRef); // Pass chatContainerRef to the hook
-  const [isSnippetModalOpen, setIsSnippetModalOpen] = useState(false);
-  const [editingSnippet, setEditingSnippet] = useState(null);
-  const [currentSourceContext, setCurrentSourceContext] = useState(null);
-  const [preservedSelectedText, setPreservedSelectedText] = useState(''); // Add this to preserve text
   const { toast } = useToast();
-  const headerRef = useRef(null);
-  const textSelectionMenuRef = useRef(null);
   
   // Streaming state
   const [streamingContent, setStreamingContent] = useState('');
@@ -1862,63 +1847,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }, 100);
   };
 
-  // Snippet Handling Functions
-  const handleSaveSnippet = () => {
-    if (selectedText && selectionContext) {
-      console.log("[ChatArea] Opening snippet modal for new snippet. Selected text:", selectedText);
-      console.log("[ChatArea] Selection context:", selectionContext);
-      
-      // Preserve the selected text before potentially clearing the selection
-      setPreservedSelectedText(selectedText);
-      setCurrentSourceContext(selectionContext);
-      setEditingSnippet(null);
-      setIsSnippetModalOpen(true);
-    } else {
-      console.warn("[ChatArea] Cannot save snippet: No text selected or context missing.");
-      console.warn("[ChatArea] selectedText:", selectedText);
-      console.warn("[ChatArea] selectionContext:", selectionContext);
-      toast({ title: "Cannot Save Snippet", description: "Please select some text within a message first.", variant: "destructive" });
-    }
-  };
 
-  const handleSnippetSave = async (snippetData) => {
-    try {
-      const snippetWithUser = {
-        ...snippetData,
-        userId: user?.id,
-      };
-      await saveSnippet(snippetWithUser);
-      toast({ title: "Snippet Saved", description: "Your snippet has been saved successfully." });
-      setIsSnippetModalOpen(false);
-      clearSelection();
-      setEditingSnippet(null);
-      setCurrentSourceContext(null);
-      setPreservedSelectedText(''); // Clear preserved text after save
-    } catch (error) {
-      console.error("[ChatArea] Failed to save snippet:", error);
-      toast({ title: "Error Saving Snippet", description: error.message || "Could not save your snippet.", variant: "destructive" });
-    }
-  };
-
-  const handleSnippetModalClose = () => {
-    setIsSnippetModalOpen(false);
-    setEditingSnippet(null);
-    setCurrentSourceContext(null);
-    setPreservedSelectedText(''); // Clear preserved text on close
-  };
-
-  const handleCopyText = () => {
-    if (selectedText) {
-      navigator.clipboard.writeText(selectedText)
-        .then(() => toast({ title: "Copied to Clipboard", description: "Selected text has been copied." }))
-        .catch(err => {
-          console.error("[ChatArea] Failed to copy text:", err);
-          toast({ title: "Copy Failed", description: "Could not copy text to clipboard.", variant: "destructive" });
-        });
-      clearSelection();
-    }
-  };
-  // End of Snippet Handling Functions
 
   useEffect(() => {
     if (headerRef.current) {
@@ -2213,7 +2142,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       </ScrollArea>
 
       {/* Input area - made responsive for mobile devices */}
-      <div className="fixed bottom-2 left-0 right-0 md:left-[280px] bg-background shadow-[0_-1px_3px_rgba(0,0,0,0.05)] pt-2 pb-2 sm:pt-3 sm:pb-3 pb-[env(safe-area-inset-bottom)] z-40 flex justify-center">
+      <div className="fixed bottom-2 left-0 right-0 md:left-[280px] bg-background shadow-[0_-1px_3px_rgba(0,0,0,0.05)] pt-2 pb-2 sm:pt-3 sm:pb-3 pb-[env(safe-area-inset-bottom)] z-[9999] flex justify-center">
         <form onSubmit={handleSubmit} className="w-full max-w-3xl flex flex-col space-y-2 mobile-input-wrapper">
           <div className="relative w-full">
             <Textarea
@@ -2222,50 +2151,24 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="resize-none pr-14 py-3 max-h-28 min-h-[48px] text-sm font-medium mobile-input touch-none rounded-lg border"
+              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-base font-medium mobile-input"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
-              style={{ fontSize: '16px', touchAction: 'manipulation' }} /* Prevent iOS zoom and improve touch responsiveness */
-              inputMode="text"
-              autoComplete="off"
-              autoCorrect="on"
-              spellCheck="true"
+              style={{ fontSize: '16px' }} /* Prevent iOS zoom by ensuring min 16px font */
             />
             <Button
               type="submit"
               size="icon"
-              className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full touch-target shadow-md"
+              className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
               disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
             >
-              <ArrowUp className="h-6 w-6" />
+              <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
         </form>
       </div>
 
-      {/* Text Selection Menu */}
-      {isTextSelected && selectionPosition && (
-        <TextSelectionMenu
-          ref={textSelectionMenuRef}
-          position={selectionPosition}
-          onSaveSnippet={handleSaveSnippet}
-          onCopy={handleCopyText}
-          onClearSelection={clearSelection}
-          selectedText={selectedText}
-        />
-      )}
 
-      {/* Snippet Modal */}
-      {isSnippetModalOpen && (
-        <SnippetModal
-          isOpen={isSnippetModalOpen}
-          onClose={handleSnippetModalClose}
-          onSave={handleSnippetSave} // This should point to handleSnippetSave
-          selectedText={editingSnippet ? null : preservedSelectedText}
-          existingSnippet={editingSnippet}
-          sourceContext={currentSourceContext}
-        />
-      )}
     </div>
   );
 }
