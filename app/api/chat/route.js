@@ -256,7 +256,7 @@ User's latest response: "${userMessage}"
 Analyze this response and determine what information (if any) relates to ${currentArea.description}, and whether you need more details.`
     }
   ];
-  
+
   try {
     const completion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
@@ -264,7 +264,7 @@ Analyze this response and determine what information (if any) relates to ${curre
       temperature: 0.7,
       response_format: { type: "json_object" }
     });
-    
+
     const analysis = JSON.parse(completion.choices[0].message.content);
     console.log(`[CHAT_API_DEBUG] Response analysis for ${currentQuestionKey}:`, analysis);
     
@@ -1767,18 +1767,18 @@ export async function POST(request) {
           }
           
           // Create response payload staying on current question
-          toolResponsePayload = {
+            toolResponsePayload = {
             message: clarificationResponse,
             currentQuestionKey: currentQuestionKey,
             collectedAnswers: tempCollectedAnswers,
             questionsAnswered: calculateQuestionsAnswered(tempCollectedAnswers, tool),
-            isComplete: false,
-            chatId: chatId
-          };
-          
+              isComplete: false,
+              chatId: chatId
+            };
+            
           console.log('[CHAT_API_DEBUG] Sending clarification question');
           determinedAiResponseContent = clarificationResponse;
-        } else {
+          } else {
           // We have good information, generate the next conversational question
           console.log('[CHAT_API_DEBUG] Good info collected, generating next conversational question');
           
@@ -1835,18 +1835,8 @@ export async function POST(request) {
       let finalIsComplete = toolResponsePayload.isComplete;
 
       // If the AI indicates completion, ensure response reflects that.
-      // The AI is prompted to create this message, so analysisResult.responseToUser should be appropriate.
       if (finalIsComplete) {
         finalNextQuestionKey = null; // Ensure this is null if complete
-         // Potentially override with a very specific message if needed, but ideally AI handles this.
-        // determinedAiResponseContent = "Thank you! I've collected all the information needed for your hybrid offer. Your document is being generated now.";
-      } else if (analysisResult.validAnswer) {
-        // Valid answer, not complete. AI's responseToUser should be asking the next question.
-        // finalNextQuestionKey is already set by AI.
-      } else {
-        // Invalid answer. AI's responseToUser should be a re-prompt.
-        // Ensure nextQuestionKey reflects current question if AI didn't explicitly set it.
-        finalNextQuestionKey = finalNextQuestionKey || currentKeyForSaving;
       }
       
       toolResponsePayload = {
@@ -2103,7 +2093,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
             let clarificationResponse;
             if (responseAnalysis.isOffTopic) {
               clarificationResponse = `I appreciate you sharing that! Let me just redirect us back to what I was asking about. I'm trying to understand your ${workshopInfoAreas.find(a => a.key === currentQuestionKey)?.description}. ${responseAnalysis.clarificationQuestion || 'Could you tell me more about that specifically?'}`;
-            } else {
+          } else {
               clarificationResponse = responseAnalysis.clarificationQuestion || `Thanks for that! Could you tell me a bit more about your ${workshopInfoAreas.find(a => a.key === currentQuestionKey)?.description}?`;
             }
             
@@ -2146,22 +2136,22 @@ I'll be happy to regenerate the HTML with your specific changes!`;
             // If complete, initiate document generation
             if (nextConversation.isComplete) {
               console.log('[CHAT_API_DEBUG] Workshop complete, will generate document');
-              
-              // Check if the AI wants to generate HTML
-              if (determinedAiResponseContent && determinedAiResponseContent.includes('<!-- GENERATE_WORKSHOP_HTML_NOW -->')) {
-                console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
-                
-                // Generate the HTML using the template and collected answers
-                const generatedHTML = await generateWorkshopHTML(tempCollectedAnswers);
-                
-                // Replace the placeholder with the actual HTML in a code block and add design edit instructions
-                determinedAiResponseContent = determinedAiResponseContent.replace(
-                  '<!-- GENERATE_WORKSHOP_HTML_NOW -->',
-                  `\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
-                );
-                
-                console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
-              }
+          
+          // Check if the AI wants to generate HTML
+          if (determinedAiResponseContent && determinedAiResponseContent.includes('<!-- GENERATE_WORKSHOP_HTML_NOW -->')) {
+            console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
+            
+            // Generate the HTML using the template and collected answers
+            const generatedHTML = await generateWorkshopHTML(tempCollectedAnswers);
+            
+            // Replace the placeholder with the actual HTML in a code block and add design edit instructions
+            determinedAiResponseContent = determinedAiResponseContent.replace(
+              '<!-- GENERATE_WORKSHOP_HTML_NOW -->',
+              `\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
+            );
+            
+            console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
+          }
             }
           }
         } else {
@@ -2172,16 +2162,16 @@ I'll be happy to regenerate the HTML with your specific changes!`;
             messages, 
             tool
           );
-          
-          toolResponsePayload = {
+        
+        toolResponsePayload = {
             message: nextConversation.conversationalResponse,
             currentQuestionKey: nextConversation.nextQuestionKey,
             collectedAnswers: collectedAnswers,
             questionsAnswered: calculateQuestionsAnswered(collectedAnswers, tool),
             isComplete: nextConversation.isComplete,
-            chatId: chatId
-          };
-          
+          chatId: chatId
+        };
+
           determinedAiResponseContent = nextConversation.conversationalResponse;
         }
         
