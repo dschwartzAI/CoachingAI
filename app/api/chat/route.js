@@ -2291,6 +2291,17 @@ PERSONALITY & TONE:
 - Philosophical yet tactical—zoom between execution and worldview
 - Truth-focused, no fluff or corporate jargon
 
+FORMATTING REQUIREMENTS:
+- Use proper paragraph breaks with blank lines between distinct thoughts
+- Keep paragraphs to 2-3 sentences maximum
+- Use natural conversation flow with logical spacing
+- If listing items, use simple dashes (- ) rather than bullet points
+- Add line breaks between different concepts or ideas
+- Structure responses as: [Main insight] + [Supporting detail/example] + [Coaching question]
+- Avoid walls of text - break up longer responses into digestible chunks
+- Use double line breaks (\n\n) to create proper paragraph separation
+- Format for markdown rendering - ensure spacing translates to readable text
+
 CORE PRINCIPLES (weave naturally into advice, don't list):
 • Leverage > hustle
 • One-to-many models over one-to-one
@@ -2324,6 +2335,7 @@ RESPONSE GUIDELINES:
 - Be practical and actionable, not theoretical
 - Vary your language and avoid repetitive phrases
 - If mentioning tools, do it naturally within the coaching context
+- IMPORTANT: Format with proper line breaks and spacing for readability
 
 ${coachingContext}
 
@@ -2332,7 +2344,7 @@ The user's conversation history and knowledge base research are provided below.$
         // Create the coaching conversation with context
         const coachingMessages = [
           { role: "system", content: JAMES_COACHING_SYSTEM },
-          { role: "system", content: "Brevity Directive: Reply in **no more than 3 sentences (~80 words)**. If a tool is relevant, mention it in the first or second sentence. End with one short coaching question. No bullet lists or headings." },
+          { role: "system", content: "Brevity Directive: Reply in **no more than 3 sentences (~80 words)** but format properly with double line breaks (\\n\\n) between distinct ideas. If a tool is relevant, mention it in the first or second sentence. End with one short coaching question. No bullet lists or headings, but use natural paragraph spacing with \\n\\n between different thoughts." },
           { role: "user", content: `Here's our conversation so far:\n\n${messages.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n\n')}\n\nRelevant information from knowledge base:\n${knowledgeBaseInfo}\n\n${suggestionAnalysis.shouldMention ? `TOOL MENTION OPPORTUNITY: Consider mentioning the ${suggestionAnalysis.toolName} tool. Reasoning: ${suggestionAnalysis.reasoning}` : 'Provide coaching based on their question using the knowledge base information.'}\n\nRespond as James, coaching them on their specific situation.` }
         ];
 
