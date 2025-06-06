@@ -23,75 +23,266 @@ const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
-// Define the questions and their corresponding keys, in order
-const hybridOfferQuestions = [
+// Define the core information areas we need to gather (but questions will be dynamic)
+const hybridOfferInfoAreas = [
   { 
     key: 'offerDescription', 
-    question: "What's your core product or service?",
-    description: "Core product or service"
+    description: "Core product or service",
+    priority: 1,
+    examples: ["Digital marketing services", "Business coaching program", "E-commerce consulting"]
   },
   { 
     key: 'targetAudience', 
-    question: "Who is your target audience?",
-    description: "Target audience details"
+    description: "Target audience details",
+    priority: 2,
+    examples: ["Small business owners", "Tech startup founders", "Real estate agents"]
   },
   { 
     key: 'painPoints', 
-    question: "What pain points do they face?",
-    description: "Customer pain points"
+    description: "Customer pain points",
+    priority: 3,
+    examples: ["Struggling to get leads", "Don't have time for marketing", "Can't track ROI effectively"]
   },
   { 
     key: 'solution', 
-    question: "How do you solve these problems?",
-    description: "Solution approach"
+    description: "Solution approach",
+    priority: 4,
+    examples: ["Done-for-you campaigns", "Weekly coaching calls + templates", "Custom strategy + implementation"]
   },
   { 
     key: 'pricing', 
-    question: "What's your pricing structure?",
-    description: "Pricing information"
+    description: "Pricing information",
+    priority: 5,
+    examples: ["$2000/month retainer", "15% of ad spend", "$5000 one-time setup"]
   },
   { 
     key: 'clientResult', 
-    question: "What's a specific, real-world result you've helped a client achieve?",
-    description: "Specific client success story"
+    description: "Specific client success story",
+    priority: 6,
+    examples: ["Increased client revenue by 150%", "Generated $1M in new sales", "Reduced costs by 30%"]
   }
 ];
 
-// Define the workshop generator questions
-const workshopQuestions = [
+// Define the workshop information areas (also dynamic)
+const workshopInfoAreas = [
   { 
     key: 'participantOutcomes', 
-    question: "What specific outcomes or goals will participants achieve by the end of your workshop?",
-    description: "Participant outcomes and goals"
+    description: "Participant outcomes and goals",
+    priority: 1,
+    examples: ["Learn to create profitable funnels", "Master cold email outreach", "Build a personal brand strategy"]
   },
   { 
     key: 'targetAudience', 
-    question: "Who is your ideal workshop participant? Please describe their demographics, current situation, and main pain points.",
-    description: "Target audience demographics and pain points"
+    description: "Target audience demographics and pain points",
+    priority: 2,
+    examples: ["Early-stage entrepreneurs", "Marketing managers at SMBs", "Freelancers looking to scale"]
   },
   { 
     key: 'problemAddressed', 
-    question: "What specific problem or challenge does your workshop solve for these participants?",
-    description: "Problem the workshop addresses"
+    description: "Problem the workshop addresses",
+    priority: 3,
+    examples: ["Low conversion rates", "Inconsistent lead generation", "Lack of marketing strategy"]
   },
   { 
     key: 'workshopDuration', 
-    question: "How long will your workshop be? Please specify the duration and format.",
-    description: "Workshop duration and format"
+    description: "Workshop duration and format",
+    priority: 4,
+    examples: ["Half-day intensive", "3-hour virtual session", "2-day weekend workshop"]
   },
   { 
     key: 'topicsAndActivities', 
-    question: "What key topics will you cover and what activities will participants engage in during the workshop?",
-    description: "Topics covered and activities"
+    description: "Topics covered and activities",
+    priority: 5,
+    examples: ["Live funnel building", "Role-playing exercises", "Group strategy sessions"]
   },
   { 
     key: 'resourcesProvided', 
-    question: "What resources, materials, or follow-up support will participants receive?",
-    description: "Resources and materials provided"
+    description: "Resources and materials provided",
+    priority: 6,
+    examples: ["Email templates", "Funnel blueprints", "30-day follow-up support"]
   }
 ];
 
-// Add a function to validate answers using AI
+// Enhanced AI-powered conversation function for hybrid offers
+async function generateNextConversationalQuestion(collectedAnswers, recentHistory, tool = 'hybrid-offer') {
+  const infoAreas = tool === 'workshop-generator' ? workshopInfoAreas : hybridOfferInfoAreas;
+  
+  // Find what information we still need
+  const missingAreas = infoAreas.filter(area => !collectedAnswers[area.key] || collectedAnswers[area.key].trim().length === 0);
+  const collectedAreas = infoAreas.filter(area => collectedAnswers[area.key] && collectedAnswers[area.key].trim().length > 0);
+  
+  // Determine if we're complete
+  const isComplete = missingAreas.length === 0;
+  
+  if (isComplete) {
+    const completionMessage = tool === 'workshop-generator' 
+      ? `Perfect! I have all the information needed to create your workshop landing page. I'm now generating your complete HTML landing page that you can paste directly into GoHighLevel. <!-- GENERATE_WORKSHOP_HTML_NOW -->`
+      : `Perfect! I have all the information I need to create your hybrid offer. Let me put that together for you now. 🎯`;
+    
+    return {
+      isComplete: true,
+      nextQuestionKey: null,
+      conversationalResponse: completionMessage
+    };
+  }
+  
+  // Find the next priority area to ask about
+  const nextArea = missingAreas.sort((a, b) => a.priority - b.priority)[0];
+  
+  // Prepare context for AI to generate conversational question
+  const conversationContext = recentHistory.slice(-6).map(msg => 
+    `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+  ).join('\n');
+  
+  const collectedInfo = collectedAreas.map(area => 
+    `✓ ${area.description}: ${collectedAnswers[area.key]}`
+  ).join('\n');
+  
+  const missingInfo = missingAreas.map(area => 
+    `◯ ${area.description} (Priority ${area.priority})`
+  ).join('\n');
+  
+  const prompt = [
+    {
+      role: "system",
+      content: `You are an expert business coach helping someone create a ${tool === 'workshop-generator' ? 'workshop' : 'hybrid offer'}. Your goal is to have a natural, conversational exchange that feels like coaching, not a form.
+
+CRITICAL: Generate a conversational question that naturally flows from the recent conversation and asks about the next needed information area in an engaging way.
+
+Key principles:
+1. **Reference the conversation**: Acknowledge what they just shared and build on it
+2. **Ask smart follow-ups**: If they mentioned something interesting, dig deeper
+3. **Be conversational**: Use natural transitions like "That's interesting...", "Speaking of which...", "I'm curious..."
+4. **Show expertise**: Demonstrate you understand their business/industry when possible
+5. **Make it specific**: Instead of generic questions, ask specific ones based on what they've shared
+6. **Probe intelligently**: If you sense there's more to uncover in their previous answer, ask about that first
+
+Next information area to explore: ${nextArea.description}
+Examples of this type of info: ${nextArea.examples.join(', ')}
+
+Format your response as a natural coaching question that flows from the conversation and aims to understand their ${nextArea.description}.`
+    },
+    {
+      role: "user", 
+      content: `Recent conversation:
+${conversationContext}
+
+Information collected so far:
+${collectedInfo || 'None yet'}
+
+Information still needed:
+${missingInfo}
+
+Generate a conversational coaching question that naturally flows from this conversation and explores their ${nextArea.description}. Make it feel like a natural conversation, not a form question. Reference what they've shared when possible.`
+    }
+  ];
+  
+  try {
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: prompt,
+      temperature: 0.8, // Higher temperature for more creative, conversational responses
+      max_tokens: 200
+    });
+    
+    const conversationalResponse = completion.choices[0].message.content.trim();
+    
+    return {
+      isComplete: false,
+      nextQuestionKey: nextArea.key,
+      conversationalResponse: conversationalResponse
+    };
+    
+  } catch (error) {
+    console.error('[CHAT_API_DEBUG] Error generating conversational question:', error);
+    // Fallback to a more basic approach
+    return {
+      isComplete: false,
+      nextQuestionKey: nextArea.key,
+      conversationalResponse: `Thanks for sharing that! I'd love to understand more about your ${nextArea.description}. ${nextArea.examples[0] ? `For example, something like "${nextArea.examples[0]}" or similar?` : ''}`
+    };
+  }
+}
+
+// Enhanced function to analyze and extract information from user responses
+async function analyzeUserResponse(userMessage, currentQuestionKey, collectedAnswers, recentHistory, tool = 'hybrid-offer') {
+  const infoAreas = tool === 'workshop-generator' ? workshopInfoAreas : hybridOfferInfoAreas;
+  const currentArea = infoAreas.find(area => area.key === currentQuestionKey);
+  
+  if (!currentArea) {
+    console.error(`[CHAT_API_DEBUG] Could not find area for key: ${currentQuestionKey}`);
+    return { extractedInfo: null, needsMoreInfo: false, clarificationQuestion: null };
+  }
+  
+  // Prepare context for AI analysis
+  const conversationContext = recentHistory.slice(-4).map(msg => 
+    `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+  ).join('\n');
+  
+  const prompt = [
+    {
+      role: "system",
+      content: `You are analyzing a user's response to extract information about their ${currentArea.description} for creating a ${tool === 'workshop-generator' ? 'workshop' : 'hybrid offer'}.
+
+Your job is to:
+1. **Extract relevant information** from their response that relates to ${currentArea.description}
+2. **Determine if you need more details** to have sufficient information for this area
+3. **Generate a follow-up question** if needed that feels conversational and specific
+
+Be intelligent about context:
+- If they mentioned something related but brief, ask for more details
+- If they went off-topic, acknowledge what they shared but redirect gently
+- If they gave a good answer, extract it and indicate you have enough
+- If they seem confused, clarify what you're looking for with examples
+
+Examples of sufficient information for ${currentArea.description}: ${currentArea.examples.join(', ')}
+
+Return JSON in this exact format:
+{
+  "extractedInfo": "string or null - the relevant information you extracted that relates to ${currentArea.description}",
+  "needsMoreInfo": boolean - true if you need more details about ${currentArea.description},
+  "clarificationQuestion": "string or null - a conversational follow-up question if needsMoreInfo is true",
+  "isOffTopic": boolean - true if their answer was completely unrelated to ${currentArea.description}
+}`
+    },
+    {
+      role: "user",
+      content: `Recent conversation context:
+${conversationContext}
+
+Current focus area: ${currentArea.description}
+User's latest response: "${userMessage}"
+
+Analyze this response and determine what information (if any) relates to ${currentArea.description}, and whether you need more details.`
+    }
+  ];
+  
+  try {
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      messages: prompt,
+      temperature: 0.7,
+      response_format: { type: "json_object" }
+    });
+    
+    const analysis = JSON.parse(completion.choices[0].message.content);
+    console.log(`[CHAT_API_DEBUG] Response analysis for ${currentQuestionKey}:`, analysis);
+    
+    return analysis;
+    
+  } catch (error) {
+    console.error('[CHAT_API_DEBUG] Error analyzing user response:', error);
+    // Fallback behavior
+    return {
+      extractedInfo: userMessage.length > 10 ? userMessage : null,
+      needsMoreInfo: userMessage.length < 20,
+      clarificationQuestion: userMessage.length < 20 ? `Could you tell me a bit more about your ${currentArea.description}?` : null,
+      isOffTopic: false
+    };
+  }
+}
+
+// Add a function to validate answers using AI (keep this for backwards compatibility but enhance it)
 async function validateHybridOfferAnswer(questionKey, answer) {
   if (!answer || answer.trim().length < 3) {
     return {
@@ -100,87 +291,14 @@ async function validateHybridOfferAnswer(questionKey, answer) {
     };
   }
 
-  // For offerDescription, if the answer is short (e.g., just a service name),
-  // consider it valid without extensive AI validation.
-  if (questionKey === 'offerDescription' && answer.trim().length < 50 && answer.trim().split(' ').length <= 5) {
-    console.log(`[Chat API] Skipping extensive AI validation for short offerDescription: "${answer}"`);
-    return { isValid: true, reason: null, topic: "service description" };
+  // For very short answers, be more lenient - they might be naming something specific
+  if (answer.trim().length < 20 && answer.trim().split(' ').length <= 3) {
+    console.log(`[Chat API] Auto-accepting short but potentially valid answer: "${answer}"`);
+    return { isValid: true, reason: null, topic: "brief response" };
   }
 
-  // For clientResult, be much more lenient - accept any answer that mentions a result or outcome
-  if (questionKey === 'clientResult') {
-    const cleanedAnswer = answer.toLowerCase();
-    
-    // Check for result-indicating keywords (much broader list)
-    const hasResultKeywords = /\b(made|increased|grew|saved|achieved|revenue|profit|sales|leads|reduction|extra|helped|generated|improved|boosted|doubled|tripled|gained|earned|won|success|result|outcome|impact|million|thousand|percent|%|dollars?|clients?|customers?)\b/.test(cleanedAnswer);
-    
-    // Check for numbers or quantifiable terms
-    const hasQuantifiableTerms = /[0-9$€£¥%]|(?:one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion|more|less|better|faster|higher|lower)/.test(cleanedAnswer);
-    
-    // If it has either result keywords OR quantifiable terms, and is at least 3 words, accept it
-    if ((hasResultKeywords || hasQuantifiableTerms) && answer.trim().split(' ').length >= 3) {
-      console.log(`[Chat API] Auto-accepting clientResult with result indicators: "${answer}"`);
-      return { isValid: true, reason: null, topic: "client success story" };
-    }
-    
-    // Even if no clear indicators, if it's a reasonable length and mentions "client" or similar, accept it
-    if (answer.trim().length > 10 && /\b(client|customer|company|business|helped|worked)\b/.test(cleanedAnswer)) {
-      console.log(`[Chat API] Auto-accepting clientResult mentioning clients: "${answer}"`);
-      return { isValid: true, reason: null, topic: "client success story" };
-    }
-
-    // For clientResult, if we get here and it's at least 5 words, be very lenient
-    if (answer.trim().split(' ').length >= 5) {
-      console.log(`[Chat API] Auto-accepting clientResult with sufficient length: "${answer}"`);
-      return { isValid: true, reason: null, topic: "client success story" };
-    }
-  }
-  
-  const validationCriteria = {
-    offerDescription: "Should describe a product or service. It can be a concise name (e.g., 'Web Design Service') or a more detailed explanation. Must focus on WHAT is being offered, not pricing or audience.",
-    targetAudience: "Should describe who the offering is for - demographics, professions, or characteristics. Must focus on WHO the clients are, not what they're charged or the problems they have.",
-    painPoints: "Should identify problems or challenges that the target audience experiences. Must focus on PROBLEMS clients face, not solutions or pricing.",
-    solution: "Should explain how the product/service addresses the pain points in a unique way. Must focus on HOW problems are solved, not pricing or audience.",
-    pricing: "Should provide information about pricing structure, tiers, or general price range. Must focus on COSTS or pricing models, not other aspects.",
-    clientResult: "Should describe any client success, outcome, or result. Can be very brief (e.g., 'made a client $1M', 'helped increase sales'). ANY mention of helping clients achieve something positive is valid."
-  };
-
-  const validationPrompt = [
-    {
-      role: "system",
-      content: `You are an assistant that validates answers for creating a hybrid offer.
-Your primary goal is to determine if an answer provides relevant and SUFFICIENT information for the SPECIFIC question being asked.
-Be strict about topic relevance - if someone answers about pricing when asked about solution approach, that's invalid.
-Check that the answer addresses the core of what's being asked, not just tangentially related information.
-If the answer discusses a different aspect of the business than what was asked, mark it as invalid.
-For 'offerDescription', a concise service name (e.g., 'Career Coaching', 'Airbnb Revenue Management') IS a valid and sufficient answer.
-For 'clientResult', be EXTREMELY LENIENT. ANY mention of helping a client, achieving a result, or positive outcome should be marked as valid. Examples of valid answers: 'made a client $1M', 'helped increase their sales', 'improved their revenue', 'we helped one company make extra money', 'increased leads for clients'. Do NOT require detailed explanations of HOW the result was achieved.
-Example of invalid answer: Question about unique solution approach → Answer about pricing structure.`
-    },
-    {
-      role: "user",
-      content: `Question category: ${questionKey}\nValidation criteria: ${validationCriteria[questionKey]}\nUser's answer: "${answer}"\n\nIs this answer directly relevant to the question category? Does it address what was specifically asked according to the criteria?\nFocus on whether the user's answer *directly addresses* the question's core intent.\nReturn JSON in this format: { "isValid": boolean, "reason": "explanation if invalid", "topic": "what topic the answer actually addresses" }`
-    }
-  ];
-
-  try {
-    // Call OpenAI to validate the answer
-    const validationCompletion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
-      messages: validationPrompt,
-      temperature: 0.1, // Very low temperature for consistent validation
-      response_format: { type: "json_object" }
-    });
-
-    // Parse the validation result
-    const validationResult = JSON.parse(validationCompletion.choices[0].message.content);
-    console.log(`[Chat API] Answer validation for ${questionKey}:`, validationResult);
-    return validationResult;
-  } catch (error) {
-    console.error('[Chat API] Error validating answer:', error);
-    // Default to accepting the answer if validation fails
-    return { isValid: true, reason: null };
-  }
+  // Be more lenient overall - if someone is engaging, accept their input
+  return { isValid: true, reason: null, topic: "user engagement" };
 }
 
 // Add a function to calculate questions answered
@@ -188,7 +306,7 @@ function calculateQuestionsAnswered(collectedAnswers, tool = 'hybrid-offer') {
   if (!collectedAnswers) return 0;
   
   // Get the appropriate questions array based on the tool
-  const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+  const questionsArray = tool === 'workshop-generator' ? workshopInfoAreas : hybridOfferInfoAreas;
   
   // Count how many of the predefined questions have answers
   let count = 0;
@@ -1606,192 +1724,115 @@ export async function POST(request) {
     let toolResponsePayload = null;
 
     if (tool === 'hybrid-offer') {
-      console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path)');
+      console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path) - NEW CONVERSATIONAL APPROACH');
+      
+      // Get the last user message to analyze
+      const latestUserMessage = messages.length > 0 && messages[messages.length - 1].role === 'user' 
+        ? messages[messages.length - 1].content 
+        : "";
+      
       currentQuestionKey = body.currentQuestionKey || 'offerDescription';
-      const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
-      const totalQuestions = hybridOfferQuestions.length;
-
-      // Prepare chat history for the prompt
-      const recentHistoryMessages = messages.slice(-5);
-      let chatHistoryString = "No recent history available.";
-      if (recentHistoryMessages.length > 0) {
-        chatHistoryString = recentHistoryMessages.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n');
-      }
-      const latestUserMessageContent = messages.length > 0 ? messages[messages.length - 1].content : "";
-      const currentQuestionDetails = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
-      const currentQuestionDescription = currentQuestionDetails?.description || 'the current topic';
-      const currentQuestionText = currentQuestionDetails?.question || 'this aspect of your offer';
-
-      let promptParts = [];
-      promptParts.push("You are a friendly and cheeky helpful AI assistant guiding a user through creating a 'hybrid offer'. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
-      promptParts.push("Your tone should be friendly, funny when appropriate, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
-
-      promptParts.push(`\nInformation collected so far for the hybrid offer (${currentQuestionsAnswered}/${totalQuestions} questions answered):`);
-      hybridOfferQuestions.forEach((q, index) => {
-        if (collectedAnswers[q.key]) {
-          promptParts.push(`✓ ${index + 1}. ${q.description}: Answered`); // Don't show the answer itself to keep prompt shorter
-        } else {
-          promptParts.push(`◯ ${index + 1}. ${q.description}: Not yet discussed`);
-        }
-      });
-
-      promptParts.push(`\nWe are currently focusing on: '${currentQuestionDescription}' (Key: ${currentQuestionKey}). The guiding question for this topic is: "${currentQuestionText}"`);
-
-      promptParts.push(`\nRecent Conversation History (last 5 messages):`);
-      promptParts.push(chatHistoryString);
-
-      promptParts.push(`\n---`);
-      promptParts.push(`Your Tasks based on the User's LATEST message ("${latestUserMessageContent}"):`);
-      promptParts.push(`1. validAnswer (boolean): Is the user's latest message a relevant and sufficient answer for '${currentQuestionDescription}'? Apply reasonable judgment based on the specific question context.`);
-      
-      // Update the validation criteria to be more balanced
-      promptParts.push(`   IMPORTANT - Balanced Validation Criteria: When evaluating if an answer is valid (validAnswer=true):
-         * The answer MUST be relevant to the current question topic - for example, pricing information is not a valid answer to a question about solution approach
-         * The answer should address the core of what's being asked, not tangential information
-         * Pay special attention to question/answer mismatch - if the currentQuestionKey is "solution" but the user is discussing pricing or audience, the answer is NOT valid
-         * Consider the context of previous exchanges - if the user has provided details across multiple messages, consider the cumulative information
-         * If the user asks a question instead of answering, this is NOT a valid answer
-         * If the user's response is completely off-topic or discusses a different aspect of their business than what was asked, mark as invalid and redirect them
-         * For 'clientResult', if the user provides a clear, quantifiable outcome (e.g., 'Made a client $1M extra', 'Increased sales by 50%'), this IS a SUFFICIENT initial answer. You can acknowledge this and then decide if it's the *final* question or if you need to move to a summary/completion step. You might optionally ask for *how* they achieved it if the conversation feels incomplete, but the quantifiable result itself is valid.
-         * For each question type, insufficient answers might look like:
-            - solution question: "I charge 13% upside" (this is pricing, not solution)
-            - painPoints question: "My target audience is small businesses" (this is audience, not pain points)
-            - targetAudience question: "I solve their problems with my amazing service" (this is solution, not audience)
-         * For each question type, these are examples of SUFFICIENT answers:
-            - offerDescription: "Google Ads management service" or "Social media content creation for small businesses"
-            - targetAudience: "Small business owners who don't have time for marketing"
-            - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend"
-            - solution: "We handle campaign creation, keyword research, and ongoing optimization"
-            - pricing: "Monthly retainer of $1000" or "15% of ad spend"
-            - clientResult: "Increased a client's sales by 30% in the first quarter." or "Helped a SaaS company make an extra $1M last year." // No need to initially force the 'how' here.
-         * When an answer is invalid because it's addressing the wrong topic:
-            1. Clearly but kindly explain that they're discussing a different aspect than what was asked
-            2. Acknowledge what they shared (e.g., "Thanks for sharing about your pricing structure")
-            3. Redirect them to the current question with a more specific prompt
-            4. If needed, explain why understanding this particular aspect is important
-         * If they've attempted to answer the question but provided insufficient details, probe deeper with specific follow-up questions
-         * When in doubt, use follow-up questions rather than automatically moving to the next question`);
-      
-      promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. For 'clientResult', ensure it's a specific past achievement, not a general promise. If validAnswer is false, this can be an empty string or null.`);
-      promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
-      promptParts.push(`4. nextQuestionKey (string):`);
-      promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* unanswered question from this list: ${hybridOfferQuestions.map(q => q.key).join(", ")}. The next question should be the first one in the sequence that hasn't been answered yet.`);
-      promptParts.push(`   - If validAnswer is false: This should be the *current* currentQuestionKey (${currentQuestionKey}), as we need to re-ask or clarify.`);
-      promptParts.push(`   - If isComplete is true: This can be null.`);
-      promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
-      promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
-      promptParts.push(`   - If validAnswer was true and currentQuestionKey was 'clientResult' AND isComplete is true (meaning clientResult was the last question): Acknowledge the great result. Then, transition to the completion message (e.g., "Fantastic result! That sounds like a powerful impact. Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now."). Do NOT ask for more details about the client result if it was already deemed valid and it completes the questionnaire.`);
-      promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing or why their answer addressed a different topic than what was asked. For example: "I see you're sharing about your pricing structure, which is great information we'll cover soon! Right now though, I'd like to understand more about your unique solution approach - how exactly do you solve the problems your clients face?"`);
-      promptParts.push(`   - If isComplete is true (and it wasn't handled by the specific clientResult completion case above): Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
-      promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. For example, instead of just 'What is your pricing?', you could say, 'Thanks for sharing that! Moving on, could you tell me a bit about your pricing structure?'. Don't say exactly this sentence every time, vary your responses, so it feels more natural conversationally.`);
-      
-      // Add the new section on conversational approach and probing questions
-      promptParts.push(`   - IMPORTANT - Probing for Better Answers: When an answer is provided but lacks sufficient detail:
-         1. Ask specific follow-up questions rather than general ones
-         2. For example, instead of "Can you elaborate more?", ask "What specific techniques do you use to solve their lead generation problems?"
-         3. Offer examples of what you're looking for: "For instance, do you use automation software, manual outreach, or some combination?"
-         4. If they seem confused by the question, rephrase it using simpler language
-         5. If they've misunderstood the question topic completely, be direct but kind: "I think we might be talking about different things. I'm asking about [current topic], but you're sharing about [what they're actually talking about]"
-         6. Guide them with "starter phrases" if helpful: "You might start by explaining the main components of your solution..."
-         7. Only move on to the next question when you have a clear, on-topic answer for the current question`);
-      
-      promptParts.push(`   - IMPORTANT - Natural Conversation Flow: Your primary goal is to have a natural conversation. When a user responds:
-         1. First, genuinely engage with whatever they've shared - comment on it, ask follow-up questions if relevant, or share a brief insight
-         2. If they've answered the wrong question, acknowledge what they shared is valuable but kindly redirect them
-         3. If they're discussing something off-topic, spend time engaging with that topic first, then transition back
-         4. Use phrases like "By the way...", "Speaking of which...", "That reminds me...", or "I'm also curious about..." when transitioning
-         5. If the user asks you questions, answer them honestly and thoroughly before gently returning to the offer structure
-         6. Remember that getting good quality, on-topic answers is more important than rushing through all the questions quickly`);
-      
-      promptParts.push(`---`);
-      promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
-      promptParts.push(`{`);
-      promptParts.push(`  "validAnswer": boolean,`);
-      promptParts.push(`  "savedAnswer": string | null,`);
-      promptParts.push(`  "nextQuestionKey": string | null,`);
-      promptParts.push(`  "isComplete": boolean,`);
-      promptParts.push(`  "responseToUser": string`);
-      promptParts.push(`}`);
-      const analyzingPrompt = promptParts.join('\n');
-      
-      // Use all messages for context to the AI, but the prompt focuses on the latest one for specific analysis.
-      // The system prompt itself contains the instructions and context from collectedAnswers and history.
-      const messagesForOpenAI = [
-        { role: "system", content: analyzingPrompt },
-        // Pass only the user's last message, as the system prompt already incorporates history and asks to analyze it.
-        // Or, pass a few recent messages if the model handles that better for conversational flow, despite system prompt.
-        // Let's try with the full message list for context, up to a reasonable limit.
-        // The prompt guides the AI to focus on the LATEST user message for its structured output.
-        ...messages 
-      ];
-
-      // Add an extra validation step to ensure answers are relevant to the current question
-      // Only do this for non-initial messages (when there's a current question to validate against)
-      if (currentQuestionKey && messages.length > 0 && messages[messages.length - 1].role === 'user') {
-        const latestUserMessage = messages[messages.length - 1].content;
-        console.log(`[CHAT_API_DEBUG] Running additional validation for answer to '${currentQuestionKey}': "${latestUserMessage.substring(0, 50)}..."`);
-        
-        try {
-          // First, validate the answer using our dedicated validation function
-          const validationResult = await validateHybridOfferAnswer(currentQuestionKey, latestUserMessage);
-          
-          if (!validationResult.isValid) {
-            console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
-            
-            // If the answer is completely off-topic, we'll generate a direct but kind response
-            const invalidAnswerResponse = `I notice you're sharing about ${validationResult.topic || 'something different'}, which is valuable information! However, I'm currently asking about your ${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description || currentQuestionKey}. Could you tell me more specifically about that?`;
-            
-            // Create response payload without advancing to next question
-            toolResponsePayload = {
-              message: invalidAnswerResponse,
-              currentQuestionKey: currentQuestionKey, // Stay on current question
-              collectedAnswers: { ...collectedAnswers }, // Keep existing answers
-              questionsAnswered: calculateQuestionsAnswered(collectedAnswers),
-              isComplete: false,
-              chatId: chatId
-            };
-            
-            // Return early with this simple validation response
-            console.log('[CHAT_API_DEBUG] Returning early with validation failure response');
-            return NextResponse.json(toolResponsePayload);
-          } else {
-            console.log(`[CHAT_API_DEBUG] Answer validation passed for '${currentQuestionKey}'`);
-          }
-        } catch (validationError) {
-          console.error('[CHAT_API_DEBUG] Error in answer validation:', validationError);
-          // Continue with normal processing if validation throws an error
-        }
-      }
-      
-      console.log('[CHAT_API_DEBUG] Sending analyzing prompt for hybrid-offer (conversational):', analyzingPrompt);
-      console.log('[CHAT_API_DEBUG] Messages for OpenAI:', JSON.stringify(messagesForOpenAI.slice(-6))); // Log last few messages sent
-
-
-      const analyzingCompletion = await openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        messages: messagesForOpenAI, // Pass the constructed messages
-        temperature: 0.7, // Reduced temperature for more accuracy in validation while maintaining conversational tone
-        response_format: { type: "json_object" }
-      });
-      
-      const analysisResultString = analyzingCompletion.choices[0].message.content;
-      console.log('[CHAT_API_DEBUG] Raw analysisResult string:', analysisResultString);
-      const analysisResult = JSON.parse(analysisResultString);
-      console.log('[CHAT_API_DEBUG] Conversational Analysis result:', analysisResult);
-      
-      determinedAiResponseContent = analysisResult.responseToUser;
       const tempCollectedAnswers = { ...collectedAnswers };
       
-      const currentKeyForSaving = hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.key || currentQuestionKey;
-
-
-      if (analysisResult.validAnswer && analysisResult.savedAnswer) {
-        tempCollectedAnswers[currentKeyForSaving] = analysisResult.savedAnswer;
+      // If this is the first message after init, just move to conversational flow
+      if (latestUserMessage) {
+        console.log('[CHAT_API_DEBUG] Analyzing user response with new conversational system');
+        
+        // Analyze the user's response to extract information and determine next steps
+        const responseAnalysis = await analyzeUserResponse(
+          latestUserMessage, 
+          currentQuestionKey, 
+          collectedAnswers, 
+          messages,
+          tool
+        );
+        
+        console.log('[CHAT_API_DEBUG] Response analysis result:', responseAnalysis);
+        
+        // If we extracted valid information, save it
+        if (responseAnalysis.extractedInfo && !responseAnalysis.isOffTopic) {
+          tempCollectedAnswers[currentQuestionKey] = responseAnalysis.extractedInfo;
+          console.log(`[CHAT_API_DEBUG] Saved info for ${currentQuestionKey}: ${responseAnalysis.extractedInfo}`);
+        }
+        
+        // If the user's response was off-topic or we need more info, ask a clarifying question
+        if (responseAnalysis.isOffTopic || responseAnalysis.needsMoreInfo) {
+          console.log('[CHAT_API_DEBUG] Need clarification or more info, staying on current question');
+          
+          let clarificationResponse;
+          if (responseAnalysis.isOffTopic) {
+            clarificationResponse = `I appreciate you sharing that! Let me just redirect us back to what I was asking about. I'm trying to understand your ${hybridOfferInfoAreas.find(a => a.key === currentQuestionKey)?.description}. ${responseAnalysis.clarificationQuestion || 'Could you tell me more about that specifically?'}`;
+          } else {
+            clarificationResponse = responseAnalysis.clarificationQuestion || `Thanks for that! Could you tell me a bit more about your ${hybridOfferInfoAreas.find(a => a.key === currentQuestionKey)?.description}?`;
+          }
+          
+          // Create response payload staying on current question
+          toolResponsePayload = {
+            message: clarificationResponse,
+            currentQuestionKey: currentQuestionKey,
+            collectedAnswers: tempCollectedAnswers,
+            questionsAnswered: calculateQuestionsAnswered(tempCollectedAnswers, tool),
+            isComplete: false,
+            chatId: chatId
+          };
+          
+          console.log('[CHAT_API_DEBUG] Sending clarification question');
+          determinedAiResponseContent = clarificationResponse;
+        } else {
+          // We have good information, generate the next conversational question
+          console.log('[CHAT_API_DEBUG] Good info collected, generating next conversational question');
+          
+          const nextConversation = await generateNextConversationalQuestion(
+            tempCollectedAnswers, 
+            messages, 
+            tool
+          );
+          
+          console.log('[CHAT_API_DEBUG] Next conversation result:', nextConversation);
+          
+          // Create response payload
+          toolResponsePayload = {
+            message: nextConversation.conversationalResponse,
+            currentQuestionKey: nextConversation.nextQuestionKey,
+            collectedAnswers: tempCollectedAnswers,
+            questionsAnswered: calculateQuestionsAnswered(tempCollectedAnswers, tool),
+            isComplete: nextConversation.isComplete,
+            chatId: chatId
+          };
+          
+          determinedAiResponseContent = nextConversation.conversationalResponse;
+          
+          // If complete, initiate document generation
+          if (nextConversation.isComplete) {
+            console.log('[CHAT_API_DEBUG] Hybrid offer complete, will generate document');
+          }
+        }
+      } else {
+        // No user message to analyze, just continue normal flow
+        console.log('[CHAT_API_DEBUG] No user message to analyze, using standard approach');
+        const nextConversation = await generateNextConversationalQuestion(
+          collectedAnswers, 
+          messages, 
+          tool
+        );
+        
+        toolResponsePayload = {
+          message: nextConversation.conversationalResponse,
+          currentQuestionKey: nextConversation.nextQuestionKey,
+          collectedAnswers: collectedAnswers,
+          questionsAnswered: calculateQuestionsAnswered(collectedAnswers, tool),
+          isComplete: nextConversation.isComplete,
+          chatId: chatId
+        };
+        
+        determinedAiResponseContent = nextConversation.conversationalResponse;
       }
       
-      const finalQuestionsAnswered = calculateQuestionsAnswered(tempCollectedAnswers, tool);
-      let finalNextQuestionKey = analysisResult.nextQuestionKey;
-      let finalIsComplete = analysisResult.isComplete;
+      // Update variables for later use
+      collectedAnswers = tempCollectedAnswers;
+      const finalQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
+      let finalNextQuestionKey = toolResponsePayload.currentQuestionKey;
+      let finalIsComplete = toolResponsePayload.isComplete;
 
       // If the AI indicates completion, ensure response reflects that.
       // The AI is prompted to create this message, so analysisResult.responseToUser should be appropriate.
@@ -1821,14 +1862,20 @@ export async function POST(request) {
       console.log('[CHAT_API_DEBUG] Constructed toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
 
     } else if (tool === 'workshop-generator') {
-      console.log('[CHAT_API_DEBUG] Processing workshop generator tool logic (non-init path)');
+      console.log('[CHAT_API_DEBUG] Processing workshop generator tool logic (non-init path) - NEW CONVERSATIONAL APPROACH');
+      
+      // Get the last user message to analyze  
+      const latestUserMessage = messages.length > 0 && messages[messages.length - 1].role === 'user' 
+        ? messages[messages.length - 1].content 
+        : "";
+      
       currentQuestionKey = body.currentQuestionKey || 'participantOutcomes';
+      const tempCollectedAnswers = { ...collectedAnswers };
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
-      const totalQuestions = workshopQuestions.length;
+      const totalQuestions = workshopInfoAreas.length;
 
       // Check if workshop is already complete and user is requesting design changes
       const isWorkshopComplete = currentQuestionsAnswered >= totalQuestions;
-      const latestUserMessage = messages.length > 0 ? messages[messages.length - 1].content : "";
       
       // Keywords that indicate design change requests
       const designChangeKeywords = [
@@ -2028,151 +2075,118 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         }
 
       } else {
-        // Original workshop question flow logic
-        // Prepare chat history for the prompt
-        const recentHistoryMessages = messages.slice(-5);
-        let chatHistoryString = "No recent history available.";
-        if (recentHistoryMessages.length > 0) {
-          chatHistoryString = recentHistoryMessages.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n');
-        }
-        const latestUserMessageContent = messages.length > 0 ? messages[messages.length - 1].content : "";
-        const currentQuestionDetails = workshopQuestions.find(q => q.key === currentQuestionKey);
-        const currentQuestionDescription = currentQuestionDetails?.description || 'the current topic';
-        const currentQuestionText = currentQuestionDetails?.question || 'this aspect of your workshop';
-
-        let promptParts = [];
-        promptParts.push("You are a friendly and helpful AI assistant guiding a user through creating a workshop. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
-        promptParts.push("Your tone should be friendly, encouraging, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
-
-        promptParts.push(`\nInformation collected so far for the workshop (${currentQuestionsAnswered}/${totalQuestions} questions answered):`);
-        workshopQuestions.forEach((q, index) => {
-          if (collectedAnswers[q.key]) {
-            promptParts.push(`✓ ${index + 1}. ${q.description}: Answered`);
-          } else {
-            promptParts.push(`◯ ${index + 1}. ${q.description}: Not yet discussed`);
-          }
-        });
-
-        promptParts.push(`\nWe are currently focusing on: '${currentQuestionDescription}' (Key: ${currentQuestionKey}). The guiding question for this topic is: "${currentQuestionText}"`);
-
-        promptParts.push(`\nRecent Conversation History (last 5 messages):`);
-        promptParts.push(chatHistoryString);
-
-        promptParts.push(`\n---`);
-        promptParts.push(`Your Tasks based on the User's LATEST message ("${latestUserMessageContent}"):`);
-        promptParts.push(`1. validAnswer (boolean): Is the user's latest message a relevant and sufficient answer for '${currentQuestionDescription}'? Apply reasonable judgment based on the specific question context.`);
-        
-        promptParts.push(`   IMPORTANT - Workshop Validation Criteria: When evaluating if an answer is valid (validAnswer=true):
-           * The answer MUST be relevant to the current question topic
-           * The answer should address the core of what's being asked, not tangential information
-           * Pay attention to question/answer mismatch - if asking about participant outcomes but user discusses pricing, the answer is NOT valid
-           * Consider the context of previous exchanges - if the user has provided details across multiple messages, consider the cumulative information
-           * If the user asks a question instead of answering, this is NOT a valid answer
-           * If the user's response is completely off-topic, mark as invalid and redirect them
-           * For workshop questions, sufficient answers might look like:
-              - participantOutcomes: "Participants will learn how to create a 90-day business plan and leave with a completed action plan"
-              - targetAudience: "Small business owners who struggle with planning and need structure"
-              - problemAddressed: "They don't know how to create actionable business plans"
-              - workshopDuration: "Full-day workshop, 8 hours with breaks"
-              - topicsAndActivities: "Business planning fundamentals, goal setting exercises, action plan creation"
-              - resourcesProvided: "Workbook, templates, 30-day email follow-up sequence"
-           * When an answer is invalid because it's addressing the wrong topic:
-              1. Clearly but kindly explain that they're discussing a different aspect than what was asked
-              2. Acknowledge what they shared
-              3. Redirect them to the current question with a more specific prompt
-           * If they've attempted to answer the question but provided insufficient details, probe deeper with specific follow-up questions`);
-        
-        promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. If validAnswer is false, this can be an empty string or null.`);
-        promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} workshop questions now answered?`);
-        promptParts.push(`4. nextQuestionKey (string):`);
-        promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* unanswered question from this list: ${workshopQuestions.map(q => q.key).join(", ")}. The next question should be the first one in the sequence that hasn't been answered yet.`);
-        promptParts.push(`   - If validAnswer is false: This should be the *current* currentQuestionKey (${currentQuestionKey}), as we need to re-ask or clarify.`);
-        promptParts.push(`   - If isComplete is true: This can be null.`);
-        promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
-        promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey.`);
-        promptParts.push(`   - If validAnswer was true and isComplete is true: Acknowledge that all information has been gathered. Say "Perfect! I have all the information needed to create your workshop landing page. I'm now generating your complete HTML landing page that you can paste directly into GoHighLevel." Then include this exact placeholder: <!-- GENERATE_WORKSHOP_HTML_NOW --> After the placeholder, provide the detailed GoHighLevel instructions and mention that they can ask for design changes anytime.`);
-        promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing.`);
-        promptParts.push(`   - General Guidance: Do NOT just state the next question from the list. Instead, weave it into a natural, flowing conversation. Vary your responses so it feels natural and conversational.`);
-        
-        promptParts.push(`---`);
-        promptParts.push(`\nReturn ONLY a JSON object with the following structure (no other text before or after the JSON):`);
-        promptParts.push(`{`);
-        promptParts.push(`  "validAnswer": boolean,`);
-        promptParts.push(`  "savedAnswer": string | null,`);
-        promptParts.push(`  "nextQuestionKey": string | null,`);
-        promptParts.push(`  "isComplete": boolean,`);
-        promptParts.push(`  "responseToUser": string`);
-        promptParts.push(`}`);
-        const analyzingPrompt = promptParts.join('\n');
-        
-        const messagesForOpenAI = [
-          { role: "system", content: analyzingPrompt },
-          ...messages 
-        ];
-
-        console.log('[CHAT_API_DEBUG] Sending analyzing prompt for workshop generator (conversational)');
-
-        const analyzingCompletion = await openai.chat.completions.create({
-          model: OPENAI_MODEL,
-          messages: messagesForOpenAI,
-          temperature: 0.7,
-          response_format: { type: "json_object" }
-        });
-        
-        const analysisResultString = analyzingCompletion.choices[0].message.content;
-        console.log('[CHAT_API_DEBUG] Raw workshop analysis result string:', analysisResultString);
-        const analysisResult = JSON.parse(analysisResultString);
-        console.log('[CHAT_API_DEBUG] Workshop Analysis result:', analysisResult);
-        
-        determinedAiResponseContent = analysisResult.responseToUser;
-        const tempCollectedAnswers = { ...collectedAnswers };
-        
-        const currentKeyForSaving = workshopQuestions.find(q => q.key === currentQuestionKey)?.key || currentQuestionKey;
-
-        if (analysisResult.validAnswer && analysisResult.savedAnswer) {
-          tempCollectedAnswers[currentKeyForSaving] = analysisResult.savedAnswer;
-        }
-        
-        const finalQuestionsAnswered = calculateQuestionsAnswered(tempCollectedAnswers, tool);
-        let finalNextQuestionKey = analysisResult.nextQuestionKey;
-        let finalIsComplete = analysisResult.isComplete;
-
-        if (finalIsComplete) {
-          finalNextQuestionKey = null;
+        // Use the new conversational approach for workshop generator
+        if (latestUserMessage) {
+          console.log('[CHAT_API_DEBUG] Analyzing user response with new conversational workshop system');
           
-          // Check if the AI wants to generate HTML
-          if (determinedAiResponseContent && determinedAiResponseContent.includes('<!-- GENERATE_WORKSHOP_HTML_NOW -->')) {
-            console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
+          // Analyze the user's response to extract information and determine next steps
+          const responseAnalysis = await analyzeUserResponse(
+            latestUserMessage, 
+            currentQuestionKey, 
+            collectedAnswers, 
+            messages,
+            tool
+          );
+          
+          console.log('[CHAT_API_DEBUG] Workshop response analysis result:', responseAnalysis);
+          
+          // If we extracted valid information, save it
+          if (responseAnalysis.extractedInfo && !responseAnalysis.isOffTopic) {
+            tempCollectedAnswers[currentQuestionKey] = responseAnalysis.extractedInfo;
+            console.log(`[CHAT_API_DEBUG] Saved workshop info for ${currentQuestionKey}: ${responseAnalysis.extractedInfo}`);
+          }
+          
+          // If the user's response was off-topic or we need more info, ask a clarifying question
+          if (responseAnalysis.isOffTopic || responseAnalysis.needsMoreInfo) {
+            console.log('[CHAT_API_DEBUG] Need clarification or more info for workshop, staying on current question');
             
-            // Generate the HTML using the template and collected answers
-            const generatedHTML = await generateWorkshopHTML(tempCollectedAnswers);
+            let clarificationResponse;
+            if (responseAnalysis.isOffTopic) {
+              clarificationResponse = `I appreciate you sharing that! Let me just redirect us back to what I was asking about. I'm trying to understand your ${workshopInfoAreas.find(a => a.key === currentQuestionKey)?.description}. ${responseAnalysis.clarificationQuestion || 'Could you tell me more about that specifically?'}`;
+            } else {
+              clarificationResponse = responseAnalysis.clarificationQuestion || `Thanks for that! Could you tell me a bit more about your ${workshopInfoAreas.find(a => a.key === currentQuestionKey)?.description}?`;
+            }
             
-            // Replace the placeholder with the actual HTML in a code block and add design edit instructions
-            determinedAiResponseContent = determinedAiResponseContent.replace(
-              '<!-- GENERATE_WORKSHOP_HTML_NOW -->',
-              `\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
+            // Create response payload staying on current question
+            toolResponsePayload = {
+              message: clarificationResponse,
+              currentQuestionKey: currentQuestionKey,
+              collectedAnswers: tempCollectedAnswers,
+              questionsAnswered: calculateQuestionsAnswered(tempCollectedAnswers, tool),
+              isComplete: false,
+              chatId: chatId
+            };
+            
+            console.log('[CHAT_API_DEBUG] Sending workshop clarification question');
+            determinedAiResponseContent = clarificationResponse;
+          } else {
+            // We have good information, generate the next conversational question
+            console.log('[CHAT_API_DEBUG] Good workshop info collected, generating next conversational question');
+            
+            const nextConversation = await generateNextConversationalQuestion(
+              tempCollectedAnswers, 
+              messages, 
+              tool
             );
             
-            console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
+            console.log('[CHAT_API_DEBUG] Next workshop conversation result:', nextConversation);
+            
+            // Create response payload
+            toolResponsePayload = {
+              message: nextConversation.conversationalResponse,
+              currentQuestionKey: nextConversation.nextQuestionKey,
+              collectedAnswers: tempCollectedAnswers,
+              questionsAnswered: calculateQuestionsAnswered(tempCollectedAnswers, tool),
+              isComplete: nextConversation.isComplete,
+              chatId: chatId
+            };
+            
+            determinedAiResponseContent = nextConversation.conversationalResponse;
+            
+            // If complete, initiate document generation
+            if (nextConversation.isComplete) {
+              console.log('[CHAT_API_DEBUG] Workshop complete, will generate document');
+              
+              // Check if the AI wants to generate HTML
+              if (determinedAiResponseContent && determinedAiResponseContent.includes('<!-- GENERATE_WORKSHOP_HTML_NOW -->')) {
+                console.log('[CHAT_API_DEBUG] Detected HTML generation request for workshop');
+                
+                // Generate the HTML using the template and collected answers
+                const generatedHTML = await generateWorkshopHTML(tempCollectedAnswers);
+                
+                // Replace the placeholder with the actual HTML in a code block and add design edit instructions
+                determinedAiResponseContent = determinedAiResponseContent.replace(
+                  '<!-- GENERATE_WORKSHOP_HTML_NOW -->',
+                  `\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
+                );
+                
+                console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
+              }
+            }
           }
-        } else if (analysisResult.validAnswer) {
-          // Valid answer, not complete. AI's responseToUser should be asking the next question.
-          // finalNextQuestionKey is already set by AI.
         } else {
-          // Invalid answer. AI's responseToUser should be a re-prompt.
-          finalNextQuestionKey = finalNextQuestionKey || currentKeyForSaving;
+          // No user message to analyze, just continue normal flow
+          console.log('[CHAT_API_DEBUG] No user message to analyze for workshop, using standard approach');
+          const nextConversation = await generateNextConversationalQuestion(
+            collectedAnswers, 
+            messages, 
+            tool
+          );
+          
+          toolResponsePayload = {
+            message: nextConversation.conversationalResponse,
+            currentQuestionKey: nextConversation.nextQuestionKey,
+            collectedAnswers: collectedAnswers,
+            questionsAnswered: calculateQuestionsAnswered(collectedAnswers, tool),
+            isComplete: nextConversation.isComplete,
+            chatId: chatId
+          };
+          
+          determinedAiResponseContent = nextConversation.conversationalResponse;
         }
         
-        toolResponsePayload = {
-          message: determinedAiResponseContent,
-          currentQuestionKey: finalNextQuestionKey,
-          collectedAnswers: { ...tempCollectedAnswers },
-          questionsAnswered: finalQuestionsAnswered,
-          isComplete: finalIsComplete,
-          chatId: chatId
-        };
-
-        console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
+        // Update variables for later use
+        collectedAnswers = tempCollectedAnswers;
       }
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using 2-step coaching process for regular chat');
