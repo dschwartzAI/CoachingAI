@@ -723,6 +723,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     setCurrentChat(optimisticChat);
     setChats(prev => prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat));
     
+    // Scroll to show the new user message immediately
+    setTimeout(() => {
+      scrollToBottom();
+    }, 50);
+    
     // Save user message to DB
     if (user?.id) {
       handleMessageSave(chatToUpdate.id, userMessage, user.id);
@@ -751,6 +756,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         
         setCurrentChat(tempChatWithStreamingPlaceholder);
         setChats(prev => prev.map(chat => chat.id === chatToUpdate.id ? tempChatWithStreamingPlaceholder : chat));
+        
+        // Scroll to show the streaming placeholder immediately
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
         
         streamingClient.streamChat({
           messages: updatedMessages, // Send messages up to the user's new message
@@ -817,6 +827,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             // NOTE: we purposely KEEP streamingMessageId so the same StreamingMessage
             // component continues to render this message even after completion. It will
             // be overwritten the next time a new streaming cycle starts.
+            
+            // Scroll to bottom after streaming completion
+            setTimeout(() => {
+              scrollToBottom();
+            }, 100);
           },
           onError: (error) => {
             console.error('[CHAT_DEBUG] Streaming error:', error);
@@ -841,6 +856,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               return c;
             }));
             // Keep streamingMessageId until the next user message starts a new stream
+            
+            // Scroll to bottom after error
+            setTimeout(() => {
+              scrollToBottom();
+            }, 100);
           }
         });
         
@@ -918,6 +938,11 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           setChats(prev => prev.map(chat => 
             chat.id === chatToUpdate.id ? chatWithThinking : chat
           ));
+          
+          // Scroll to show thinking message
+          setTimeout(() => {
+            scrollToBottom();
+          }, 100);
           
           // Start polling for the real response
           pollForAssistantResponse(data.threadId, data.runId, data.chatId, chatWithThinking, updatedMessages);
