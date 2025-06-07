@@ -2010,28 +2010,28 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div className="relative group">
-                        <div 
-                          className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
-                          data-message-id={message.id}
-                          data-chat-id={currentChat?.id}
-                          data-message-role={message.role}
-                        >
-                          <DocumentMessage message={message} />
-                        </div>
-                        
-                        {/* Snippet Button for document messages */}
-                        {message.content && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <SnippetButton
-                              messageContent={message.content}
-                              messageId={message.id}
-                              chatId={currentChat?.id}
-                              chatTitle={currentChat?.title}
-                            />
-                          </div>
-                        )}
+                                          <div className="relative group flex items-start gap-2">
+                      <div 
+                        className="flex-1 rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        <DocumentMessage message={message} />
                       </div>
+                      
+                      {/* Snippet Button for document messages - positioned outside text area */}
+                      {message.content && (
+                        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <SnippetButton
+                            messageContent={message.content}
+                            messageId={message.id}
+                            chatId={currentChat?.id}
+                            chatTitle={currentChat?.title}
+                          />
+                        </div>
+                      )}
+                    </div>
                     </div>
                   </div>
                 );
@@ -2051,9 +2051,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div className="relative group">
+                      <div className="relative group flex items-start gap-2">
                         <div 
-                          className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                          className="flex-1 rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
                           data-message-id={message.id}
                           data-chat-id={currentChat?.id}
                           data-message-role={message.role}
@@ -2061,9 +2061,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                           <LandingPageMessage content={message.content} />
                         </div>
                         
-                        {/* Snippet Button for landing page messages */}
+                        {/* Snippet Button for landing page messages - positioned outside text area */}
                         {message.content && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                             <SnippetButton
                               messageContent={message.content}
                               messageId={message.id}
@@ -2110,9 +2110,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground`}>
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div className="relative group">
+                      <div className="relative group flex items-start gap-2">
                         <div 
-                          className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
+                          className={`flex-1 rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
                           data-message-id={message.id}
                           data-chat-id={currentChat?.id}
                           data-message-role={message.role}
@@ -2122,9 +2122,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                           </p>
                         </div>
                         
-                        {/* Snippet Button for error messages */}
+                        {/* Snippet Button for error messages - positioned outside text area */}
                         {message.content && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                             <SnippetButton
                               messageContent={message.content}
                               messageId={message.id}
@@ -2167,9 +2167,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       )}
                     </div>
 
-                    <div className="relative group">
+                    <div className="relative group flex items-start gap-2">
                       <div
-                        className={`rounded-2xl px-4 py-3 shadow-sm ${
+                        className={`flex-1 rounded-2xl px-4 py-3 shadow-sm ${
                           isUser
                             ? 'bg-primary text-primary-foreground ml-auto'
                             : 'bg-muted/60 text-foreground'
@@ -2187,9 +2187,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                         )}
                       </div>
                       
-                      {/* Snippet Button - only show for assistant messages */}
+                      {/* Snippet Button - only show for assistant messages, positioned outside text area */}
                       {!isUser && message.content && (
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                           <SnippetButton
                             messageContent={message.content}
                             messageId={message.id}

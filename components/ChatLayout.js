@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import ProfileModal from "./ProfileModal";
@@ -29,9 +29,24 @@ export default function ChatLayout() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Keep track of temporary to permanent ID mappings
   const [idMappings, setIdMappings] = useState({});
+
+  // Function to update URL with chat ID
+  const updateURLWithChatId = (chatId) => {
+    if (!chatId) {
+      // Clear chatId from URL if no chat is selected
+      router.replace('/', { scroll: false });
+      return;
+    }
+
+    const currentChatId = searchParams.get('chatId');
+    if (currentChatId !== chatId) {
+      router.replace(`/?chatId=${chatId}`, { scroll: false });
+    }
+  };
 
   // Use a more robust chat setter that handles ID changes
   const setCurrentChatWithTracking = (chat) => {
@@ -56,6 +71,9 @@ export default function ChatLayout() {
     }
     
     setCurrentChat(chat);
+    
+    // Update URL with new chat ID
+    updateURLWithChatId(chat?.id);
   };
   
   // Enhanced chats setter with deduplication and ID tracking
@@ -201,14 +219,38 @@ export default function ChatLayout() {
 
         setChatsSafely(formattedThreads);
         
-        // Set current chat based on history or create a new one
+        // Set current chat based on URL parameter or history
         if (formattedThreads.length > 0) {
-          if (!currentChat) {
-            // Prioritize the most recent regular chat (non-tool) over tool-based chats
+          const urlChatId = searchParams.get('chatId');
+          
+          if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] URL chatId parameter:', urlChatId);
+          
+          if (urlChatId) {
+            // Try to find the chat specified in URL
+            const targetChat = formattedThreads.find(thread => thread.id === urlChatId);
+            if (targetChat) {
+              if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat from URL parameter:', {
+                id: targetChat.id,
+                title: targetChat.title,
+                tool_id: targetChat.tool_id
+              });
+              setCurrentChatWithTracking(targetChat);
+            } else {
+              if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat from URL not found, falling back to most recent:', {
+                urlChatId,
+                availableChats: formattedThreads.map(t => t.id)
+              });
+              // URL chat not found, fall back to most recent
+              const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
+              const selectedChat = mostRecentRegularChat || formattedThreads[0];
+              setCurrentChatWithTracking(selectedChat);
+            }
+          } else if (!currentChat) {
+            // No URL parameter, prioritize the most recent regular chat (non-tool) over tool-based chats
             const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
             const selectedChat = mostRecentRegularChat || formattedThreads[0];
             
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to:', {
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to most recent:', {
               id: selectedChat.id,
               title: selectedChat.title,
               tool_id: selectedChat.tool_id,
@@ -247,7 +289,35 @@ export default function ChatLayout() {
       // Create a default chat if we're not loading and don't have a current chat
       createDefaultChat();
     }
-  }, [user?.id, toast]);
+  }, [user?.id, searchParams, toast]);
+
+  // Handle URL parameter changes for chat navigation
+  useEffect(() => {
+    const urlChatId = searchParams.get('chatId');
+    
+    if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] URL parameter change detected:', {
+      urlChatId,
+      currentChatId: currentChat?.id,
+      hasChats: chats.length > 0
+    });
+    
+    // Only process if we have chats loaded and the URL chat is different from current
+    if (urlChatId && chats.length > 0 && currentChat?.id !== urlChatId) {
+      const targetChat = chats.find(chat => chat.id === urlChatId);
+      if (targetChat) {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Switching to chat from URL:', {
+          id: targetChat.id,
+          title: targetChat.title
+        });
+        setCurrentChat(targetChat); // Use setCurrentChat directly to avoid URL update loop
+      } else {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat from URL not found in loaded chats:', {
+          urlChatId,
+          availableChats: chats.map(c => c.id)
+        });
+      }
+    }
+  }, [searchParams, chats, currentChat?.id]);
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {

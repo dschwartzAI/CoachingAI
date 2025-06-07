@@ -182,7 +182,10 @@ export default function SnippetsModal({ isOpen, onClose }) {
 
   const handleViewInChat = (snippet) => {
     if (snippet.source_type === 'conversation' && snippet.source_id) {
-      // Navigate to the chat thread
+      // Close the modal first
+      onClose();
+      
+      // Navigate to the chat thread using Next.js router
       window.location.href = `/?chatId=${snippet.source_id}`;
     }
   };
