@@ -24,6 +24,7 @@ import {
   X,
   Plus,
   Edit,
+  ExternalLink,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import SnippetModal from './SnippetModal';
@@ -179,10 +180,28 @@ export default function SnippetsModal({ isOpen, onClose }) {
     setSelectedTag('');
   };
 
+  const handleViewInChat = (snippet) => {
+    if (snippet.source_type === 'conversation' && snippet.source_id) {
+      // Navigate to the chat thread
+      window.location.href = `/?chatId=${snippet.source_id}`;
+    }
+  };
+
   return (
     <>
+      {/* Custom high z-index overlay to ensure everything is covered */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[10000]" 
+          onClick={onClose}
+        />
+      )}
+      
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-3xl max-h-[85vh] w-[95vw] sm:w-full flex flex-col mx-auto">
+        <DialogContent 
+          className="max-w-3xl max-h-[85vh] w-[95vw] sm:w-full flex flex-col mx-auto"
+          style={{ zIndex: 10001 }}
+        >
           <DialogHeader>
             <DialogTitle className="text-xl sm:text-2xl font-semibold">My Snippets</DialogTitle>
             <DialogDescription>
@@ -264,6 +283,27 @@ export default function SnippetsModal({ isOpen, onClose }) {
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-medium text-base truncate flex-1 mr-2">{snippet.title}</h3>
                       <div className="flex gap-1 flex-shrink-0">
+                        {/* View In Chat button - only for conversation snippets */}
+                        {snippet.source_type === 'conversation' && snippet.source_id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-12 w-12 p-0 touch-target flex items-center justify-center text-blue-600 hover:text-blue-700"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleViewInChat(snippet);
+                            }}
+                            onTouchEnd={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleViewInChat(snippet);
+                            }}
+                            title="View in original chat"
+                          >
+                            <ExternalLink className="h-5 w-5" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
