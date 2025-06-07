@@ -23,6 +23,140 @@ const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
+// === MESSAGE SPLITTING UTILITIES ===
+// Tune these to make the assistant break answers into smaller chunks
+const MAX_MESSAGE_LENGTH = 350; // Character limit per message before we split
+const MIN_SPLIT_LENGTH = 80;   // Ensure we don't create micro-chunks
+
+/**
+ * Intelligently splits a long message into multiple shorter messages
+ * at natural breakpoints (sentences, paragraphs, questions)
+ */
+function splitLongMessage(message) {
+  if (!message || message.length <= MAX_MESSAGE_LENGTH) {
+    return [message];
+  }
+
+  const chunks = [];
+  let remainingText = message.trim();
+
+  while (remainingText.length > MAX_MESSAGE_LENGTH) {
+    let splitPoint = findBestSplitPoint(remainingText, MAX_MESSAGE_LENGTH);
+    
+    // If we can't find a good split point, force split at max length
+    if (splitPoint === -1) {
+      splitPoint = MAX_MESSAGE_LENGTH;
+    }
+
+    const chunk = remainingText.substring(0, splitPoint).trim();
+    chunks.push(chunk);
+    remainingText = remainingText.substring(splitPoint).trim();
+  }
+
+  // Add the remaining text if it exists
+  if (remainingText.length > 0) {
+    chunks.push(remainingText);
+  }
+
+  return chunks.filter(chunk => chunk.length > 0);
+}
+
+/**
+ * Finds the best point to split a message, prioritizing natural breakpoints
+ */
+function findBestSplitPoint(text, maxLength) {
+  // Don't split if the remaining would be too short
+  if (text.length - maxLength < MIN_SPLIT_LENGTH) {
+    return -1;
+  }
+
+  const searchArea = text.substring(0, maxLength);
+  
+  // Priority 1: Look for paragraph breaks (double newlines)
+  let splitPoint = searchArea.lastIndexOf('\n\n');
+  if (splitPoint > maxLength * 0.5) return splitPoint + 2;
+  
+  // Priority 2: Look for question marks followed by space
+  splitPoint = searchArea.lastIndexOf('? ');
+  if (splitPoint > maxLength * 0.6) return splitPoint + 2;
+  
+  // Priority 3: Look for exclamation marks followed by space
+  splitPoint = searchArea.lastIndexOf('! ');
+  if (splitPoint > maxLength * 0.6) return splitPoint + 2;
+  
+  // Priority 4: Look for periods followed by space and capital letter (sentence end)
+  const sentenceEndRegex = /\. [A-Z]/g;
+  let match;
+  let lastSentenceEnd = -1;
+  
+  while ((match = sentenceEndRegex.exec(searchArea)) !== null) {
+    if (match.index > maxLength * 0.6) {
+      lastSentenceEnd = match.index + 2; // After the period and space
+    }
+  }
+  if (lastSentenceEnd > -1) return lastSentenceEnd;
+  
+  // Priority 5: Look for single newlines
+  splitPoint = searchArea.lastIndexOf('\n');
+  if (splitPoint > maxLength * 0.5) return splitPoint + 1;
+  
+  // Priority 6: Look for commas followed by space
+  splitPoint = searchArea.lastIndexOf(', ');
+  if (splitPoint > maxLength * 0.7) return splitPoint + 2;
+  
+  // Priority 7: Look for any space
+  splitPoint = searchArea.lastIndexOf(' ');
+  if (splitPoint > maxLength * 0.7) return splitPoint + 1;
+  
+  return -1; // No good split point found
+}
+
+/**
+ * Saves multiple message chunks to the database with proper sequencing
+ */
+async function saveMessageChunks(chunks, chatId, role, userId, supabase) {
+  const savedMessages = [];
+  
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const isMultiPart = chunks.length > 1;
+    const partInfo = isMultiPart ? ` (${i + 1}/${chunks.length})` : '';
+    
+    // Add a small delay between chunks for better UX (except for the first one)
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+    
+    const msgObj = {
+      thread_id: chatId,
+      role: role,
+      content: chunk,
+      timestamp: new Date().toISOString(),
+      user_id: userId,
+      ...(isMultiPart && { metadata: { partIndex: i + 1, totalParts: chunks.length } })
+    };
+
+    try {
+      const { data: savedMsg, error: saveError } = await supabase
+        .from('messages')
+        .insert(msgObj)
+        .select()
+        .single();
+        
+      if (saveError) {
+        console.error(`[CHAT_API_DEBUG] Error saving message chunk ${i + 1}:`, saveError);
+      } else {
+        console.log(`[CHAT_API_DEBUG] Message chunk ${i + 1}/${chunks.length} saved:`, { id: savedMsg?.id });
+        savedMessages.push(savedMsg);
+      }
+    } catch (error) {
+      console.error(`[CHAT_API_DEBUG] Exception saving message chunk ${i + 1}:`, error);
+    }
+  }
+  
+  return savedMessages;
+}
+
 // Define the core information areas we need to gather (but questions will be dynamic)
 const hybridOfferInfoAreas = [
   { 
@@ -2432,18 +2566,30 @@ The user's conversation history and knowledge base research are provided below.$
       console.log('[CHAT_API_DEBUG] Generic tool OpenAI response received.');
     }
 
-    // SECTION 3: Save the assistant's response to the database
+    // SECTION 3: Save the assistant's response to the database (with message splitting)
     if (typeof determinedAiResponseContent !== 'undefined' && chatId && supabase) {
       console.log('[CHAT_API_DEBUG] Preparing to save assistant message to DB.');
       let contentToSaveForDB = determinedAiResponseContent;
 
-      const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', contentToSaveForDB).eq('role', 'assistant').limit(1);
+      // Check if message already exists (first chunk only for split messages)
+      const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('thread_id', chatId)
+        .eq('role', 'assistant')
+        .eq('content', contentToSaveForDB.substring(0, Math.min(contentToSaveForDB.length, MAX_MESSAGE_LENGTH)))
+        .limit(1);
+      
       if (asstMsgCheckErr) console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
       
       if (!existingAsstMsg || existingAsstMsg.length === 0) {
-        const msgObj = { thread_id: chatId, role: 'assistant', content: contentToSaveForDB, timestamp: new Date().toISOString(), user_id: userId };
-        const { data: savedMsg, error: saveError } = await supabase.from('messages').insert(msgObj).select().single();
-        if (saveError) console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError); else console.log('[CHAT_API_DEBUG] Asst message saved:', { id: savedMsg?.id });
+        // Split the message if it's too long
+        const messageChunks = splitLongMessage(contentToSaveForDB);
+        console.log(`[CHAT_API_DEBUG] Split message into ${messageChunks.length} chunk(s)`);
+        
+        // Save all chunks
+        const savedMessages = await saveMessageChunks(messageChunks, chatId, 'assistant', userId, supabase);
+        console.log(`[CHAT_API_DEBUG] Saved ${savedMessages.length} message chunk(s)`);
       } else {
         console.log('[CHAT_API_DEBUG] Asst message already exists, skipping save.');
       }
@@ -2520,15 +2666,31 @@ The user's conversation history and knowledge base research are provided below.$
     // SECTION 4: Prepare the final response to send to the client
     let finalResponsePayload;
     if (toolResponsePayload) {
-        finalResponsePayload = toolResponsePayload;
+        // For tool responses, check if they need splitting
+        const messageChunks = splitLongMessage(toolResponsePayload.message || '');
+        if (messageChunks.length > 1) {
+            finalResponsePayload = {
+                ...toolResponsePayload,
+                messageChunks: messageChunks,
+                isSplitMessage: true
+            };
+        } else {
+            finalResponsePayload = toolResponsePayload;
+        }
     } else if (typeof determinedAiResponseContent !== 'undefined') {
+        // For regular responses, check if they need splitting
+        const messageChunks = splitLongMessage(determinedAiResponseContent);
         finalResponsePayload = {
             message: determinedAiResponseContent,
             currentQuestionKey: body.currentQuestionKey || null,
             collectedAnswers: { ...collectedAnswers },
             questionsAnswered: calculateQuestionsAnswered(collectedAnswers, tool),
             isComplete: false,
-            chatId: chatId
+            chatId: chatId,
+            ...(messageChunks.length > 1 && {
+                messageChunks: messageChunks,
+                isSplitMessage: true
+            })
         };
     } else {
         console.error('[CHAT_API_DEBUG] Critical: No response determined. Fallback.');

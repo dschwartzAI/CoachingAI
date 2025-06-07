@@ -18,6 +18,7 @@ import { usePostHog } from '@/hooks/use-posthog';
 import { streamingClient } from '@/lib/utils/streaming';
 import StreamingMessage from '@/components/StreamingMessage';
 import MarkdownMessage from '@/components/markdown-message';
+import SnippetButton from '@/components/snippet-button';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -949,10 +950,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           return; // Exit early since we'll update UI when polling completes
         }
 
-        // Create assistant message
-        const assistantMessage = typeof data.message === 'string' 
-            ? { role: 'assistant', content: data.message, id: `assistant-${Date.now()}` } // Add ID
-            : data.message || { role: 'assistant', content: "I couldn't generate a proper response.", id: `assistant-error-${Date.now()}` }; // Add ID
+        // Create assistant message(s) - handle split messages
+        let assistantMessages = [];
+        
+        if (data.isSplitMessage && data.messageChunks && Array.isArray(data.messageChunks)) {
+          // Create multiple messages for split content
+          console.log(`[CHAT_DEBUG] Processing ${data.messageChunks.length} split message chunks`);
+          assistantMessages = data.messageChunks.map((chunk, index) => ({
+            role: 'assistant',
+            content: chunk,
+            id: `assistant-${Date.now()}-part-${index + 1}`,
+            isSplitPart: true,
+            partIndex: index + 1,
+            totalParts: data.messageChunks.length
+          }));
+        } else {
+          // Single message (existing logic)
+          const singleMessage = typeof data.message === 'string' 
+              ? { role: 'assistant', content: data.message, id: `assistant-${Date.now()}` }
+              : data.message || { role: 'assistant', content: "I couldn't generate a proper response.", id: `assistant-error-${Date.now()}` };
+          assistantMessages = [singleMessage];
+        }
             
         // Use returned data or default values for text responses
         const returnedAnswers = data.isTextResponse ? {} : (data.collectedAnswers || collectedAnswers || {});
@@ -988,13 +1006,51 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         setQuestionsAnswered(updatedQuestionsAnswered);
         }
 
-        // Construct the updated current chat state with API response data
-        const finalCurrentChat = {
-          ...chatToUpdate, // Base it on the chat state before optimistic update
-          id: correctChatId, // IMPORTANT: Use the ID from the API response
-          messages: [...updatedMessages, assistantMessage], // User + assistant messages
-          tool_id: selectedTool, // Preserve/ensure tool_id is correct
+        // Add assistant messages with staggered timing for split messages
+        let finalCurrentChat = {
+          ...chatToUpdate,
+          id: correctChatId,
+          messages: [...updatedMessages], // Start with just user messages
+          tool_id: selectedTool,
         };
+        
+        // Add assistant messages one by one with delays for split messages
+        for (let i = 0; i < assistantMessages.length; i++) {
+          const message = assistantMessages[i];
+          const isFirstMessage = i === 0;
+          const delay = isFirstMessage ? 0 : 800; // No delay for first message, 800ms for subsequent
+          
+          if (delay > 0) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          
+          // Skip if this message duplicates the last assistant content (dedup safeguard)
+          const lastMsg = finalCurrentChat.messages[finalCurrentChat.messages.length - 1];
+          if (!lastMsg || lastMsg.content !== message.content || lastMsg.role !== 'assistant') {
+            finalCurrentChat = {
+              ...finalCurrentChat,
+              messages: [...finalCurrentChat.messages, message]
+            };
+          }
+          
+          // Update UI immediately for each message
+          setCurrentChat(finalCurrentChat);
+          setChats(prevChats => {
+            if (prevChats.some(chat => chat.id === correctChatId)) {
+              return prevChats.map(chat => 
+                chat.id === correctChatId ? finalCurrentChat : chat
+              );
+            }
+            return [...prevChats, finalCurrentChat];
+          });
+          
+          // Scroll after each message appears
+          setTimeout(() => {
+            scrollToBottom();
+          }, 100);
+          
+          console.log(`[CHAT_DEBUG] Added message part ${i + 1}/${assistantMessages.length}`);
+        }
         
         // Only add metadata for tool-based chats, not for regular chat text responses
         if (!data.isTextResponse) {
@@ -1019,61 +1075,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           isTextResponse: data.isTextResponse
         });
 
-        // Update both the current chat state AND the chats list
-        setCurrentChat(finalCurrentChat);
-        
-        // Update the chats array, handling both existing and new chats
-        setChats(prevChats => {
-          console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
-            chatCount: prevChats.length,
-            chatIds: prevChats.map(c => c.id)
-          });
-          
-          // First check if the new chat already exists in the list
-          // This makes the update idempotent (safe to call multiple times)
-          if (prevChats.some(chat => chat.id === correctChatId)) {
-            console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
-            return prevChats.map(chat => 
-              chat.id === correctChatId ? finalCurrentChat : chat
-            );
-          }
-          
-          // For tool-based chats, we don't need to filter temp chats since they use the same ID
-          const filteredChats = prevChats;
-            
-          console.log(`[CHAT_DEBUG] Using existing chats without filtering:`, {
-            chatCount: filteredChats.length,
-            chatIds: filteredChats.map(c => c.id)
-          });
-            
-          // Final safety check if chat exists after filtering
-          const chatExists = filteredChats.some(chat => chat.id === correctChatId);
-          
-          console.log(`[CHAT_DEBUG] Chat existence check:`, {
-            chatExists,
-            correctChatId,
-            finalChatId: finalCurrentChat.id
-          });
-          
-          let result;
-          if (chatExists) {
-            // Update existing chat in the list
-            result = filteredChats.map(chat => 
-              chat.id === correctChatId ? finalCurrentChat : chat
-            );
-          } else {
-            // Add new chat to the list
-            result = [finalCurrentChat, ...filteredChats];
-          }
-          
-          console.log(`[CHAT_DEBUG] Final setChats result:`, {
-            resultCount: result.length,
-            resultIds: result.map(c => c.id),
-            operation: chatExists ? 'update' : 'add'
-          });
-          
-          return result;
-        });
+        // Chat state updates are now handled in the loop above
 
         // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
         console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
@@ -2008,13 +2010,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div 
-                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
-                        data-message-id={message.id}
-                        data-chat-id={currentChat?.id}
-                        data-message-role={message.role}
-                      >
-                        <DocumentMessage message={message} />
+                      <div className="relative group">
+                        <div 
+                          className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                          data-message-id={message.id}
+                          data-chat-id={currentChat?.id}
+                          data-message-role={message.role}
+                        >
+                          <DocumentMessage message={message} />
+                        </div>
+                        
+                        {/* Snippet Button for document messages */}
+                        {message.content && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <SnippetButton
+                              messageContent={message.content}
+                              messageId={message.id}
+                              chatId={currentChat?.id}
+                              chatTitle={currentChat?.title}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2035,13 +2051,27 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground">
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div 
-                        className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
-                        data-message-id={message.id}
-                        data-chat-id={currentChat?.id}
-                        data-message-role={message.role}
-                      >
-                        <LandingPageMessage content={message.content} />
+                      <div className="relative group">
+                        <div 
+                          className="rounded-2xl px-4 py-3 shadow-sm bg-muted/60 text-foreground"
+                          data-message-id={message.id}
+                          data-chat-id={currentChat?.id}
+                          data-message-role={message.role}
+                        >
+                          <LandingPageMessage content={message.content} />
+                        </div>
+                        
+                        {/* Snippet Button for landing page messages */}
+                        {message.content && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <SnippetButton
+                              messageContent={message.content}
+                              messageId={message.id}
+                              chatId={currentChat?.id}
+                              chatTitle={currentChat?.title}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2080,15 +2110,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-muted text-muted-foreground`}>
                         <Bot className="h-4 w-4" />
                       </div>
-                      <div 
-                        className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
-                        data-message-id={message.id}
-                        data-chat-id={currentChat?.id}
-                        data-message-role={message.role}
-                      >
-                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                          {message.content}
-                        </p>
+                      <div className="relative group">
+                        <div 
+                          className={`rounded-2xl px-4 py-3 shadow-sm bg-destructive/10 text-destructive-foreground`}
+                          data-message-id={message.id}
+                          data-chat-id={currentChat?.id}
+                          data-message-role={message.role}
+                        >
+                          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                            {message.content}
+                          </p>
+                        </div>
+                        
+                        {/* Snippet Button for error messages */}
+                        {message.content && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <SnippetButton
+                              messageContent={message.content}
+                              messageId={message.id}
+                              chatId={currentChat?.id}
+                              chatTitle={currentChat?.title}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2123,22 +2167,36 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       )}
                     </div>
 
-                    <div
-                      className={`rounded-2xl px-4 py-3 shadow-sm ${
-                        isUser
-                          ? 'bg-primary text-primary-foreground ml-auto'
-                          : 'bg-muted/60 text-foreground'
-                      }`}
-                      data-message-id={message.id}
-                      data-chat-id={currentChat?.id}
-                      data-message-role={message.role}
-                    >
-                      {isUser ? (
-                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                          {message.content}
-                        </p>
-                            ) : (
-                              <MarkdownMessage content={message.content} />
+                    <div className="relative group">
+                      <div
+                        className={`rounded-2xl px-4 py-3 shadow-sm ${
+                          isUser
+                            ? 'bg-primary text-primary-foreground ml-auto'
+                            : 'bg-muted/60 text-foreground'
+                        }`}
+                        data-message-id={message.id}
+                        data-chat-id={currentChat?.id}
+                        data-message-role={message.role}
+                      >
+                        {isUser ? (
+                          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                            {message.content}
+                          </p>
+                        ) : (
+                          <MarkdownMessage content={message.content} />
+                        )}
+                      </div>
+                      
+                      {/* Snippet Button - only show for assistant messages */}
+                      {!isUser && message.content && (
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <SnippetButton
+                            messageContent={message.content}
+                            messageId={message.id}
+                            chatId={currentChat?.id}
+                            chatTitle={currentChat?.title}
+                          />
+                        </div>
                       )}
                     </div>
                     </div>

@@ -17,7 +17,8 @@ import {
   FileText,
   Bookmark,
   Tag,
-  StickyNote
+  StickyNote,
+  ExternalLink
 } from 'lucide-react';
 import { format } from 'date-fns';
 import SnippetModal from './SnippetModal';
@@ -144,6 +145,13 @@ export default function SnippetsPage() {
     setSelectedTag('');
   };
 
+  const handleViewInChat = (snippet) => {
+    if (snippet.source_type === 'conversation' && snippet.source_id) {
+      // Navigate to the chat thread
+      window.location.href = `/?chatId=${snippet.source_id}`;
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -225,22 +233,50 @@ export default function SnippetsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle className="text-lg mb-2">{snippet.title}</CardTitle>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          {getSourceIcon(snippet.source_type)}
-                          <span className="capitalize">{snippet.source_type}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          <span>{format(new Date(snippet.created_at), 'MMM d, yyyy')}</span>
-                        </div>
-                      </div>
+                                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      {getSourceIcon(snippet.source_type)}
+                      <span className="capitalize">{snippet.source_type}</span>
                     </div>
                     <div className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      <span>{format(new Date(snippet.created_at), 'MMM d, yyyy')}</span>
+                    </div>
+                    {/* Show chat context if available */}
+                    {snippet.source_type === 'conversation' && snippet.source_context && (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <MessageSquare className="h-4 w-4" />
+                        <span>
+                          {(() => {
+                            try {
+                              const context = JSON.parse(snippet.source_context);
+                              return context.chatTitle || 'Chat';
+                            } catch {
+                              return 'Chat';
+                            }
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {/* View in Chat button - only for conversation snippets */}
+                      {snippet.source_type === 'conversation' && snippet.source_id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleViewInChat(snippet)}
+                          title="View in original chat"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleEditSnippet(snippet)}
+                        title="Edit snippet"
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -249,6 +285,7 @@ export default function SnippetsPage() {
                         size="sm"
                         onClick={() => handleDeleteSnippet(snippet.id)}
                         className="text-destructive hover:text-destructive"
+                        title="Delete snippet"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

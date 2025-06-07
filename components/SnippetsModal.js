@@ -340,7 +340,7 @@ export default function SnippetsModal({ isOpen, onClose }) {
             setEditingSnippet(null);
           }}
           onSave={handleSaveEdit}
-          selectedText={null} // No selected text for editing
+          selectedText={editingSnippet?.content}
           existingSnippet={editingSnippet}
           sourceContext={null}
         />
