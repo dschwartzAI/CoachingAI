@@ -1155,14 +1155,18 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           if (isStreaming) {
             // Force scroll again after a tiny delay to catch any race conditions
             setTimeout(() => {
-              const newMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = newMaxScroll + 100;
+              if (scrollElement) {
+                const newMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+                scrollElement.scrollTop = newMaxScroll + 100;
+              }
             }, 5);
             
             // And one more time to be absolutely sure
             setTimeout(() => {
-              const finalMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-              scrollElement.scrollTop = finalMaxScroll + 100;
+              if (scrollElement) {
+                const finalMaxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+                scrollElement.scrollTop = finalMaxScroll + 100;
+              }
             }, 20);
           }
         }
@@ -1170,11 +1174,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         // Also try scrollIntoView on the last message as backup
         if (lastMessageRef.current) {
           setTimeout(() => {
-          lastMessageRef.current.scrollIntoView({ 
-              behavior: 'instant',
-              block: 'end',
-              inline: 'nearest'
-          });
+            // Check again if ref is still valid after timeout
+            if (lastMessageRef.current) {
+              lastMessageRef.current.scrollIntoView({ 
+                behavior: 'instant',
+                block: 'end',
+                inline: 'nearest'
+              });
+            }
           }, isStreaming ? 10 : 20);
         }
       }

@@ -92,8 +92,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     const newChat = createNewThread(toolId);
     console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
     console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
-    setChats(prevChats => [newChat, ...prevChats]);
-    setCurrentChat(newChat);
+    
+    // Use callback to ensure chats array is updated before setting current chat
+    setChats(prevChats => {
+      const updatedChats = [newChat, ...prevChats];
+      // Set current chat after chats array is updated
+      setTimeout(() => {
+        setCurrentChat(newChat);
+      }, 0);
+      return updatedChats;
+    });
+    
     setSelectedTool(toolId);
     setIsMobileOpen(false);
   };

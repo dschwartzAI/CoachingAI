@@ -246,11 +246,11 @@ export default function ChatLayout() {
               setCurrentChatWithTracking(selectedChat);
             }
           } else if (!currentChat) {
-            // No URL parameter, prioritize the most recent regular chat (non-tool) over tool-based chats
+            // No current chat, select the most recent one
             const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
             const selectedChat = mostRecentRegularChat || formattedThreads[0];
             
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to most recent:', {
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No current chat, setting to most recent:', {
               id: selectedChat.id,
               title: selectedChat.title,
               tool_id: selectedChat.tool_id,
@@ -259,7 +259,17 @@ export default function ChatLayout() {
             });
             setCurrentChatWithTracking(selectedChat);
           } else {
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
+            // We have a current chat - keep it if it exists in threads, otherwise don't override
+            const currentChatExists = formattedThreads.find(thread => thread.id === currentChat.id);
+            
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Existing current chat status:', {
+              id: currentChat?.id,
+              foundInThreads: currentChatExists ? 'yes' : 'no',
+              action: currentChatExists ? 'keeping' : 'keeping-anyway-might-be-new'
+            });
+            
+            // Don't automatically override current chat - let it stay even if it's new
+            // This prevents new chats from being overridden by the most recent saved chat
           }
         } else {
           // No threads found, create a default chat
@@ -291,33 +301,7 @@ export default function ChatLayout() {
     }
   }, [user?.id, searchParams, toast]);
 
-  // Handle URL parameter changes for chat navigation
-  useEffect(() => {
-    const urlChatId = searchParams.get('chatId');
-    
-    if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] URL parameter change detected:', {
-      urlChatId,
-      currentChatId: currentChat?.id,
-      hasChats: chats.length > 0
-    });
-    
-    // Only process if we have chats loaded and the URL chat is different from current
-    if (urlChatId && chats.length > 0 && currentChat?.id !== urlChatId) {
-      const targetChat = chats.find(chat => chat.id === urlChatId);
-      if (targetChat) {
-        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Switching to chat from URL:', {
-          id: targetChat.id,
-          title: targetChat.title
-        });
-        setCurrentChat(targetChat); // Use setCurrentChat directly to avoid URL update loop
-      } else {
-        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat from URL not found in loaded chats:', {
-          urlChatId,
-          availableChats: chats.map(c => c.id)
-        });
-      }
-    }
-  }, [searchParams, chats, currentChat?.id]);
+
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {
