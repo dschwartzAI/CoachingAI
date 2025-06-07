@@ -90,46 +90,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
 
   const handleNewChat = (toolId = null) => {
     const newChat = createNewThread(toolId);
-    console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
-    console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
-    
-    // Add chat to array first
+    console.log(`[Sidebar] Creating new chat with toolId: ${toolId}`);
     setChats(prevChats => [newChat, ...prevChats]);
-    
-    // Set current chat immediately - this will update URL properly
     setCurrentChat(newChat);
-    
     setSelectedTool(toolId);
     setIsMobileOpen(false);
-  };
-
-  const handleNewJamesBotChat = () => {
-    console.log('[Sidebar] Creating new JamesBot chat - clearing URL first');
-    
-    // Clear URL parameters first to prevent conflicts
-    window.history.replaceState({}, '', window.location.pathname);
-    
-    // Create new chat with unique properties to ensure it's truly new
-    const newChat = createNewThread(null);
-    
-    // Mark it as a new chat to prevent URL parameter handling from overriding it
-    newChat.isNewChat = true;
-    
-    console.log('[Sidebar] Created new JamesBot chat object:', JSON.stringify(newChat));
-    
-    // Add chat to array first
-    setChats(prevChats => [newChat, ...prevChats]);
-    
-    // Set current chat without URL update initially
-    setCurrentChat(newChat);
-    
-    setSelectedTool(null);
-    setIsMobileOpen(false);
-    
-    // Update URL after a short delay to prevent conflicts
-    setTimeout(() => {
-      window.history.replaceState({}, '', `/?chatId=${newChat.id}`);
-    }, 100);
   };
 
   const handleToolClick = (toolId) => {
@@ -307,10 +272,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
                   className="w-full justify-start min-h-[44px] text-sm touch-target"
-                  onClick={handleNewJamesBotChat}
+                  onClick={() => handleNewChat(null)}
                   onTouchEnd={(e) => {
                     e.preventDefault();
-                    handleNewJamesBotChat();
+                    handleNewChat(null);
                   }}
                 >
                   <MessagesSquare className="h-3.5 w-3.5 mr-1.5" />

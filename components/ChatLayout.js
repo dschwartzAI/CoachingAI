@@ -217,17 +217,28 @@ export default function ChatLayout() {
           };
         });
 
-        setChatsSafely(formattedThreads);
+        // Preserve the new client-side chat if it doesn't exist in the database yet.
+        // This prevents the new chat from being overwritten by the database load.
+        let finalThreads = [...formattedThreads];
+        const isNewChat = currentChat && !isValidUUID(currentChat.id);
+        const newChatInDb = currentChat && formattedThreads.some(t => t.id === currentChat.id);
+
+        if (isNewChat && !newChatInDb) {
+          console.log('[ChatLayout] Preserving new client-side chat:', currentChat.id);
+          finalThreads = [currentChat, ...formattedThreads];
+        }
+
+        setChatsSafely(finalThreads);
         
         // Set current chat based on URL parameter or history
-        if (formattedThreads.length > 0) {
+        if (finalThreads.length > 0) {
           const urlChatId = searchParams.get('chatId');
           
           if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] URL chatId parameter:', urlChatId);
           
           if (urlChatId) {
             // Try to find the chat specified in URL
-            const targetChat = formattedThreads.find(thread => thread.id === urlChatId);
+            const targetChat = finalThreads.find(thread => thread.id === urlChatId);
             if (targetChat) {
               if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat from URL parameter:', {
                 id: targetChat.id,
@@ -238,17 +249,17 @@ export default function ChatLayout() {
             } else {
               if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat from URL not found, falling back to most recent:', {
                 urlChatId,
-                availableChats: formattedThreads.map(t => t.id)
+                availableChats: finalThreads.map(t => t.id)
               });
               // URL chat not found, fall back to most recent
-              const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
-              const selectedChat = mostRecentRegularChat || formattedThreads[0];
+              const mostRecentRegularChat = finalThreads.find(thread => !thread.tool_id);
+              const selectedChat = mostRecentRegularChat || finalThreads[0];
               setCurrentChatWithTracking(selectedChat);
             }
-          } else if (!currentChat) {
-            // No current chat, select the most recent one
-            const mostRecentRegularChat = formattedThreads.find(thread => !thread.tool_id);
-            const selectedChat = mostRecentRegularChat || formattedThreads[0];
+          } else if (!currentChat || !finalThreads.some(t => t.id === currentChat.id)) {
+            // No current chat OR current chat is no longer in the list, select the most recent one
+            const mostRecentRegularChat = finalThreads.find(thread => !thread.tool_id);
+            const selectedChat = mostRecentRegularChat || finalThreads[0];
             
             if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No current chat, setting to most recent:', {
               id: selectedChat.id,
@@ -258,24 +269,6 @@ export default function ChatLayout() {
               wasPrioritized: !!mostRecentRegularChat
             });
             setCurrentChatWithTracking(selectedChat);
-          } else if (!currentChat.isNewChat) {
-            // We have a current chat - keep it if it exists in threads, or if it's not a new chat
-            const currentChatExists = formattedThreads.find(thread => thread.id === currentChat.id);
-            
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Existing current chat status:', {
-              id: currentChat?.id,
-              foundInThreads: currentChatExists ? 'yes' : 'no',
-              action: currentChatExists ? 'keeping' : 'keeping-anyway-might-be-new'
-            });
-            
-            // Don't automatically override current chat - let it stay even if it's new
-            // This prevents new chats from being overridden by the most recent saved chat
-          } else {
-            // Current chat is marked as new - don't override it with URL parameter handling
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Current chat is new, not overriding:', {
-              id: currentChat?.id,
-              isNewChat: currentChat?.isNewChat
-            });
           }
         } else {
           // No threads found, create a default chat
