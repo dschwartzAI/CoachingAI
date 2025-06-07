@@ -98,7 +98,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       const updatedChats = [newChat, ...prevChats];
       // Set current chat after chats array is updated
       setTimeout(() => {
-        setCurrentChat(newChat);
+        setCurrentChat(newChat, { skipUrl: true });
       }, 0);
       return updatedChats;
     });

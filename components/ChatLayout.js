@@ -49,7 +49,8 @@ export default function ChatLayout() {
   };
 
   // Use a more robust chat setter that handles ID changes
-  const setCurrentChatWithTracking = (chat) => {
+  const setCurrentChatWithTracking = (chat, options = {}) => {
+    const { skipUrl = false } = options;
     if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat:', {
       chatId: chat?.id,
       isValidUUID: chat?.id ? isValidUUID(chat.id) : false,
@@ -72,8 +73,10 @@ export default function ChatLayout() {
     
     setCurrentChat(chat);
     
-    // Update URL with new chat ID
-    updateURLWithChatId(chat?.id);
+    // Update URL with new chat ID unless skipped
+    if (!skipUrl) {
+      updateURLWithChatId(chat?.id);
+    }
   };
   
   // Enhanced chats setter with deduplication and ID tracking

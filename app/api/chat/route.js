@@ -33,7 +33,19 @@ const MIN_SPLIT_LENGTH = 80;   // Ensure we don't create micro-chunks
  * at natural breakpoints (sentences, paragraphs, questions)
  */
 function splitLongMessage(message) {
-  if (!message || message.length <= MAX_MESSAGE_LENGTH) {
+  if (!message) return [message];
+
+  // Always split by paragraph breaks first to improve readability, even for shorter messages
+  const initialParagraphChunks = message.split(/\n{2,}/).map(chunk => chunk.trim()).filter(Boolean);
+
+  // If we have multiple paragraphs already, and none exceed the max length, return them directly
+  const allParagraphsShort = initialParagraphChunks.every(p => p.length <= MAX_MESSAGE_LENGTH);
+  if (initialParagraphChunks.length > 1 && allParagraphsShort) {
+    return initialParagraphChunks;
+  }
+
+  // If message is short enough and has no long paragraph, keep as single chunk
+  if (message.length <= MAX_MESSAGE_LENGTH) {
     return [message];
   }
 
