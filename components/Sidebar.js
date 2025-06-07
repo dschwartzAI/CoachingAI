@@ -93,15 +93,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
     console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
     
-    // Use callback to ensure chats array is updated before setting current chat
-    setChats(prevChats => {
-      const updatedChats = [newChat, ...prevChats];
-      // Set current chat after chats array is updated
-      setTimeout(() => {
-        setCurrentChat(newChat, { skipUrl: true });
-      }, 0);
-      return updatedChats;
-    });
+    // Add chat to array first
+    setChats(prevChats => [newChat, ...prevChats]);
+    
+    // Set current chat immediately - this will update URL properly
+    setCurrentChat(newChat);
     
     setSelectedTool(toolId);
     setIsMobileOpen(false);
