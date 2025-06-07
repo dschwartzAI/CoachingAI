@@ -258,8 +258,8 @@ export default function ChatLayout() {
               wasPrioritized: !!mostRecentRegularChat
             });
             setCurrentChatWithTracking(selectedChat);
-          } else {
-            // We have a current chat - keep it if it exists in threads, otherwise don't override
+          } else if (!currentChat.isNewChat) {
+            // We have a current chat - keep it if it exists in threads, or if it's not a new chat
             const currentChatExists = formattedThreads.find(thread => thread.id === currentChat.id);
             
             if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Existing current chat status:', {
@@ -270,6 +270,12 @@ export default function ChatLayout() {
             
             // Don't automatically override current chat - let it stay even if it's new
             // This prevents new chats from being overridden by the most recent saved chat
+          } else {
+            // Current chat is marked as new - don't override it with URL parameter handling
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Current chat is new, not overriding:', {
+              id: currentChat?.id,
+              isNewChat: currentChat?.isNewChat
+            });
           }
         } else {
           // No threads found, create a default chat

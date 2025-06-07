@@ -103,6 +103,35 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     setIsMobileOpen(false);
   };
 
+  const handleNewJamesBotChat = () => {
+    console.log('[Sidebar] Creating new JamesBot chat - clearing URL first');
+    
+    // Clear URL parameters first to prevent conflicts
+    window.history.replaceState({}, '', window.location.pathname);
+    
+    // Create new chat with unique properties to ensure it's truly new
+    const newChat = createNewThread(null);
+    
+    // Mark it as a new chat to prevent URL parameter handling from overriding it
+    newChat.isNewChat = true;
+    
+    console.log('[Sidebar] Created new JamesBot chat object:', JSON.stringify(newChat));
+    
+    // Add chat to array first
+    setChats(prevChats => [newChat, ...prevChats]);
+    
+    // Set current chat without URL update initially
+    setCurrentChat(newChat);
+    
+    setSelectedTool(null);
+    setIsMobileOpen(false);
+    
+    // Update URL after a short delay to prevent conflicts
+    setTimeout(() => {
+      window.history.replaceState({}, '', `/?chatId=${newChat.id}`);
+    }, 100);
+  };
+
   const handleToolClick = (toolId) => {
     console.log('[Sidebar] Tool clicked:', toolId);
     const existingChat = chats.find(chat => chat.tool_id === toolId && chat.messages.length === 0);
@@ -278,10 +307,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                 <Button
                   variant={!selectedTool ? "secondary" : "ghost"}
                   className="w-full justify-start min-h-[44px] text-sm touch-target"
-                  onClick={() => handleNewChat(null)}
+                  onClick={handleNewJamesBotChat}
                   onTouchEnd={(e) => {
                     e.preventDefault();
-                    handleNewChat(null);
+                    handleNewJamesBotChat();
                   }}
                 >
                   <MessagesSquare className="h-3.5 w-3.5 mr-1.5" />
