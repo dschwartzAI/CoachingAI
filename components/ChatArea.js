@@ -1804,187 +1804,195 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
   return (
     <div className="flex flex-col h-full max-w-full">
-      {/* Chat header - added responsive padding */}
-      <div className="border-b p-3 sm:p-4 flex items-center justify-between sticky top-0 bg-background z-10">
-        <div className="flex items-center space-x-2">
+      {/* Chat header - left-aligned title */}
+      <div className="border-b p-3 sm:p-4 flex items-center sticky top-0 bg-background z-10">
+        <div className="flex items-center space-x-2 w-full px-4 sm:px-6 lg:px-8">
           <div className="font-semibold">
             {currentChat && currentChat.title ? (
-              <span className="text-sm sm:text-base">{currentChat.title}</span>
+              <span className="text-base sm:text-lg">{currentChat.title}</span>
             ) : (
-              <span className="text-sm sm:text-base">New Conversation</span>
+              <span className="text-base sm:text-lg">New Conversation</span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Messages container - updated with responsive spacing */}
+      {/* Messages container - updated with responsive spacing and max-width constraint */}
       <ScrollArea 
         ref={scrollAreaRef} 
-        className="flex-1 overflow-y-auto px-2 sm:px-4"
+        className="flex-1 overflow-y-auto"
       >
-        <div className="flex flex-col space-y-3 sm:space-y-6 py-4 sm:py-6 mb-16 sm:mb-20">
-          {/* First message or empty state when no messages */}
-          {!currentChat?.messages?.length ? (
-            <div className="flex items-center justify-center h-[calc(100vh-10rem)]">
-              <div className="text-center space-y-3 sm:space-y-6 max-w-md px-4">
-                <h3 className="text-lg sm:text-xl font-semibold">
-                  {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
-                </h3>
-                <p className="text-sm sm:text-base text-muted-foreground">
-                  {selectedTool 
-                    ? TOOLS[selectedTool].description
-                    : "Ask me anything related to your business."}
-                </p>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8 pb-32">
+            {/* First message or empty state when no messages */}
+            {!currentChat?.messages?.length ? (
+              <div className="flex items-center justify-center min-h-[60vh]">
+                <div className="text-center space-y-3 sm:space-y-6 max-w-md">
+                  <h3 className="text-xl sm:text-2xl font-semibold">
+                    {selectedTool ? TOOLS[selectedTool].name : "Start a New Conversation"}
+                  </h3>
+                  <p className="text-base sm:text-lg text-muted-foreground">
+                    {selectedTool 
+                      ? TOOLS[selectedTool].description
+                      : "Ask me anything related to your business."}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            currentChat.messages
-              .filter((message) => {
-                // Filter out document generation status messages if document is already complete
-                const isGenerationStatus = typeof message.content === 'string' && 
-                  message.content.includes('document-generation-status');
-                
-                if (isGenerationStatus) {
-                  // Check if there are any completed document messages in the chat
-                  const hasCompletedDocuments = currentChat.messages.some(msg => 
-                    isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
-                  );
+            ) : (
+              currentChat.messages
+                .filter((message) => {
+                  // Filter out document generation status messages if document is already complete
+                  const isGenerationStatus = typeof message.content === 'string' && 
+                    message.content.includes('document-generation-status');
                   
-                  // Also check metadata for completion
-                  const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
-                    currentChat.metadata?.isGeneratingDocument === false;
-                  
-                  // Filter out generation status if document is complete
-                  if (hasCompletedDocuments || isDocumentComplete) {
-                    console.log('[ChatArea] Filtering out generation status message - document is complete');
-                    return false;
+                  if (isGenerationStatus) {
+                    // Check if there are any completed document messages in the chat
+                    const hasCompletedDocuments = currentChat.messages.some(msg => 
+                      isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
+                    );
+                    
+                    // Also check metadata for completion
+                    const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
+                      currentChat.metadata?.isGeneratingDocument === false;
+                    
+                    // Filter out generation status if document is complete
+                    if (hasCompletedDocuments || isDocumentComplete) {
+                      console.log('[ChatArea] Filtering out generation status message - document is complete');
+                      return false;
+                    }
                   }
-                }
-                
-                return true;
-              })
-              .map((message, index, filteredArray) => {
-                // Check if this is the last message in the filtered array
-                const isLastMessage = index === filteredArray.length - 1;
-                
-                return (
-                  <div
-                    key={message.id || `message-${index}`}
-                    className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"} `}
-                    ref={isLastMessage ? lastMessageRef : null}
-                  >
-                    {/* Message bubble - updated with responsive padding */}
+                  
+                  return true;
+                })
+                .map((message, index, filteredArray) => {
+                  // Check if this is the last message in the filtered array
+                  const isLastMessage = index === filteredArray.length - 1;
+                  
+                  return (
                     <div
-                      className={`
-                        flex items-start gap-2 sm:gap-3 max-w-[90%] sm:max-w-[85%] 
-                        ${message.role === "user" ? "flex-row-reverse" : ""}
-                      `}
+                      key={message.id || `message-${index}`}
+                      className={`group relative ${message.role === "user" ? "flex justify-end" : ""}`}
+                      ref={isLastMessage ? lastMessageRef : null}
                     >
-                      {message.role === "user" ? (
-                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
-                          <AvatarImage src="" alt="User" />
-                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium">
-                            {user?.email?.charAt(0).toUpperCase() || "U"}
-                          </div>
-                        </Avatar>
-                      ) : (
-                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 mt-0.5">
-                          <AvatarImage src="" alt="Assistant" />
-                          <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
-                            J
-                          </div>
-                        </Avatar>
-                      )}
-
-                      <div
-                        className={`
-                          relative p-3 sm:p-4 rounded-lg text-sm sm:text-base space-y-1.5
-                          ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}
-                        `}
-                      >
-                        {message.is_thinking ? (
-                          <LoadingMessage content={message.content} role={message.role} />
+                      {/* Message content with avatar - constrained width and proper alignment */}
+                      <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
+                        {/* Avatar */}
+                        {message.role === "user" ? (
+                          <Avatar className="h-8 w-8 flex-shrink-0">
+                            <AvatarImage src="" alt="User" />
+                            <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium text-sm">
+                              {user?.email?.charAt(0).toUpperCase() || "U"}
+                            </div>
+                          </Avatar>
                         ) : (
-                          // Conditional rendering for different message types
-                          <>
-                            {isDocumentMessage(message) ? (
-                              <DocumentMessage message={message} />
-                            ) : isLandingPageMessage(message) ? (
-                              <LandingPageMessage content={message.content} />
-                            ) : (
-                              // Check for HTML content
-                              message.content.includes('<a href') ? (
-                                <HTMLContent content={message.content} />
-                              ) : (
-                                <MarkdownMessage content={message.content} />
-                              )
-                            )}
-                          </>
+                          <Avatar className="h-8 w-8 flex-shrink-0">
+                            <AvatarImage src="" alt="Assistant" />
+                            <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
+                              J
+                            </div>
+                          </Avatar>
                         )}
+
+                        {/* Message content */}
+                        <div className={`flex-1 overflow-hidden ${message.role === "user" ? "flex justify-end" : ""}`}>
+                          <div
+                            className={`
+                              inline-block px-4 py-2.5 rounded-lg text-base leading-relaxed
+                              ${message.role === "user" 
+                                ? "bg-primary text-primary-foreground max-w-[85%]" 
+                                : "bg-muted text-foreground prose prose-base max-w-none prose-p:my-1.5 prose-headings:my-3 prose-pre:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5"
+                              }
+                            `}
+                          >
+                            {message.is_thinking ? (
+                              <LoadingMessage content={message.content} role={message.role} />
+                            ) : (
+                              // Conditional rendering for different message types
+                              <>
+                                {isDocumentMessage(message) ? (
+                                  <DocumentMessage message={message} />
+                                ) : isLandingPageMessage(message) ? (
+                                  <LandingPageMessage content={message.content} />
+                                ) : (
+                                  // Check for HTML content
+                                  message.content.includes('<a href') ? (
+                                    <HTMLContent content={message.content} />
+                                  ) : (
+                                    <MarkdownMessage content={message.content} />
+                                  )
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
+                  );
+                })
+            )}
+
+            {/* Show n8n document generation loader */}
+            {isWaitingForN8n && (
+              <div className="flex justify-center py-8">
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    <span className="text-base text-muted-foreground font-medium">Generating document...</span>
                   </div>
-                );
-              })
-          )}
-
-          {/* Show n8n document generation loader */}
-          {isWaitingForN8n && (
-            <div className="flex items-center justify-center py-6">
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Generating document...</span>
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    This may take up to 1-3 minutes. Your document is being created based on your answers.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground max-w-xs text-center">
-                  This may take up to 1-3 minutes. Your document is being created based on your answers.
-                </p>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Loading state for AI response */}
-          {isResponseLoading && !isWaitingForN8n && (
-            <div className="flex items-start gap-3">
-              <Avatar className="h-9 w-9 mt-0.5">
-                <AvatarImage src="" alt="Assistant" />
-                <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium">
-                  J
+            {/* Loading state for AI response */}
+            {isResponseLoading && !isWaitingForN8n && (
+              <div className="group relative">
+                <div className="flex gap-3 max-w-full">
+                  <Avatar className="h-8 w-8 flex-shrink-0">
+                    <AvatarImage src="" alt="Assistant" />
+                    <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
+                      J
+                    </div>
+                  </Avatar>
+                  <div className="flex-1 overflow-hidden">
+                    <div className="inline-block bg-muted px-4 py-2.5 rounded-lg">
+                      <LoadingMessage role="assistant" />
+                    </div>
+                  </div>
                 </div>
-              </Avatar>
-              <div className="bg-muted p-4 rounded-lg">
-                <LoadingMessage role="assistant" />
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </ScrollArea>
 
-      {/* Input area - made responsive for mobile devices */}
-      <div className="absolute bottom-0 left-0 right-0 md:left-[300px] bg-background border-t p-3 sm:p-4">
-        <form onSubmit={handleSubmit} className="flex flex-col space-y-2 mobile-input-wrapper">
-          <div className="relative">
+      {/* Input area - centered with max-width constraint */}
+      <div className="fixed bottom-0 left-0 right-0 md:left-[300px] bg-background border-t">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <form onSubmit={handleSubmit} className="relative">
             <Textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="resize-none pr-12 py-3 max-h-32 min-h-[52px] text-base font-medium mobile-input"
+              className="w-full resize-none pr-12 pl-4 py-3 rounded-lg border shadow-sm focus:ring-2 focus:ring-primary/20 max-h-32 min-h-[52px] text-base"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
-              style={{ fontSize: '16px' }} /* Prevent iOS zoom by ensuring min 16px font */
+              style={{ fontSize: '16px' }} /* Prevent iOS zoom */
             />
             <Button
               type="submit"
               size="icon"
-              className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
+              className="absolute right-2 bottom-2 h-8 w-8 rounded-full shadow-sm"
               disabled={!input.trim() || isLoading || isResponseLoading || isWaitingForN8n}
             >
               <ArrowUp className="h-4 w-4" />
             </Button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );

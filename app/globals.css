@@ -109,3 +109,109 @@
     }
   }
 }
+
+/* Chat-specific styles for ChatGPT-like appearance */
+@layer components {
+  /* Prose styling for assistant messages */
+  .prose {
+    @apply text-foreground;
+  }
+  
+  .prose p {
+    @apply leading-relaxed text-base;
+  }
+  
+  .prose pre {
+    @apply bg-black/5 dark:bg-white/5 rounded-md p-3 overflow-x-auto text-sm;
+  }
+  
+  .prose code {
+    @apply bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-sm;
+  }
+  
+  .prose pre code {
+    @apply bg-transparent p-0;
+  }
+  
+  .prose ul, .prose ol {
+    @apply pl-6 text-base;
+  }
+  
+  .prose li {
+    @apply leading-relaxed;
+  }
+  
+  .prose blockquote {
+    @apply border-l-4 border-muted-foreground/20 pl-4 italic text-base;
+  }
+  
+  .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+    @apply font-semibold;
+  }
+  
+  .prose h1 {
+    @apply text-2xl;
+  }
+  
+  .prose h2 {
+    @apply text-xl;
+  }
+  
+  .prose h3 {
+    @apply text-lg;
+  }
+  
+  /* Message hover effects */
+  .group:hover .message-actions {
+    @apply opacity-100;
+  }
+  
+  .message-actions {
+    @apply opacity-0 transition-opacity duration-200;
+  }
+  
+  /* Smooth scrolling for chat area */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+  
+  /* Better focus states */
+  textarea:focus {
+    @apply outline-none;
+  }
+  
+  /* Loading dots animation */
+  @keyframes loading-dots {
+    0%, 20% {
+      content: '.';
+    }
+    40% {
+      content: '..';
+    }
+    60%, 100% {
+      content: '...';
+    }
+  }
+  
+  .loading-dots::after {
+    content: '.';
+    animation: loading-dots 1.5s infinite;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  /* Reduce padding on mobile */
+  .max-w-3xl {
+    @apply px-3;
+  }
+}
+
+/* Dark mode adjustments */
+.dark .prose pre {
+  @apply bg-white/5;
+}
+
+.dark .prose code {
+  @apply bg-white/5;
+}
