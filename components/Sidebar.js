@@ -81,6 +81,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     setCurrentChat(newChat);
     setSelectedTool(toolId);
     setIsMobileOpen(false);
+    router.push('/chat/' + newChat.id);
   };
 
   const handleToolClick = (toolId) => {
@@ -88,6 +89,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     if (existingChat) {
       setCurrentChat(existingChat);
       setSelectedTool(toolId);
+      router.push('/chat/' + existingChat.id);
     } else {
       handleNewChat(toolId);
     }
@@ -258,6 +260,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                         onClick={() => {
                           setCurrentChat(chat);
                           setSelectedTool(chat.tool_id || null);
+                          router.push('/chat/' + chat.id);
                         }}
                       >
                         {getChatIcon(chat)}
