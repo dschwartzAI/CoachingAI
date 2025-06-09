@@ -22,6 +22,8 @@ export default function ChatLayout() {
   const [selectedTool, setSelectedTool] = useState(null);
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
+  const [isNewChat, setIsNewChat] = useState(false);
+  const [isCurrentChatToolInit, setIsCurrentChatToolInit] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
@@ -93,6 +95,8 @@ export default function ChatLayout() {
     if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Creating a default chat');
     const defaultChat = createNewThread(null); // Regular JamesBot chat
     defaultChat.isTemporary = false; // Make it persistent
+    defaultChat.isNewChat = true;
+    setIsNewChat(true);
     setChatsSafely([defaultChat]);
     setCurrentChatWithTracking(defaultChat);
     return defaultChat;
@@ -163,6 +167,8 @@ export default function ChatLayout() {
         if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Loading threads for user:', user.id);
         setIsLoading(true);
         
+        const preservedChats = chats.filter(c => c.isNewChat || c.isCurrentChatToolInit);
+
         const threads = await getThreads(user.id);
         
         if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Threads loaded successfully:', {
@@ -199,7 +205,7 @@ export default function ChatLayout() {
           };
         });
 
-        setChatsSafely(formattedThreads);
+        setChatsSafely([...preservedChats, ...formattedThreads]);
         
         // Set current chat based on history or create a new one
         if (formattedThreads.length > 0) {
@@ -254,6 +260,14 @@ export default function ChatLayout() {
     }
   }, [currentChat]); // This effect runs when currentChat changes
 
+  // Clear new chat/tool init flags once a valid ID is present
+  useEffect(() => {
+    if (currentChat && isValidUUID(currentChat.id)) {
+      setIsNewChat(false);
+      setIsCurrentChatToolInit(false);
+    }
+  }, [currentChat?.id]);
+
   // Handle profile completion
   const handleProfileComplete = () => {
     setProfileComplete(true);
@@ -274,13 +288,15 @@ export default function ChatLayout() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar 
+      <Sidebar
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
         chats={chats}
         setChats={setChatsSafely}
         currentChat={currentChat}
         setCurrentChat={setCurrentChatWithTracking}
+        setIsNewChat={setIsNewChat}
+        setIsCurrentChatToolInit={setIsCurrentChatToolInit}
         isLoading={isLoading}
         onShowProfile={() => setShowProfileModal(true)}
         profileComplete={profileComplete}
