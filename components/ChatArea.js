@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -428,7 +428,7 @@ function isLandingPageMessage(message) {
   return hasHTMLCode;
 }
 
-export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
+export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats, onBookmark }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
@@ -447,6 +447,33 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
   const { toast } = useToast();
+
+  // Helper to append streamed text chunks to the last assistant message
+  const appendStreamingChunk = (tempChatId, finalChatId, content) => {
+    setCurrentChat(prev => {
+      if (!prev || (prev.id !== tempChatId && prev.id !== finalChatId)) return prev;
+      const newId = finalChatId || prev.id;
+      const msgs = [...prev.messages];
+      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      } else {
+        msgs.push({ role: 'assistant', content, isStreaming: true });
+      }
+      return { ...prev, id: newId, messages: msgs };
+    });
+
+    setChats(prev => prev.map(chat => {
+      if (chat.id !== tempChatId && chat.id !== finalChatId) return chat;
+      const newId = finalChatId || chat.id;
+      const msgs = [...chat.messages];
+      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      } else {
+        msgs.push({ role: 'assistant', content, isStreaming: true });
+      }
+      return { ...chat, id: newId, messages: msgs };
+    }));
+  };
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -830,13 +857,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        const contentType = response.headers.get('Content-Type');
        let data;
        
-       if (false && contentType && contentType.includes('text/plain')) {
+       if (contentType && contentType.includes('text/plain')) {
            // Handle streaming response for regular chat
            console.log("[CHAT_DEBUG] Handling text/plain streaming response");
            const reader = response.body.getReader();
            const decoder = new TextDecoder();
            let responseText = '';
-           
+           const finalId = response.headers.get('X-Chat-Id') || tempId;
+
            // Read the streamed response
            try {
              while (true) {
@@ -845,31 +873,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                  const chunk = decoder.decode(value, { stream: true });
                  console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
                  responseText += chunk;
-                 
+
                  // Update the UI with each chunk as it arrives
-                 const tempAssistantMessage = { role: 'assistant', content: responseText, isStreaming: true };
-                 const updatedChatTemp = {
-                   ...chatToUpdate,
-                   id: response.headers.get('X-Chat-Id') || tempId,
-                   messages: [...updatedMessages, tempAssistantMessage],
-                 };
-                 setCurrentChat(updatedChatTemp);
+                 appendStreamingChunk(tempId, finalId, responseText);
              }
-             
+
              // Final decoding to flush any remaining bytes
              const finalText = decoder.decode();
-             if (finalText) responseText += finalText;
-             
+             if (finalText) {
+               responseText += finalText;
+               appendStreamingChunk(tempId, finalId, responseText);
+             }
+
              console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
            } catch (streamError) {
              console.error("[CHAT_DEBUG] Stream reading error:", streamError);
              responseText += "\n\nAn error occurred while reading the response.";
+             appendStreamingChunk(tempId, finalId, responseText);
            }
-           
+
            // Create a simple data object that mimics the structure of the JSON response
            data = {
                message: responseText,
-               chatId: response.headers.get('X-Chat-Id') || currentChat.id,
+               chatId: finalId,
                isTextResponse: true // Flag to indicate this is a plain text response
            };
        } else {
@@ -1900,9 +1926,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   return (
                     <div
                       key={message.id || `message-${index}`}
+                      id={`message-${message.id}`}
                       className={`group relative ${message.role === "user" ? "flex justify-end" : ""}`}
                       ref={isLastMessage ? lastMessageRef : null}
                     >
+                      <div className="absolute top-1 right-1 message-actions">
+                        <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
+                          <Bookmark className="h-4 w-4" />
+                        </Button>
+                      </div>
                       {/* Message content with avatar - constrained width and proper alignment */}
                       <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
                         {/* Avatar */}

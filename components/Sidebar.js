@@ -44,7 +44,7 @@ const toolIcons = {
   'workshop-generator': PenTool
 };
 
-export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading, onShowProfile, profileComplete }) {
+export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading, onShowProfile, profileComplete, setIsNewChat, setIsCurrentChatToolInit }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const [expandedChats, setExpandedChats] = useState(false);
@@ -77,10 +77,17 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     const newChat = createNewThread(toolId);
     console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
     console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
+    newChat.isNewChat = true;
+    if (toolId) {
+      newChat.isCurrentChatToolInit = true;
+      if (setIsCurrentChatToolInit) setIsCurrentChatToolInit(true);
+    }
+    if (setIsNewChat) setIsNewChat(true);
     setChats(prevChats => [newChat, ...prevChats]);
     setCurrentChat(newChat);
     setSelectedTool(toolId);
     setIsMobileOpen(false);
+    router.push('/chat/' + newChat.id);
   };
 
   const handleToolClick = (toolId) => {
@@ -88,6 +95,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     if (existingChat) {
       setCurrentChat(existingChat);
       setSelectedTool(toolId);
+      router.push('/chat/' + existingChat.id);
     } else {
       handleNewChat(toolId);
     }
@@ -258,6 +266,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                         onClick={() => {
                           setCurrentChat(chat);
                           setSelectedTool(chat.tool_id || null);
+                          router.push('/chat/' + chat.id);
                         }}
                       >
                         {getChatIcon(chat)}

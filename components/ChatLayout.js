@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import ProfileModal from "./ProfileModal";
+import SnippetModal from "./SnippetModal";
 import { useAuth } from "./AuthProvider";
 import { getThreads, getUserProfile, isProfileComplete } from "@/lib/utils/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -18,17 +19,22 @@ const isValidUUID = (id) => {
   return uuidV4Pattern.test(id);
 };
 
-export default function ChatLayout() {
+export default function ChatLayout({ initialChatId } = {}) {
   const [selectedTool, setSelectedTool] = useState(null);
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
+  const [isNewChat, setIsNewChat] = useState(false);
+  const [isCurrentChatToolInit, setIsCurrentChatToolInit] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSnippetModal, setShowSnippetModal] = useState(false);
+  const [snippetMessage, setSnippetMessage] = useState(null);
   const [profileComplete, setProfileComplete] = useState(false);
   const [profileChecked, setProfileChecked] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const pathname = usePathname();
 
   // Keep track of temporary to permanent ID mappings
   const [idMappings, setIdMappings] = useState({});
@@ -93,6 +99,8 @@ export default function ChatLayout() {
     if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Creating a default chat');
     const defaultChat = createNewThread(null); // Regular JamesBot chat
     defaultChat.isTemporary = false; // Make it persistent
+    defaultChat.isNewChat = true;
+    setIsNewChat(true);
     setChatsSafely([defaultChat]);
     setCurrentChatWithTracking(defaultChat);
     return defaultChat;
@@ -163,6 +171,8 @@ export default function ChatLayout() {
         if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Loading threads for user:', user.id);
         setIsLoading(true);
         
+        const preservedChats = chats.filter(c => c.isNewChat || c.isCurrentChatToolInit);
+
         const threads = await getThreads(user.id);
         
         if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Threads loaded successfully:', {
@@ -199,7 +209,7 @@ export default function ChatLayout() {
           };
         });
 
-        setChatsSafely(formattedThreads);
+        setChatsSafely([...preservedChats, ...formattedThreads]);
         
         // Set current chat based on history or create a new one
         if (formattedThreads.length > 0) {
@@ -239,6 +249,25 @@ export default function ChatLayout() {
     }
   }, [user?.id, toast]);
 
+  // When chats are loaded, select chat based on initialChatId if provided
+  useEffect(() => {
+    if (initialChatId && chats.length > 0) {
+      const found = chats.find(c => c.id === initialChatId);
+      if (found && currentChat?.id !== found.id) {
+        setCurrentChatWithTracking(found);
+      }
+    }
+  }, [initialChatId, chats]);
+
+  // Redirect to chat route when currentChat changes
+  useEffect(() => {
+    if (currentChat?.id) {
+      if (pathname !== `/chat/${currentChat.id}`) {
+        router.replace(`/chat/${currentChat.id}`);
+      }
+    }
+  }, [currentChat?.id, pathname]);
+
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] useEffect for selectedTool sync triggered. currentChat:', currentChat ? { id: currentChat.id, tool_id: currentChat.tool_id, title: currentChat.title } : null);
@@ -254,6 +283,14 @@ export default function ChatLayout() {
     }
   }, [currentChat]); // This effect runs when currentChat changes
 
+  // Clear new chat/tool init flags once a valid ID is present
+  useEffect(() => {
+    if (currentChat && isValidUUID(currentChat.id)) {
+      setIsNewChat(false);
+      setIsCurrentChatToolInit(false);
+    }
+  }, [currentChat?.id]);
+
   // Handle profile completion
   const handleProfileComplete = () => {
     setProfileComplete(true);
@@ -261,6 +298,11 @@ export default function ChatLayout() {
       title: "Profile Complete!",
       description: "Your profile has been saved. We can now provide more personalized assistance.",
     });
+  };
+
+  const handleBookmarkMessage = (message) => {
+    setSnippetMessage(message);
+    setShowSnippetModal(true);
   };
 
   // If still loading auth or no user, show loading or nothing
@@ -274,25 +316,28 @@ export default function ChatLayout() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar 
+      <Sidebar
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
         chats={chats}
         setChats={setChatsSafely}
         currentChat={currentChat}
         setCurrentChat={setCurrentChatWithTracking}
+        setIsNewChat={setIsNewChat}
+        setIsCurrentChatToolInit={setIsCurrentChatToolInit}
         isLoading={isLoading}
         onShowProfile={() => setShowProfileModal(true)}
         profileComplete={profileComplete}
       />
       <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
-        <ChatArea 
+        <ChatArea
           selectedTool={selectedTool}
           currentChat={currentChat}
           setCurrentChat={setCurrentChatWithTracking}
           chats={chats}
           setChats={setChatsSafely}
           isLoading={isLoading}
+          onBookmark={handleBookmarkMessage}
         />
       </div>
       
@@ -301,6 +346,11 @@ export default function ChatLayout() {
         onOpenChange={setShowProfileModal}
         onProfileComplete={handleProfileComplete}
       />
+      <SnippetModal
+        open={showSnippetModal}
+        onOpenChange={setShowSnippetModal}
+        message={snippetMessage}
+      />
     </div>
   );
-} 
+}
