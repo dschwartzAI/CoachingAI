@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import ProfileModal from "./ProfileModal";
+import SnippetModal from "./SnippetModal";
 import { useAuth } from "./AuthProvider";
 import { getThreads, getUserProfile, isProfileComplete } from "@/lib/utils/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +25,8 @@ export default function ChatLayout() {
   const [currentChat, setCurrentChat] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSnippetModal, setShowSnippetModal] = useState(false);
+  const [snippetMessage, setSnippetMessage] = useState(null);
   const [profileComplete, setProfileComplete] = useState(false);
   const [profileChecked, setProfileChecked] = useState(false);
   const { user, loading: authLoading } = useAuth();
@@ -263,6 +266,11 @@ export default function ChatLayout() {
     });
   };
 
+  const handleBookmarkMessage = (message) => {
+    setSnippetMessage(message);
+    setShowSnippetModal(true);
+  };
+
   // If still loading auth or no user, show loading or nothing
   if (authLoading) {
     return <FullPageLoading />;
@@ -286,13 +294,14 @@ export default function ChatLayout() {
         profileComplete={profileComplete}
       />
       <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
-        <ChatArea 
+        <ChatArea
           selectedTool={selectedTool}
           currentChat={currentChat}
           setCurrentChat={setCurrentChatWithTracking}
           chats={chats}
           setChats={setChatsSafely}
           isLoading={isLoading}
+          onBookmark={handleBookmarkMessage}
         />
       </div>
       
@@ -301,6 +310,11 @@ export default function ChatLayout() {
         onOpenChange={setShowProfileModal}
         onProfileComplete={handleProfileComplete}
       />
+      <SnippetModal
+        open={showSnippetModal}
+        onOpenChange={setShowSnippetModal}
+        message={snippetMessage}
+      />
     </div>
   );
-} 
+}

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -428,7 +428,7 @@ function isLandingPageMessage(message) {
   return hasHTMLCode;
 }
 
-export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats }) {
+export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats, onBookmark }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
@@ -1871,9 +1871,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   return (
                     <div
                       key={message.id || `message-${index}`}
+                      id={`message-${message.id}`}
                       className={`group relative ${message.role === "user" ? "flex justify-end" : ""}`}
                       ref={isLastMessage ? lastMessageRef : null}
                     >
+                      <div className="absolute top-1 right-1 message-actions">
+                        <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
+                          <Bookmark className="h-4 w-4" />
+                        </Button>
+                      </div>
                       {/* Message content with avatar - constrained width and proper alignment */}
                       <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
                         {/* Avatar */}
