@@ -447,6 +447,33 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
 
+  // Helper to append streamed text chunks to the last assistant message
+  const appendStreamingChunk = (tempChatId, finalChatId, content) => {
+    setCurrentChat(prev => {
+      if (!prev || (prev.id !== tempChatId && prev.id !== finalChatId)) return prev;
+      const newId = finalChatId || prev.id;
+      const msgs = [...prev.messages];
+      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      } else {
+        msgs.push({ role: 'assistant', content, isStreaming: true });
+      }
+      return { ...prev, id: newId, messages: msgs };
+    });
+
+    setChats(prev => prev.map(chat => {
+      if (chat.id !== tempChatId && chat.id !== finalChatId) return chat;
+      const newId = finalChatId || chat.id;
+      const msgs = [...chat.messages];
+      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      } else {
+        msgs.push({ role: 'assistant', content, isStreaming: true });
+      }
+      return { ...chat, id: newId, messages: msgs };
+    }));
+  };
+
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
     console.log(`[ChatArea state check] isWaitingForN8n changed to: ${isWaitingForN8n}`);
@@ -829,13 +856,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
        const contentType = response.headers.get('Content-Type');
        let data;
        
-       if (false && contentType && contentType.includes('text/plain')) {
+       if (contentType && contentType.includes('text/plain')) {
            // Handle streaming response for regular chat
            console.log("[CHAT_DEBUG] Handling text/plain streaming response");
            const reader = response.body.getReader();
            const decoder = new TextDecoder();
            let responseText = '';
-           
+           const finalId = response.headers.get('X-Chat-Id') || tempId;
+
            // Read the streamed response
            try {
              while (true) {
@@ -844,31 +872,29 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                  const chunk = decoder.decode(value, { stream: true });
                  console.log("[CHAT_DEBUG] Stream chunk received:", chunk.substring(0, 50));
                  responseText += chunk;
-                 
+
                  // Update the UI with each chunk as it arrives
-                 const tempAssistantMessage = { role: 'assistant', content: responseText, isStreaming: true };
-                 const updatedChatTemp = {
-                   ...chatToUpdate,
-                   id: response.headers.get('X-Chat-Id') || tempId,
-                   messages: [...updatedMessages, tempAssistantMessage],
-                 };
-                 setCurrentChat(updatedChatTemp);
+                 appendStreamingChunk(tempId, finalId, responseText);
              }
-             
+
              // Final decoding to flush any remaining bytes
              const finalText = decoder.decode();
-             if (finalText) responseText += finalText;
-             
+             if (finalText) {
+               responseText += finalText;
+               appendStreamingChunk(tempId, finalId, responseText);
+             }
+
              console.log("[CHAT_DEBUG] Final streamed response:", responseText.substring(0, 100));
            } catch (streamError) {
              console.error("[CHAT_DEBUG] Stream reading error:", streamError);
              responseText += "\n\nAn error occurred while reading the response.";
+             appendStreamingChunk(tempId, finalId, responseText);
            }
-           
+
            // Create a simple data object that mimics the structure of the JSON response
            data = {
                message: responseText,
-               chatId: response.headers.get('X-Chat-Id') || currentChat.id,
+               chatId: finalId,
                isTextResponse: true // Flag to indicate this is a plain text response
            };
        } else {
