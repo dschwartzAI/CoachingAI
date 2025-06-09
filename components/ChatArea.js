@@ -446,6 +446,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
+  const { toast } = useToast();
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
@@ -1483,10 +1484,38 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   scrollToBottom();
                 }, 100);
                 
-                // TODO: Add notification system here
-                // This is where we would trigger a notification to let the user know
-                // their document is ready, even if they're not currently viewing this chat
-                console.log('[SSE Connect] Document ready - notification system would trigger here');
+                // Show browser notification if user has granted permission
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('Document Ready! 🎉', {
+                    body: 'Your document has been generated and is ready to view.',
+                    icon: '/favicon.ico',
+                    tag: 'document-ready',
+                    requireInteraction: false
+                  });
+                } else if ('Notification' in window && Notification.permission === 'default') {
+                  // Request permission if not yet granted or denied
+                  Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                      new Notification('Document Ready! 🎉', {
+                        body: 'Your document has been generated and is ready to view.',
+                        icon: '/favicon.ico',
+                        tag: 'document-ready',
+                        requireInteraction: false
+                      });
+                    }
+                  });
+                }
+                
+                // Also show a toast notification using the app's toast system
+                if (toast) {
+                  toast({
+                    title: "Document Ready! 🎉",
+                    description: "Your document has been generated successfully.",
+                    duration: 5000,
+                  });
+                }
+                
+                console.log('[SSE Connect] Document ready - notifications sent');
               })
               .catch(dbError => {
                 console.error('[SSE Connect] Error saving n8n result message to DB:', dbError);

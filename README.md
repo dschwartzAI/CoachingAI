@@ -120,8 +120,58 @@ Add the following variables to enable the memory features:
 
 - `OPENAI_API_KEY` – API key used when summarizing and embedding messages
 - `OPENAI_VECTOR_STORE_ID` – ID of your OpenAI vector store
+- `OPENAI_MODEL` – OpenAI model to use for chat completions (default: `gpt-4o-mini`)
 - `ALLOW_ANONYMOUS_CHATS` – set to `true` to allow chats without login (use
   `false` in production)
+
+## AI Features
+
+### Proactive Tool Suggestions
+
+The main "JamesBot" coaching chat now includes intelligent tool suggestion capabilities. When you ask questions or describe tasks, the AI analyzes your request and can proactively suggest using specialized tools when relevant:
+
+- **Hybrid Offer Creator** - Suggested when discussing offers, pricing, or packaging services
+- **Workshop Generator** - Suggested when talking about workshops, training, or educational content
+- **HighLevel Landing Page Generator** - Suggested when discussing landing pages or sales funnels
+
+The AI provides contextual suggestions without interrupting your flow, mentioning tools only when they would genuinely help with your current task.
+
+### Stateful Conversational Engine
+
+The Workshop Generator and Hybrid Offer Creator use an advanced conversational system that:
+
+- **Maintains Context** - Remembers all your answers within a session
+- **Asks Clarifying Questions** - Can request more details when needed
+- **Builds Progressively** - Each answer builds upon previous responses
+- **Handles Natural Language** - Understands conversational responses, not just structured data
+
+This creates a more natural, interview-style experience where the AI guides you through creating comprehensive documents step by step.
+
+## Available Tools
+
+### Workshop Generator
+Creates comprehensive workshop plans by guiding you through:
+- Participant outcomes and learning objectives
+- Target audience definition
+- Problem identification and solutions
+- Workshop duration and format
+- Topics, activities, and exercises
+- Resources and materials
+
+See [WORKSHOP_GENERATOR.md](WORKSHOP_GENERATOR.md) for detailed usage instructions.
+
+### Hybrid Offer Creator
+Builds detailed service offers by collecting:
+- High-level offer description
+- Target audience and their pain points
+- Your unique solution approach
+- Pricing structure and packages
+- Client results and testimonials
+
+See [HYBRID_OFFER_CREATOR.md](HYBRID_OFFER_CREATOR.md) for detailed usage instructions.
+
+### HighLevel Landing Page Generator
+Generates ready-to-use landing pages for the HighLevel platform. See [HIGHLEVEL_LANDING_PAGE_GENERATOR.md](HIGHLEVEL_LANDING_PAGE_GENERATOR.md) for detailed usage instructions.
 
 ## Database Migrations and Functions
 
