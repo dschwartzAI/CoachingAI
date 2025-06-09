@@ -5,7 +5,7 @@ import { usePostHog as usePostHogReact } from 'posthog-js/react'
 export function usePostHog() {
   const posthog = usePostHogReact()
 
-  const track = (event, properties = {}) => {
+  const trackEvent = (event, properties = {}) => {
     if (posthog) {
       posthog.capture(event, properties)
     }
@@ -36,7 +36,8 @@ export function usePostHog() {
   }
 
   return {
-    track,
+    trackEvent,
+    track: trackEvent,
     identify,
     reset,
     setPersonProperties,
