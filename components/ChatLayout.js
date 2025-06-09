@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import ProfileModal from "./ProfileModal";
@@ -18,7 +18,7 @@ const isValidUUID = (id) => {
   return uuidV4Pattern.test(id);
 };
 
-export default function ChatLayout() {
+export default function ChatLayout({ initialChatId } = {}) {
   const [selectedTool, setSelectedTool] = useState(null);
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
@@ -29,6 +29,7 @@ export default function ChatLayout() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const pathname = usePathname();
 
   // Keep track of temporary to permanent ID mappings
   const [idMappings, setIdMappings] = useState({});
@@ -238,6 +239,25 @@ export default function ChatLayout() {
       createDefaultChat();
     }
   }, [user?.id, toast]);
+
+  // When chats are loaded, select chat based on initialChatId if provided
+  useEffect(() => {
+    if (initialChatId && chats.length > 0) {
+      const found = chats.find(c => c.id === initialChatId);
+      if (found && currentChat?.id !== found.id) {
+        setCurrentChatWithTracking(found);
+      }
+    }
+  }, [initialChatId, chats]);
+
+  // Redirect to chat route when currentChat changes
+  useEffect(() => {
+    if (currentChat?.id) {
+      if (pathname !== `/chat/${currentChat.id}`) {
+        router.replace(`/chat/${currentChat.id}`);
+      }
+    }
+  }, [currentChat?.id, pathname]);
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {
