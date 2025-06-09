@@ -445,7 +445,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
-  const { track } = usePostHog();
+  const { trackEvent } = usePostHog();
 
   // Add this useEffect to track the isWaitingForN8n state
   useEffect(() => {
