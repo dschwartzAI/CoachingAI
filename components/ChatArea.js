@@ -776,6 +776,15 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         alert("Cannot send message: No active chat selected."); // User feedback
         return;
     }
+
+    // Track message attempt once we know there's a chat and input
+    if (trimmedInput) {
+      track('chat_message_sent', {
+        chatId: currentChat.id,
+        toolId: selectedTool,
+        length: trimmedInput.length
+      });
+    }
     
     // Prevent submission if loading
     if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
