@@ -37,6 +37,7 @@ import { createNewThread } from '@/lib/utils/thread';
 import { deleteThread } from '@/lib/utils/supabase';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { usePostHog } from '@/hooks/use-posthog';
 
 // Tool icons mapping
 const toolIcons = {
@@ -47,6 +48,7 @@ const toolIcons = {
 export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading, onShowProfile, profileComplete, setIsNewChat, setIsCurrentChatToolInit }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
+  const { track } = usePostHog();
   const [expandedChats, setExpandedChats] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const INITIAL_CHAT_COUNT = 6;
@@ -88,6 +90,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
     setSelectedTool(toolId);
     setIsMobileOpen(false);
     router.push('/chat/' + newChat.id);
+    track('chat_created', { chatId: newChat.id, toolId });
   };
 
   const handleToolClick = (toolId) => {
