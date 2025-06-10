@@ -85,6 +85,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           title: "Authentication Warning",
           description: "You appear to be using the app without being logged in. Your chats may not be saved.",
           variant: "destructive",
+          removeDelay: 10000,
         });
       }
     };
@@ -177,6 +178,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         title: "Error",
         description: `Failed to start the conversation: ${error.message}`,
         variant: "destructive",
+        removeDelay: 10000,
       });
       setError(error.message);
     } finally {
@@ -295,6 +297,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         title: "Error",
         description: `Failed to start a new chat: ${error.message}`,
         variant: "destructive",
+        removeDelay: 10000,
       });
       setError(error.message);
       return null;
@@ -384,7 +387,8 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         toast({
           variant: "destructive",
           title: "Error",
-          description: `Failed to get AI response: ${err.message}`
+          description: `Failed to get AI response: ${err.message}`,
+          removeDelay: 10000,
         });
       } finally {
         setIsLoading(false);
@@ -498,7 +502,8 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Failed to get AI response: ${err.message}`
+        description: `Failed to get AI response: ${err.message}`,
+        removeDelay: 10000,
       });
     } finally {
       setIsLoading(false);

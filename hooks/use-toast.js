@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const DEFAULT_TOAST_REMOVE_DELAY = 5000
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -21,7 +21,7 @@ function genId() {
 
 const toastTimeouts = new Map()
 
-const addToRemoveQueue = (toastId) => {
+const addToRemoveQueue = (toastId, delay = DEFAULT_TOAST_REMOVE_DELAY) => {
   if (toastTimeouts.has(toastId)) {
     return
   }
@@ -32,7 +32,7 @@ const addToRemoveQueue = (toastId) => {
       type: actionTypes.REMOVE_TOAST,
       toastId: toastId,
     })
-  }, TOAST_REMOVE_DELAY)
+  }, delay)
 
   toastTimeouts.set(toastId, timeout)
 }
@@ -59,10 +59,11 @@ const reducer = (state, action) => {
       // ! Side effects ! - This could be extracted into a dismissToast() action,
       // but I'll keep it here for simplicity
       if (toastId) {
-        addToRemoveQueue(toastId)
+        const toast = state.toasts.find((t) => t.id === toastId)
+        addToRemoveQueue(toastId, toast?.removeDelay)
       } else {
         state.toasts.forEach((toast) => {
-          addToRemoveQueue(toast.id)
+          addToRemoveQueue(toast.id, toast.removeDelay)
         })
       }
 
@@ -103,7 +104,7 @@ function dispatch(action) {
   })
 }
 
-function toast({ ...props }) {
+function toast({ removeDelay, ...props }) {
   const id = genId()
 
   const update = (props) =>
@@ -118,6 +119,7 @@ function toast({ ...props }) {
     toast: {
       ...props,
       id,
+      removeDelay,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss()

@@ -230,6 +230,7 @@ export default function ChatLayout({ initialChatId } = {}) {
           title: "Error",
           description: "Failed to load your conversations. Please try again.",
           variant: "destructive",
+          removeDelay: 10000,
         });
         
         // Create a default chat when there's an error loading
