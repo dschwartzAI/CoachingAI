@@ -1914,109 +1914,110 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
               </div>
             ) : (
               (() => {
-                const filteredMessages = currentChat.messages.filter((message) => {
-                  // Filter out document generation status messages if document is already complete
-                  const isGenerationStatus =
-                    typeof message.content === "string" &&
-                    message.content.includes("document-generation-status");
+                const filteredMessages = currentChat.messages
+                  .filter((message) => {
+                    // Filter out document generation status messages if document is already complete
+                    const isGenerationStatus =
+                      typeof message.content === "string" &&
+                      message.content.includes("document-generation-status");
 
-                  if (isGenerationStatus) {
-                    // Check if there are any completed document messages in the chat
-                    const hasCompletedDocuments = currentChat.messages.some(
-                      (msg) =>
-                        isDocumentMessage(msg) &&
-                        !msg.content.includes("document-generation-status")
-                    );
-
-                    // Also check metadata for completion
-                    const isDocumentComplete =
-                      currentChat.metadata?.documentGenerated === true ||
-                      currentChat.metadata?.isGeneratingDocument === false;
-
-                    // Filter out generation status if document is complete
-                    if (hasCompletedDocuments || isDocumentComplete) {
-                      console.log(
-                        "[ChatArea] Filtering out generation status message - document is complete"
+                    if (isGenerationStatus) {
+                      // Check if there are any completed document messages in the chat
+                      const hasCompletedDocuments = currentChat.messages.some(
+                        (msg) =>
+                          isDocumentMessage(msg) &&
+                          !msg.content.includes("document-generation-status")
                       );
-                      return false;
-                    }
-                  }
 
-                  return true;
-                });
+                      // Also check metadata for completion
+                      const isDocumentComplete =
+                        currentChat.metadata?.documentGenerated === true ||
+                        currentChat.metadata?.isGeneratingDocument === false;
+
+                      // Filter out generation status if document is complete
+                      if (hasCompletedDocuments || isDocumentComplete) {
+                        console.log(
+                          "[ChatArea] Filtering out generation status message - document is complete"
+                        );
+                        return false;
+                      }
+                    }
+
+                    return true;
+                  });
 
                 return filteredMessages.map((message, index) => {
-                  const isLastMessage = index === 0;
+                    const isLastMessage = index === 0;
 
-                  return (
-                    <div
-                      key={message.id || `message-${index}`}
-                      id={`message-${message.id}`}
-                      className={`group relative ${
-                        message.role === "user" ? "flex justify-end" : ""
-                      }`}
-                      ref={isLastMessage ? lastMessageRef : null}
-                    >
-                      <div className="absolute top-1 right-1 message-actions">
-                        <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
-                          <Bookmark className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {/* Message content with avatar - constrained width and proper alignment */}
-                      <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
-                        {/* Avatar */}
-                        {message.role === "user" ? (
-                          <Avatar className="h-8 w-8 flex-shrink-0">
-                            <AvatarImage src="" alt="User" />
-                            <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium text-sm">
-                              {user?.email?.charAt(0).toUpperCase() || "U"}
-                            </div>
-                          </Avatar>
-                        ) : (
-                          <Avatar className="h-8 w-8 flex-shrink-0">
-                            <AvatarImage src="" alt="Assistant" />
-                            <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
-                              J
-                            </div>
-                          </Avatar>
-                        )}
+                    return (
+                      <div
+                        key={message.id || `message-${index}`}
+                        id={`message-${message.id}`}
+                        className={`group relative ${
+                          message.role === "user" ? "flex justify-end" : ""
+                        }`}
+                        ref={isLastMessage ? lastMessageRef : null}
+                      >
+                        <div className="absolute top-1 right-1 message-actions">
+                          <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
+                            <Bookmark className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {/* Message content with avatar - constrained width and proper alignment */}
+                        <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
+                          {/* Avatar */}
+                          {message.role === "user" ? (
+                            <Avatar className="h-8 w-8 flex-shrink-0">
+                              <AvatarImage src="" alt="User" />
+                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium text-sm">
+                                {user?.email?.charAt(0).toUpperCase() || "U"}
+                              </div>
+                            </Avatar>
+                          ) : (
+                            <Avatar className="h-8 w-8 flex-shrink-0">
+                              <AvatarImage src="" alt="Assistant" />
+                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
+                                J
+                              </div>
+                            </Avatar>
+                          )}
 
-                        {/* Message content */}
-                        <div className={`flex-1 overflow-hidden ${message.role === "user" ? "flex justify-end" : ""}`}>
-                          <div
-                            className={`
-                              inline-block px-4 py-2.5 rounded-lg text-base leading-relaxed
-                              ${message.role === "user" 
-                                ? "bg-primary text-primary-foreground max-w-[85%]" 
-                                : "bg-muted text-foreground prose prose-base max-w-none prose-p:my-1.5 prose-headings:my-3 prose-pre:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5"
-                              }
-                            `}
-                          >
-                            {message.is_thinking ? (
-                              <LoadingMessage content={message.content} role={message.role} />
-                            ) : (
-                              // Conditional rendering for different message types
-                              <>
-                                {isDocumentMessage(message) ? (
-                                  <DocumentMessage message={message} />
-                                ) : isLandingPageMessage(message) ? (
-                                  <LandingPageMessage content={message.content} />
-                                ) : (
-                                  // Check for HTML content
-                                  message.content.includes('<a href') ? (
-                                    <HTMLContent content={message.content} />
+                          {/* Message content */}
+                          <div className={`flex-1 overflow-hidden ${message.role === "user" ? "flex justify-end" : ""}`}>
+                            <div
+                              className={`
+                                inline-block px-4 py-2.5 rounded-lg text-base leading-relaxed
+                                ${message.role === "user" 
+                                  ? "bg-primary text-primary-foreground max-w-[85%]" 
+                                  : "bg-muted text-foreground prose prose-base max-w-none prose-p:my-1.5 prose-headings:my-3 prose-pre:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5"
+                                }
+                              `}
+                            >
+                              {message.is_thinking ? (
+                                <LoadingMessage content={message.content} role={message.role} />
+                              ) : (
+                                // Conditional rendering for different message types
+                                <>
+                                  {isDocumentMessage(message) ? (
+                                    <DocumentMessage message={message} />
+                                  ) : isLandingPageMessage(message) ? (
+                                    <LandingPageMessage content={message.content} />
                                   ) : (
-                                    <MarkdownMessage content={message.content} />
-                                  )
-                                )}
-                              </>
-                            )}
+                                    // Check for HTML content
+                                    message.content.includes('<a href') ? (
+                                      <HTMLContent content={message.content} />
+                                    ) : (
+                                      <MarkdownMessage content={message.content} />
+                                    )
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                });
+                    );
+                  });
               })()
             )}
 
