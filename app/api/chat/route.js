@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
 import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
+import { generateThreadTitle } from '@/lib/utils/thread';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -134,31 +135,6 @@ function calculateQuestionsAnswered(collectedAnswers, tool = 'hybrid-offer') {
   return count;
 }
 
-// Add this function to generate appropriate thread titles
-function generateThreadTitle(message) {
-  if (!message || !message.content) {
-    return "New conversation";
-  }
-  
-  // Truncate and clean the message to create a title
-  const maxLength = 30;
-  let title = message.content.trim();
-  
-  // Remove any newlines or extra whitespace
-  title = title.replace(/\s+/g, ' ');
-  
-  if (title.length > maxLength) {
-    // Cut at the last complete word within maxLength
-    title = title.substr(0, maxLength).split(' ').slice(0, -1).join(' ') + '...';
-  }
-  
-  console.log('[Chat API] Generated title from message:', {
-    original: message.content.substring(0, 50) + (message.content.length > 50 ? '...' : ''),
-    generated: title
-  });
-  
-  return title || "New conversation";
-}
 
 // Add a function to generate workshop HTML from template using AI
 async function generateWorkshopHTML(collectedAnswers) {
