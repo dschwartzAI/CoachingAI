@@ -1,19 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Bell, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "./AuthProvider";
+import useChatStore from '@/lib/stores/chat-store';
 
-export default function NotificationBell({ chats, setCurrentChat, currentChat }) {
+export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [processedChats, setProcessedChats] = useState(new Set());
   const { user } = useAuth();
-  const router = useRouter();
+  
+  // Get state from global store
+  const { chats, setCurrentChat } = useChatStore();
 
   // Load notifications and processed chats from localStorage on mount
   useEffect(() => {
@@ -127,8 +129,7 @@ export default function NotificationBell({ chats, setCurrentChat, currentChat })
     // Find the chat and switch to it
     const targetChat = chats.find(c => c.id === notification.chatId);
     if (targetChat) {
-      setCurrentChat(targetChat);
-      router.push('/chat/' + targetChat.id);
+      setCurrentChat(targetChat.id);
       // Remove the notification instead of just marking as read
       removeNotification(notification.id);
       setShowNotifications(false);

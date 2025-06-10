@@ -34,12 +34,12 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
-import { createNewThread } from '@/lib/utils/thread';
 import { deleteThread } from '@/lib/utils/supabase';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePostHog } from '@/hooks/use-posthog';
 import SnippetModal from './SnippetModal';
+import useChatStore from '@/lib/stores/chat-store';
 
 // Tool icons mapping
 const toolIcons = {
@@ -47,7 +47,7 @@ const toolIcons = {
   'workshop-generator': PenTool
 };
 
-export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats, currentChat, setCurrentChat, isLoading, onShowProfile, profileComplete, setIsNewChat, setIsCurrentChatToolInit }) {
+export default function Sidebar({ onShowProfile }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const { track } = usePostHog();
@@ -55,55 +55,60 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const INITIAL_CHAT_COUNT = 6;
+  
+  // Get state and actions from global store
+  const {
+    chats,
+    currentChat,
+    selectedTool,
+    profileComplete,
+    isLoading,
+    setCurrentChat,
+    setSelectedTool,
+    createNewChat,
+    deleteChat: deleteChatFromStore,
+    updateChat
+  } = useChatStore();
 
   const tools = Object.entries(TOOLS).map(([id, tool]) => ({
     id,
     ...tool
   }));
 
-  // Add this to debug the thread title issue
-  useEffect(() => {
-    if (currentChat) {
-      console.log('[Sidebar] Current chat updated:', {
-        chatId: currentChat.id,
-        title: currentChat.title,
-        messagesCount: currentChat.messages?.length || 0,
-        firstMessage: currentChat.messages?.[0]?.content?.substring(0, 30)
-      });
-    }
-  }, [currentChat]);
-
   // Close sidebar on mobile when navigating
   useEffect(() => {
-    setIsMobileOpen(false);
+    // Only close on mobile (when screen width is less than md breakpoint)
+    if (window.innerWidth < 768) {
+      setIsMobileOpen(false);
+    }
   }, [currentChat]);
 
   const handleNewChat = (toolId = null) => {
-    const newChat = createNewThread(toolId);
-    console.log('[Sidebar] Created new chat object:', JSON.stringify(newChat));
-    console.log(`[Sidebar] Attempting to set current chat. Tool ID passed: ${toolId}, New chat tool_id: ${newChat.tool_id}`);
-    newChat.isNewChat = true;
-    if (toolId) {
-      newChat.isCurrentChatToolInit = true;
-      if (setIsCurrentChatToolInit) setIsCurrentChatToolInit(true);
-    }
-    if (setIsNewChat) setIsNewChat(true);
-    setChats(prevChats => [newChat, ...prevChats]);
-    setCurrentChat(newChat);
-    setSelectedTool(toolId);
-    setIsMobileOpen(false);
-    router.push('/chat/' + newChat.id);
+    const newChat = createNewChat(toolId);
     track('chat_created', { chatId: newChat.id, toolId });
+    
+    // Only close sidebar on mobile
+    if (window.innerWidth < 768) {
+      setIsMobileOpen(false);
+    }
   };
 
   const handleToolClick = (toolId) => {
     const existingChat = chats.find(chat => chat.tool_id === toolId && chat.messages.length === 0);
     if (existingChat) {
-      setCurrentChat(existingChat);
-      setSelectedTool(toolId);
-      router.push('/chat/' + existingChat.id);
+      setCurrentChat(existingChat.id);
     } else {
       handleNewChat(toolId);
+    }
+  };
+
+  const handleChatClick = (chat) => {
+    console.log('[Sidebar] Chat clicked:', { chatId: chat.id, title: chat.title });
+    setCurrentChat(chat.id);
+    
+    // Only close sidebar on mobile
+    if (window.innerWidth < 768) {
+      setIsMobileOpen(false);
     }
   };
 
@@ -131,20 +136,8 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
       await deleteThread(chatId);
       console.log('[Sidebar] Chat deleted successfully:', chatId);
       
-      // Remove from UI state
-      if (currentChat?.id === chatId) {
-        const remainingChats = chats.filter(chat => chat.id !== chatId);
-        if (remainingChats.length > 0) {
-          setCurrentChat(remainingChats[0]);
-          setSelectedTool(remainingChats[0].tool_id || null);
-        } else {
-          setCurrentChat(null);
-          setSelectedTool(null);
-        }
-      }
-      
-      // Remove from chats list
-      setChats(prev => prev.filter(chat => chat.id !== chatId));
+      // Remove from store
+      deleteChatFromStore(chatId);
     } catch (err) {
       console.error('[Sidebar] Delete chat error:', err);
       alert('Failed to delete chat. Please try again.');
@@ -182,11 +175,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
             <span className="font-semibold">Sovereign AI</span>
           </div>
           <div className="flex items-center gap-2">
-            <NotificationBell 
-              chats={chats}
-              setCurrentChat={setCurrentChat}
-              currentChat={currentChat}
-            />
+            <NotificationBell />
             <Button 
               variant="ghost" 
               size="icon" 
@@ -256,7 +245,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
               ) : visibleChats.length > 0 ? (
                 <div className="space-y-1 ml-7">
                   {visibleChats.map((chat) => (
-                    <div key={chat.id} className="flex items-center mb-1">
+                    <div key={chat.id} className="flex items-center mb-1 relative">
                       <button 
                         className="mr-1 p-1 rounded hover:bg-red-100 text-red-600" 
                         onClick={(e) => {
@@ -268,14 +257,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                       </button>
                       <Button
                         variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                        className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
-                        onClick={() => {
-                          console.log('[Sidebar] Chat clicked:', { chatId: chat.id, title: chat.title });
-                          setCurrentChat(chat);
-                          setSelectedTool(chat.tool_id || null);
-                          router.push('/chat/' + chat.id);
-                          setIsMobileOpen(false);
-                        }}
+                        className={`w-full justify-start px-2 h-8 text-sm hover:bg-muted relative ${
+                          currentChat?.id === chat.id ? 'bg-secondary font-medium border-l-2 border-primary' : ''
+                        }`}
+                        onClick={() => handleChatClick(chat)}
                       >
                         {getChatIcon(chat)}
                         <span className="truncate">{chat.title}</span>
@@ -335,7 +320,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
                   onClick={() => {
                     onShowProfile();
-                    setIsMobileOpen(false);
+                    // Only close sidebar on mobile
+                    if (window.innerWidth < 768) {
+                      setIsMobileOpen(false);
+                    }
                   }}
                 >
                   <User className="h-4 w-4 mr-2" />
@@ -352,7 +340,10 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
                   onClick={() => {
                     setShowSnippets(true);
-                    setIsMobileOpen(false);
+                    // Only close sidebar on mobile
+                    if (window.innerWidth < 768) {
+                      setIsMobileOpen(false);
+                    }
                   }}
                 >
                   <Bookmark className="h-4 w-4 mr-2" />

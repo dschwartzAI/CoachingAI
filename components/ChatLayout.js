@@ -211,12 +211,26 @@ export default function ChatLayout({ initialChatId } = {}) {
 
         setChatsSafely([...preservedChats, ...formattedThreads]);
         
-        // Set current chat based on history or create a new one
+        // Set current chat based on initialChatId, existing currentChat, or create a new one
         if (formattedThreads.length > 0) {
-          if (!currentChat) {
-            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat to the first loaded thread:', formattedThreads[0].id);
+          // First priority: use initialChatId if provided
+          if (initialChatId) {
+            const chatFromInitialId = formattedThreads.find(t => t.id === initialChatId);
+            if (chatFromInitialId) {
+              if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting current chat from initialChatId:', initialChatId);
+              setCurrentChatWithTracking(chatFromInitialId);
+              setSelectedTool(chatFromInitialId.tool_id || null);
+            } else if (!currentChat) {
+              // If initialChatId doesn't match any thread and no current chat, use first thread
+              if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] InitialChatId not found, setting to first thread');
+              setCurrentChatWithTracking(formattedThreads[0]);
+            }
+          } else if (!currentChat) {
+            // No initialChatId and no current chat, use first thread
+            if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] No initialChatId or currentChat, setting to first thread');
             setCurrentChatWithTracking(formattedThreads[0]);
           } else {
+            // Keep existing current chat
             if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Keeping existing current chat:', currentChat?.id);
           }
         } else {
@@ -248,9 +262,11 @@ export default function ChatLayout({ initialChatId } = {}) {
       // Create a default chat if we're not loading and don't have a current chat
       createDefaultChat();
     }
-  }, [user?.id, toast]);
+  }, [user?.id, toast, initialChatId]);
 
   // When chats are loaded, select chat based on initialChatId if provided
+  // NOTE: This is now handled directly in loadThreads to avoid timing issues
+  /*
   useEffect(() => {
     if (initialChatId && chats.length > 0) {
       if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Attempting to set chat from initialChatId:', initialChatId);
@@ -264,6 +280,7 @@ export default function ChatLayout({ initialChatId } = {}) {
       }
     }
   }, [initialChatId, chats]);
+  */
 
   // Only redirect if we're not already on the correct path
   useEffect(() => {
@@ -278,7 +295,7 @@ export default function ChatLayout({ initialChatId } = {}) {
     const targetPath = `/chat/${currentChat.id}`;
     if (pathname !== targetPath) {
       if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Redirecting to ${targetPath} from ${pathname}`);
-      router.replace(targetPath);
+      router.push(targetPath);
     }
   }, [currentChat?.id, pathname, router]);
 

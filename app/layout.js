@@ -4,6 +4,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "@/components/ui/toaster";
 import URLCleaner from "@/components/URLCleaner";
 import { PostHogProvider } from "@/components/PostHogProvider";
+import ChatLayoutWrapper from "@/components/ChatLayoutWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -26,7 +27,9 @@ export default function RootLayout({ children }) {
         <PostHogProvider>
           <AuthProvider>
             <URLCleaner />
-            {children}
+            <ChatLayoutWrapper>
+              {children}
+            </ChatLayoutWrapper>
             <Toaster />
           </AuthProvider>
         </PostHogProvider>

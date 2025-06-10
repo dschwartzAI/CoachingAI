@@ -16,6 +16,7 @@ import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
 import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
+import useChatStore from '@/lib/stores/chat-store';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
@@ -409,7 +410,7 @@ function isLandingPageMessage(message) {
   return hasHTMLCode;
 }
 
-export default function ChatArea({ selectedTool, currentChat, setCurrentChat, chats, setChats, onBookmark }) {
+export default function ChatArea({ onBookmark }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
@@ -428,32 +429,35 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
   const { toast } = useToast();
+  
+  // Get state and actions from global store
+  const {
+    currentChat,
+    selectedTool,
+    updateChat,
+    updateChatMessages,
+    replaceOptimisticChat
+  } = useChatStore();
 
   // Helper to append streamed text chunks to the last assistant message
   const appendStreamingChunk = (tempChatId, finalChatId, content) => {
-    setCurrentChat(prev => {
-      if (!prev || (prev.id !== tempChatId && prev.id !== finalChatId)) return prev;
-      const newId = finalChatId || prev.id;
-      const msgs = [...prev.messages];
-      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
-        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
-      } else {
-        msgs.push({ role: 'assistant', content, isStreaming: true });
-      }
-      return { ...prev, id: newId, messages: msgs };
-    });
-
-    setChats(prev => prev.map(chat => {
-      if (chat.id !== tempChatId && chat.id !== finalChatId) return chat;
-      const newId = finalChatId || chat.id;
-      const msgs = [...chat.messages];
-      if (msgs.length && msgs[msgs.length - 1].isStreaming) {
-        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
-      } else {
-        msgs.push({ role: 'assistant', content, isStreaming: true });
-      }
-      return { ...chat, id: newId, messages: msgs };
-    }));
+    if (!currentChat || (currentChat.id !== tempChatId && currentChat.id !== finalChatId)) return;
+    
+    const newId = finalChatId || currentChat.id;
+    const msgs = [...currentChat.messages];
+    
+    if (msgs.length && msgs[msgs.length - 1].isStreaming) {
+      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+    } else {
+      msgs.push({ role: 'assistant', content, isStreaming: true });
+    }
+    
+    updateChatMessages(newId, msgs);
+    
+    // If we got a final ID different from temp ID, replace the chat
+    if (finalChatId && finalChatId !== tempChatId) {
+      replaceOptimisticChat(tempChatId, { ...currentChat, id: finalChatId, messages: msgs });
+    }
   };
 
   // Add this useEffect to track the isWaitingForN8n state
@@ -534,7 +538,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           setIsWaitingForN8n(false);
         } else {
           // Check if there are already document messages in the chat
-          const hasDocumentMessages = currentChat.messages?.some(msg => isDocumentMessage(msg));
+          const hasDocumentMessages = currentChat?.messages?.some(msg => isDocumentMessage(msg));
           if (hasDocumentMessages) {
             console.log(`[ChatArea Context Change Effect] Found existing document messages, clearing loading state`);
             setIsWaitingForN8n(false);
@@ -711,34 +715,24 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           console.log("[ChatArea Initiate Func] Constructed updatedChat object:", JSON.stringify(updatedChat, null, 2));
 
           console.log("[ChatArea Initiate Func] Updating chats list and setting current chat...");
-          setChats(prev => {
-              const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
-              if (chatIndex > -1) {
-                   const newList = [...prev];
-                   newList[chatIndex] = updatedChat;
-                   return newList;
-              } else {
-                  console.warn(`[ChatArea Initiate Func] Chat ID ${chatIdToInitiate} not found in list, adding newly.`);
-                  return [updatedChat, ...prev];
-              }
-          });
-          setCurrentChat(updatedChat);
+          
+          // Update the chat with the new permanent ID and messages
+          if (chatIdToInitiate !== finalChatId) {
+            // Replace temporary chat with permanent one
+            replaceOptimisticChat(chatIdToInitiate, updatedChat);
+          } else {
+            // Just update the existing chat
+            updateChat(finalChatId, updatedChat);
+          }
+          
           console.log(`[ChatArea Initiate Func] setCurrentChat called with chat ID: ${updatedChat.id}. Message content: "${updatedChat.messages[0]?.content?.substring(0, 50)}..."`);
           console.log(`[ChatArea Initiate Func] Finished setting current chat ID: ${updatedChat.id}`);
 
       } catch (error) {
           console.error('[ChatArea Initiate Func] Error initiating chat:', error);
           const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
-          const errorChat = { id: chatIdToInitiate, title: "Initiation Error", messages: [errorAssistantMessage] };
-          setChats(prev => { 
-               const chatIndex = prev.findIndex(c => c.id === chatIdToInitiate);
-               if(chatIndex > -1) { 
-                   const newList = [...prev];
-                   newList[chatIndex] = errorChat;
-                   return newList;
-               } else return [errorChat, ...prev];
-           });
-           setCurrentChat(errorChat);
+          const errorChat = { ...currentChat, messages: [...(currentChat?.messages || []), errorAssistantMessage] };
+          updateChat(currentChat?.id || chatIdToInitiate, errorChat);
       } finally {
           console.log("[ChatArea Initiate Func] Finalizing initiation attempt.");
           setIsLoading(false);
@@ -775,7 +769,6 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
 
     console.log(`[CHAT_DEBUG] Starting handleSubmit with chat ID: ${currentChat?.id}`, {
       currentChatState: JSON.stringify({id: currentChat?.id, messageCount: currentChat?.messages?.length}),
-      chatsState: JSON.stringify(chats.map(c => ({id: c.id, messageCount: c.messages.length}))),
       inputLength: trimmedInput.length
     });
 
@@ -798,14 +791,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     });
 
     // Optimistic update
-    setCurrentChat(optimisticChat);
-    setChats(prev => {
-      const updated = prev.map(chat => chat.id === chatToUpdate.id ? optimisticChat : chat);
-      console.log(`[CHAT_DEBUG] After setChats optimistic update`, {
-        updatedChatIds: updated.map(c => c.id)
-      });
-      return updated;
-    });
+    updateChat(tempId, optimisticChat);
 
     try {
        console.log(`[CHAT_DEBUG] Sending message to API with thread ID: ${currentChat.id}`, {
@@ -940,10 +926,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             messages: [...updatedMessages, thinkingMessage],
           };
           
-          setCurrentChat(chatWithThinking);
-          setChats(prev => prev.map(chat => 
-            chat.id === chatToUpdate.id ? chatWithThinking : chat
-          ));
+          updateChat(data.chatId, chatWithThinking);
           
           // Start polling for the real response
           pollForAssistantResponse(data.threadId, data.runId, data.chatId, chatWithThinking, updatedMessages);
@@ -1020,65 +1003,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           isTextResponse: data.isTextResponse
         });
 
-        // Update both the current chat state AND the chats list
-        setCurrentChat(finalCurrentChat);
-        
-        // Update the chats array, handling both existing and new chats
-        setChats(prevChats => {
-          console.log(`[CHAT_DEBUG] Before setChats update - prevChats:`, {
-            chatCount: prevChats.length,
-            chatIds: prevChats.map(c => c.id)
-          });
-          
-          // First check if the new chat already exists in the list
-          // This makes the update idempotent (safe to call multiple times)
-          if (prevChats.some(chat => chat.id === correctChatId)) {
-            console.log(`[CHAT_DEBUG] Chat with ID ${correctChatId} already exists in list, just updating`);
-            return prevChats.map(chat => 
-              chat.id === correctChatId ? finalCurrentChat : chat
-            );
-          }
-          
-          // Next, remove any temporary version of this chat
-          const filteredChats = tempId !== correctChatId 
-            ? prevChats.filter(chat => chat.id !== tempId)
-            : prevChats;
-            
-          console.log(`[CHAT_DEBUG] After filtering temp chat:`, {
-            filteredCount: filteredChats.length,
-            removedTempChat: tempId !== correctChatId,
-            filteredIds: filteredChats.map(c => c.id)
-          });
-            
-          // Final safety check if chat exists after filtering
-          const chatExists = filteredChats.some(chat => chat.id === correctChatId);
-          
-          console.log(`[CHAT_DEBUG] Chat existence check:`, {
-            chatExists,
-            correctChatId,
-            finalChatId: finalCurrentChat.id
-          });
-          
-          let result;
-          if (chatExists) {
-            // Update existing chat in the list
-            result = filteredChats.map(chat => 
-              chat.id === correctChatId ? finalCurrentChat : chat
-            );
-            console.log(`[CHAT_DEBUG] Updated existing chat in list`);
-          } else {
-            // Add as a new chat if it doesn't exist in the list
-            result = [finalCurrentChat, ...filteredChats];
-            console.log(`[CHAT_DEBUG] Added new chat to list with ID: ${correctChatId}`);
-          }
-          
-          console.log(`[CHAT_DEBUG] Final chats state:`, {
-            resultCount: result.length,
-            resultIds: result.map(c => c.id)
-          });
-          
-          return result;
-        });
+        // Update the chat with the final response
+        updateChat(correctChatId, finalCurrentChat);
 
         // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
         console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
@@ -1102,14 +1028,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
         const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
         const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
-        setChats(prev => {
-          console.log(`[CHAT_DEBUG] Setting error chat state:`, {
-            errorChatId: errorChat.id,
-            prevChatCount: prev.length
-          });
-          return prev.map(chat => chat.id === errorChat.id ? errorChat : chat);
-        });
-        setCurrentChat(errorChat);
+        updateChat(tempId, errorChat);
         
         // Trigger scroll after error message
         setTimeout(() => {
@@ -1310,15 +1229,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           
         // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
         const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
-        setChats(prevChats => prevChats.map(c => {
-          if (c.id === chatId) {
-            // Make sure we append to the end of the messages array
-            return {...c, messages: [...c.messages, initialMessage]};
-          }
-          return c;
-        }));
         if (currentChat?.id === chatId) {
-          setCurrentChat(prevChat => ({...prevChat, messages: [...prevChat.messages, initialMessage]}));
+          const updatedChat = {...currentChat, messages: [...currentChat.messages, initialMessage]};
+          updateChat(chatId, updatedChat);
         }
       } else {
         console.warn('[SSE Connect] Cannot save initial document message - no user ID');
@@ -1490,11 +1403,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 };
                 
                 // Remove any "generating document" messages and add the new result message at the end
-                setCurrentChat(prevChat => {
-                  if (!prevChat || prevChat.id !== chatId) return prevChat;
-                  
+                if (currentChat?.id === chatId) {
                   // Filter out any "generating document" messages first
-                  const filteredMessages = prevChat.messages.filter(m => 
+                  const filteredMessages = currentChat.messages.filter(m => 
                     !(typeof m.content === 'string' && (
                       m.content.includes("generating your document") || 
                       m.content.includes("document-generation-status"))
@@ -1502,24 +1413,9 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   );
                   
                   // Always add the new document message at the end
-                  return {...prevChat, messages: [...filteredMessages, documentMessage]};
-                });
-                
-                setChats(prevChats => prevChats.map(c => {
-                  if (c.id === chatId) {
-                    // Filter out any "generating document" messages
-                    const filteredMessages = c.messages.filter(m => 
-                      !(typeof m.content === 'string' && (
-                        m.content.includes("generating your document") || 
-                        m.content.includes("document-generation-status"))
-                      )
-                    );
-                    
-                    // Always add the new document message at the end
-                    return {...c, messages: [...filteredMessages, documentMessage]};
-                  }
-                  return c;
-                }));
+                  const updatedChat = {...currentChat, messages: [...filteredMessages, documentMessage]};
+                  updateChat(chatId, updatedChat);
+                }
                 
                 // Clear the waiting state
                 setIsWaitingForN8n(false);
@@ -1599,27 +1495,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         }; 
         
         if (currentChat?.id === chatId) {
-          setCurrentChat(prevChat => {
-            if (!prevChat) return null;
-            
-            // Remove any "generating document" messages
-            const filteredMessages = prevChat.messages.filter(m => 
-              m.content !== "I'm generating your document now. Please wait..."
-            );
-            
-            return {...prevChat, messages: [...filteredMessages, sseErrorMessage]};
-          });
+          // Remove any "generating document" messages
+          const filteredMessages = currentChat.messages.filter(m => 
+            m.content !== "I'm generating your document now. Please wait..."
+          );
           
-          setChats(prevChats => prevChats.map(c => {
-            if (c.id === chatId) {
-              // Remove any "generating document" messages
-              const filteredMessages = c.messages.filter(m => 
-                m.content !== "I'm generating your document now. Please wait..."
-              );
-              return {...c, messages: [...filteredMessages, sseErrorMessage]};
-            }
-            return c;
-          }));
+          const updatedChat = {...currentChat, messages: [...filteredMessages, sseErrorMessage]};
+          updateChat(chatId, updatedChat);
         }
         
         setIsWaitingForN8n(false);
@@ -1670,27 +1552,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
           };
           
           if (currentChat?.id === chatId) {
-            setCurrentChat(prevChat => {
-              if (!prevChat) return null;
-              
-              // Remove any "generating document" messages
-              const filteredMessages = prevChat.messages.filter(m => 
-                m.content !== "I'm generating your document now. Please wait..."
-              );
-              
-              return {...prevChat, messages: [...filteredMessages, streamErrorMessage]};
-            });
+            // Remove any "generating document" messages
+            const filteredMessages = currentChat.messages.filter(m => 
+              m.content !== "I'm generating your document now. Please wait..."
+            );
             
-            setChats(prevChats => prevChats.map(c => {
-              if (c.id === chatId) {
-                // Remove any "generating document" messages
-                const filteredMessages = c.messages.filter(m => 
-                  m.content !== "I'm generating your document now. Please wait..."
-                );
-                return {...c, messages: [...filteredMessages, streamErrorMessage]};
-              }
-              return c;
-            }));
+            const updatedChat = {...currentChat, messages: [...filteredMessages, streamErrorMessage]};
+            updateChat(chatId, updatedChat);
           }
           
           // Trigger scroll to show the stream error message
@@ -1731,27 +1599,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
       };
       
       if (currentChat?.id === chatId) {
-        setCurrentChat(prevChat => {
-          if (!prevChat) return null;
-          
-          // Remove any "generating document" messages
-          const filteredMessages = prevChat.messages.filter(m => 
-            m.content !== "I'm generating your document now. Please wait..."
-          );
-          
-          return {...prevChat, messages: [...filteredMessages, connectionErrorMessage]};
-        });
+        // Remove any "generating document" messages
+        const filteredMessages = currentChat.messages.filter(m => 
+          m.content !== "I'm generating your document now. Please wait..."
+        );
         
-        setChats(prevChats => prevChats.map(c => {
-          if (c.id === chatId) {
-            // Remove any "generating document" messages
-            const filteredMessages = c.messages.filter(m => 
-              m.content !== "I'm generating your document now. Please wait..."
-            );
-            return {...c, messages: [...filteredMessages, connectionErrorMessage]};
-          }
-          return c;
-        }));
+        const updatedChat = {...currentChat, messages: [...filteredMessages, connectionErrorMessage]};
+        updateChat(chatId, updatedChat);
       }
       
       // Trigger scroll to show the connection error message
@@ -1864,11 +1718,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     
     setIsResponseLoading(false);
     
-    // Update both current chat and chats list
-    setCurrentChat(finalChat);
-    setChats(prev => prev.map(chat => 
-      chat.id === chatId ? finalChat : chat
-    ));
+    // Update the chat with the final response
+    updateChat(chatId, finalChat);
     
     // Trigger scroll to show the final response
     setTimeout(() => {
