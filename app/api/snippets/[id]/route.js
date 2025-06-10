@@ -1,30 +1,8 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer';
 import { NextResponse } from 'next/server';
 
-function createSupabaseClient() {
-  const cookieStore = cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name, value, options) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          cookieStore.set({ name, value: '', ...options });
-        }
-      }
-    }
-  );
-}
-
 export async function GET(request, { params }) {
-  const supabase = createSupabaseClient();
+  const supabase = createServerClientWithCookies();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -46,7 +24,7 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
-  const supabase = createSupabaseClient();
+  const supabase = createServerClientWithCookies();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -72,7 +50,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const supabase = createSupabaseClient();
+  const supabase = createServerClientWithCookies();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {

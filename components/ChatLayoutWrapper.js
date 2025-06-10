@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, createContext, useContext } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import Sidebar from "./Sidebar";
@@ -10,6 +10,18 @@ import ProfileModal from "./ProfileModal";
 import SnippetModal from "./SnippetModal";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+
+// Create context for bookmark functionality
+const BookmarkContext = createContext();
+
+export const useBookmark = () => {
+  const context = useContext(BookmarkContext);
+  if (!context) {
+    // Return a no-op function for pages that don't have bookmark functionality
+    return { onBookmark: () => {} };
+  }
+  return context;
+};
 
 export default function ChatLayoutWrapper({ children }) {
   const pathname = usePathname();
@@ -93,7 +105,7 @@ export default function ChatLayoutWrapper({ children }) {
     setShowSnippetModal(true);
   };
 
-  // If not on a chat page, just render children
+  // If not on a chat page, just render children without bookmark context
   if (!shouldShowChatLayout) {
     return children;
   }
@@ -103,35 +115,37 @@ export default function ChatLayoutWrapper({ children }) {
     return <FullPageLoading />;
   }
 
-  // For chat pages, show the full layout
+  // For chat pages, show the full layout with bookmark context
   return (
-    <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar
-        selectedTool={selectedTool}
-        setSelectedTool={setSelectedTool}
-        chats={chats}
-        currentChat={currentChat}
-        setCurrentChat={setCurrentChat}
-        createNewChat={createNewChat}
-        deleteChat={deleteChat}
-        isLoading={isSidebarLoading}
-        onShowProfile={() => setShowProfileModal(true)}
-        profileComplete={profileComplete}
-      />
-      <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
-        {children}
+    <BookmarkContext.Provider value={{ onBookmark: handleBookmarkMessage }}>
+      <div className="flex h-screen w-full overflow-hidden">
+        <Sidebar
+          selectedTool={selectedTool}
+          setSelectedTool={setSelectedTool}
+          chats={chats}
+          currentChat={currentChat}
+          setCurrentChat={setCurrentChat}
+          createNewChat={createNewChat}
+          deleteChat={deleteChat}
+          isLoading={isSidebarLoading}
+          onShowProfile={() => setShowProfileModal(true)}
+          profileComplete={profileComplete}
+        />
+        <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
+          {children}
+        </div>
+        
+        <ProfileModal
+          open={showProfileModal}
+          onOpenChange={setShowProfileModal}
+          onProfileComplete={handleProfileComplete}
+        />
+        <SnippetModal
+          open={showSnippetModal}
+          onOpenChange={setShowSnippetModal}
+          message={snippetMessage}
+        />
       </div>
-      
-      <ProfileModal
-        open={showProfileModal}
-        onOpenChange={setShowProfileModal}
-        onProfileComplete={handleProfileComplete}
-      />
-      <SnippetModal
-        open={showSnippetModal}
-        onOpenChange={setShowSnippetModal}
-        message={snippetMessage}
-      />
-    </div>
+    </BookmarkContext.Provider>
   );
 } 

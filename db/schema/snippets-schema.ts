@@ -1,9 +1,9 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { threadsTable } from "./threads-schema";
 import { messagesTable } from "./messages-schema";
 
 export const snippetsTable = pgTable("snippets", {
-  id: text("id").defaultRandom().primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   user_id: text("user_id").notNull(),
   thread_id: text("thread_id")
     .references(() => threadsTable.id, { onDelete: "cascade" })
@@ -16,9 +16,5 @@ export const snippetsTable = pgTable("snippets", {
   created_at: timestamp("created_at").defaultNow()
 });
 
-export const getSnippetsTableWithTypescript = () => {
-  return {
-    $inferInsert: {},
-    $inferSelect: {}
-  };
-};
+export type InsertSnippet = typeof snippetsTable.$inferInsert;
+export type SelectSnippet = typeof snippetsTable.$inferSelect;

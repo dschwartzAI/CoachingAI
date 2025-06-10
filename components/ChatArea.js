@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark, Bot, User } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
 import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
 import useChatStore from '@/lib/stores/chat-store';
+import { useBookmark } from '@/components/ChatLayoutWrapper';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
@@ -410,7 +411,7 @@ function isLandingPageMessage(message) {
   return hasHTMLCode;
 }
 
-export default function ChatArea({ onBookmark }) {
+export default function ChatArea() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResponseLoading, setIsResponseLoading] = useState(false); // Add specific response loading state
@@ -429,13 +430,13 @@ export default function ChatArea({ onBookmark }) {
   const lastMessageRef = useRef(null);
   const { track } = usePostHog();
   const { toast } = useToast();
+  const { onBookmark } = useBookmark();
   
   // Get state and actions from global store
   const {
     currentChat,
     selectedTool,
     updateChat,
-    updateChatMessages,
     replaceOptimisticChat
   } = useChatStore();
 
@@ -452,11 +453,13 @@ export default function ChatArea({ onBookmark }) {
       msgs.push({ role: 'assistant', content, isStreaming: true });
     }
     
-    updateChatMessages(newId, msgs);
+    // Update the chat with new messages
+    const updatedChat = { ...currentChat, id: newId, messages: msgs };
+    updateChat(newId, updatedChat);
     
     // If we got a final ID different from temp ID, replace the chat
     if (finalChatId && finalChatId !== tempChatId) {
-      replaceOptimisticChat(tempChatId, { ...currentChat, id: finalChatId, messages: msgs });
+      replaceOptimisticChat(tempChatId, updatedChat);
     }
   };
 
@@ -874,6 +877,38 @@ export default function ChatArea({ onBookmark }) {
                chatId: finalId,
                isTextResponse: true // Flag to indicate this is a plain text response
            };
+           
+           // Finalize the streaming message by removing the isStreaming flag
+           const finalMessages = [...updatedMessages];
+           if (finalMessages.length > 0 && finalMessages[finalMessages.length - 1].isStreaming) {
+             finalMessages[finalMessages.length - 1] = { 
+               role: 'assistant', 
+               content: responseText,
+               isStreaming: false 
+             };
+           } else {
+             finalMessages.push({ role: 'assistant', content: responseText });
+           }
+           
+           // Update the chat with the finalized message
+           const finalChat = {
+             ...chatToUpdate,
+             id: finalId,
+             messages: finalMessages
+           };
+           updateChat(finalId, finalChat);
+           
+           // Clear loading states and return early for streaming responses
+           setIsLoading(false);
+           setIsResponseLoading(false);
+           
+           // Trigger scroll after message updates
+           setTimeout(() => {
+             scrollToBottom();
+           }, 100);
+           
+           textareaRef.current?.focus();
+           return;
        } else {
            // Handle JSON response for tool-based chat
            try {
@@ -1130,7 +1165,7 @@ export default function ChatArea({ onBookmark }) {
     });
     
     // Observe changes to the messages container
-    const messagesContainer = viewport.querySelector('.flex.flex-col.space-y-4');
+    const messagesContainer = viewport.querySelector('.flex.flex-col.gap-4, .flex.flex-col.gap-6');
     if (messagesContainer) {
       observer.observe(messagesContainer, {
         childList: true,
@@ -1745,10 +1780,11 @@ export default function ChatArea({ onBookmark }) {
       {/* Messages container - flex-1 to take available space */}
       <ScrollArea 
         ref={scrollAreaRef} 
-        className="flex-1"
+        className="flex-1 overflow-y-auto"
       >
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col-reverse space-y-reverse space-y-4 sm:space-y-6 py-4 sm:py-8">
+        <div className="min-h-full flex flex-col justify-end">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+            <div className="flex flex-col gap-4 sm:gap-6 py-4 sm:py-8">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
               <div className="flex items-center justify-center min-h-[60vh]">
@@ -1798,7 +1834,7 @@ export default function ChatArea({ onBookmark }) {
                   });
 
                 return filteredMessages.map((message, index) => {
-                    const isLastMessage = index === 0;
+                    const isLastMessage = index === filteredMessages.length - 1;
 
                     return (
                       <div
@@ -1809,26 +1845,29 @@ export default function ChatArea({ onBookmark }) {
                         }`}
                         ref={isLastMessage ? lastMessageRef : null}
                       >
-                        <div className="absolute top-1 right-1 message-actions">
-                          <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
-                            <Bookmark className="h-4 w-4" />
-                          </Button>
-                        </div>
                         {/* Message content with avatar - constrained width and proper alignment */}
-                        <div className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
+                        <div className={`flex gap-3 items-start ${message.role === "user" ? "flex-row-reverse" : ""} max-w-full`}>
+                          {/* Bookmark button - positioned outside message bubble */}
+                          {message.role !== "user" && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-1">
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onBookmark && onBookmark(message)}>
+                                <Bookmark className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
                           {/* Avatar */}
                           {message.role === "user" ? (
                             <Avatar className="h-8 w-8 flex-shrink-0">
                               <AvatarImage src="" alt="User" />
-                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-medium text-sm">
-                                {user?.email?.charAt(0).toUpperCase() || "U"}
+                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white">
+                                <User className="h-4 w-4" />
                               </div>
                             </Avatar>
                           ) : (
                             <Avatar className="h-8 w-8 flex-shrink-0">
                               <AvatarImage src="" alt="Assistant" />
-                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
-                                J
+                              <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+                                <Bot className="h-4 w-4" />
                               </div>
                             </Avatar>
                           )}
@@ -1865,6 +1904,15 @@ export default function ChatArea({ onBookmark }) {
                               )}
                             </div>
                           </div>
+                          
+                          {/* Bookmark button for user messages - positioned on the left side */}
+                          {message.role === "user" && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-1">
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onBookmark && onBookmark(message)}>
+                                <Bookmark className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1893,8 +1941,8 @@ export default function ChatArea({ onBookmark }) {
                 <div className="flex gap-3 max-w-full">
                   <Avatar className="h-8 w-8 flex-shrink-0">
                     <AvatarImage src="" alt="Assistant" />
-                    <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm">
-                      J
+                    <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+                      <Bot className="h-4 w-4" />
                     </div>
                   </Avatar>
                   <div className="flex-1 overflow-hidden">
@@ -1905,6 +1953,10 @@ export default function ChatArea({ onBookmark }) {
                 </div>
               </div>
             )}
+            
+            {/* Scroll anchor */}
+            <div ref={lastMessageRef} className="h-1" />
+            </div>
           </div>
         </div>
       </ScrollArea>

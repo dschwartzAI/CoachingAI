@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 
 export default function SnippetModal({ open, onOpenChange, message }) {
   const [snippets, setSnippets] = useState([]);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
@@ -20,12 +22,21 @@ export default function SnippetModal({ open, onOpenChange, message }) {
 
   const fetchSnippets = async () => {
     try {
+      console.log('[SnippetModal] Fetching snippets...');
       const res = await fetch('/api/snippets');
-      if (!res.ok) return;
+      console.log('[SnippetModal] Fetch response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.text();
+        console.error('[SnippetModal] Fetch error:', errorData);
+        return;
+      }
+      
       const data = await res.json();
+      console.log('[SnippetModal] Fetched snippets:', data);
       setSnippets(data.snippets || []);
     } catch (err) {
-      console.error('Failed to load snippets:', err);
+      console.error('[SnippetModal] Failed to load snippets:', err);
     }
   };
 
@@ -34,6 +45,14 @@ export default function SnippetModal({ open, onOpenChange, message }) {
       console.error("Save snippet failed: message object is missing.");
       return;
     }
+    
+    console.log('[SnippetModal] Saving snippet with data:', {
+      thread_id: message.thread_id,
+      message_id: message.id,
+      content: message.content?.substring(0, 100) + '...',
+      note
+    });
+    
     setSaving(true);
     try {
       const res = await fetch('/api/snippets', {
@@ -47,23 +66,63 @@ export default function SnippetModal({ open, onOpenChange, message }) {
         })
       });
 
+      console.log('[SnippetModal] API response status:', res.status);
+      
       if (!res.ok) {
-        throw new Error('Failed to save snippet');
+        const errorData = await res.text();
+        console.error('[SnippetModal] API error response:', errorData);
+        throw new Error(`Failed to save snippet: ${res.status} ${errorData}`);
       }
+
+      const responseData = await res.json();
+      console.log('[SnippetModal] Snippet saved successfully:', responseData);
+
+      // Show success toast
+      toast({
+        title: "Snippet saved!",
+        description: "Your message has been bookmarked successfully.",
+        variant: "default",
+      });
 
       setNote('');
       fetchSnippets(); // Refresh the list of snippets
       onOpenChange(false); // Close the modal on success
     } catch (err) {
-      console.error('Failed to save snippet:', err);
+      console.error('[SnippetModal] Failed to save snippet:', err);
+      
+      // Show error toast
+      toast({
+        title: "Failed to save snippet",
+        description: "Please try again. If the problem persists, check your connection.",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const deleteSnippet = async (id) => {
-    await fetch(`/api/snippets/${id}`, { method: 'DELETE' });
-    fetchSnippets();
+    try {
+      const res = await fetch(`/api/snippets/${id}`, { method: 'DELETE' });
+      
+      if (res.ok) {
+        toast({
+          title: "Snippet deleted",
+          description: "The snippet has been removed from your bookmarks.",
+          variant: "default",
+        });
+        fetchSnippets();
+      } else {
+        throw new Error('Failed to delete snippet');
+      }
+    } catch (err) {
+      console.error('[SnippetModal] Failed to delete snippet:', err);
+      toast({
+        title: "Failed to delete snippet",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSnippetClick = (snippet) => {
