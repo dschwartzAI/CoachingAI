@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
@@ -15,6 +14,7 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
+import useAutoScroll from '@/hooks/use-auto-scroll';
 
 // Define questions with keys, matching the backend order
 const hybridOfferQuestions = [
@@ -440,11 +440,10 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   const [isWaitingForN8n, setIsWaitingForN8n] = useState(false);
   const eventSourceRef = useRef(null);
   const textareaRef = useRef(null);
-  const scrollAreaRef = useRef(null);
   const prevChatIdRef = useRef();
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
-  const lastMessageRef = useRef(null);
+  const { messagesEndRef, messagesContainerRef, scrollToBottom, userHasScrolled } = useAutoScroll(currentChat?.messages || [], [isResponseLoading, isWaitingForN8n]);
   const { track } = usePostHog();
 
   // Helper to append streamed text chunks to the last assistant message
@@ -1150,67 +1149,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   };
 
-  // Improved auto-scroll function
-  const scrollToBottom = () => {
-    if (scrollAreaRef.current) {
-      // Try multiple methods to find the scrollable element
-      const scrollArea = scrollAreaRef.current;
-      
-      // Method 1: Look for the viewport element (Radix ScrollArea)
-      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-      
-      // Method 2: Look for any element with overflow scroll
-      if (!scrollElement) {
-        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
-      }
-      
-      // Method 3: Use the scroll area itself
-      if (!scrollElement) {
-        scrollElement = scrollArea;
-      }
-      
-      if (scrollElement) {
-        // Force scroll to bottom with multiple approaches
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-        
-        // Also try scrollIntoView on the last message if available
-        if (lastMessageRef.current) {
-          lastMessageRef.current.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'end' 
-          });
-        }
-      }
-    }
-  };
-
-  // Auto-scroll when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
-
-  // Auto-scroll with delay to ensure DOM is rendered
-  useEffect(() => {
-    if (currentChat?.messages?.length > 0) {
-      // Immediate scroll
-      scrollToBottom();
-      
-      // Delayed scroll to catch any late-rendering content
-      const timeoutId = setTimeout(() => {
-        scrollToBottom();
-      }, 100);
-      
-      // Additional scroll for complex content like documents
-      const timeoutId2 = setTimeout(() => {
-        scrollToBottom();
-      }, 500);
-      
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(timeoutId2);
-      };
-    }
-  }, [currentChat?.id, currentChat?.messages]);
+  // scrollToBottom is provided by useAutoScroll
 
   // Determine if the offer creation process is complete for UI feedback
   // Check both local state and metadata for completion
@@ -1838,7 +1777,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
   };
 
   return (
-    <div className="flex flex-col h-full max-w-full">
+    <div className="flex flex-col h-full max-w-full relative">
       {/* Chat header - left-aligned title */}
       <div className="border-b p-3 sm:p-4 flex items-center sticky top-0 bg-background z-10">
         <div className="flex items-center space-x-2 w-full px-4 sm:px-6 lg:px-8">
@@ -1852,10 +1791,19 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </div>
 
-      {/* Messages container - updated with responsive spacing and max-width constraint */}
-      <ScrollArea 
-        ref={scrollAreaRef} 
-        className="flex-1 overflow-y-auto"
+      {userHasScrolled && currentChat?.messages?.length > 0 && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-20 right-4 bg-blue-500 text-white rounded-full p-2 shadow-lg z-10"
+        >
+          ↓ New messages
+        </button>
+      )}
+
+      {/* Messages container - updated with bottom-up layout */}
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 flex flex-col-reverse overflow-y-auto"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8 pb-32">
@@ -1874,7 +1822,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 </div>
               </div>
             ) : (
-              currentChat.messages
+              currentChat.messages.slice().reverse()
                 .filter((message) => {
                   // Filter out document generation status messages if document is already complete
                   const isGenerationStatus = typeof message.content === 'string' && 
@@ -1908,8 +1856,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       key={message.id || `message-${index}`}
                       id={`message-${message.id}`}
                       className={`group relative ${message.role === "user" ? "flex justify-end" : ""}`}
-                      ref={isLastMessage ? lastMessageRef : null}
-                    >
+                      >
                       <div className="absolute top-1 right-1 message-actions">
                         <Button size="icon" variant="ghost" onClick={() => onBookmark && onBookmark(message)}>
                           <Bookmark className="h-4 w-4" />
@@ -2007,7 +1954,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
             )}
           </div>
         </div>
-      </ScrollArea>
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Input area - centered with max-width constraint */}
       <div className="fixed bottom-0 left-0 right-0 md:left-[300px] bg-background border-t">
