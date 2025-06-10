@@ -15,26 +15,7 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
-
-// Define questions with keys, matching the backend order
-const hybridOfferQuestions = [
-  { key: 'offerDescription', question: "Tell us about the offer high level" },
-  { key: 'targetAudience', question: "Who is your target audience?" },
-  { key: 'painPoints', question: "What are their main pain points?" },
-  { key: 'solution', question: "What is the unique way you solve this problem?" },
-  { key: 'pricing', question: "What is your pricing structure?" },
-  { key: 'clientResult', question: "Finally, what's your biggest client result?" }
-];
-
-// Define workshop generator questions
-const workshopQuestions = [
-  { key: 'participantOutcomes', question: "What specific outcomes will participants achieve?" },
-  { key: 'targetAudience', question: "Who is your ideal workshop participant?" },
-  { key: 'problemAddressed', question: "What problem does your workshop solve?" },
-  { key: 'workshopDuration', question: "How long will your workshop be?" },
-  { key: 'topicsAndActivities', question: "What topics and activities will you cover?" },
-  { key: 'resourcesProvided', question: "What resources will participants receive?" }
-];
+import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {

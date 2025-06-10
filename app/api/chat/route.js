@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { TOOLS } from '@/lib/config/tools';
+import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
 import { buildProfileContext } from '@/lib/utils/ai';
@@ -22,74 +23,6 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-
-// Define the questions and their corresponding keys, in order
-const hybridOfferQuestions = [
-  { 
-    key: 'offerDescription', 
-    question: "What's your core product or service?",
-    description: "Core product or service"
-  },
-  { 
-    key: 'targetAudience', 
-    question: "Who is your target audience?",
-    description: "Target audience details"
-  },
-  { 
-    key: 'painPoints', 
-    question: "What pain points do they face?",
-    description: "Customer pain points"
-  },
-  { 
-    key: 'solution', 
-    question: "How do you solve these problems?",
-    description: "Solution approach"
-  },
-  { 
-    key: 'pricing', 
-    question: "What's your pricing structure?",
-    description: "Pricing information"
-  },
-  { 
-    key: 'clientResult', 
-    question: "What's a specific, real-world result you've helped a client achieve?",
-    description: "Specific client success story"
-  }
-];
-
-// Define the workshop generator questions
-const workshopQuestions = [
-  { 
-    key: 'participantOutcomes', 
-    question: "What specific outcomes or goals will participants achieve by the end of your workshop?",
-    description: "Participant outcomes and goals"
-  },
-  { 
-    key: 'targetAudience', 
-    question: "Who is your ideal workshop participant? Please describe their demographics, current situation, and main pain points.",
-    description: "Target audience demographics and pain points"
-  },
-  { 
-    key: 'problemAddressed', 
-    question: "What specific problem or challenge does your workshop solve for these participants?",
-    description: "Problem the workshop addresses"
-  },
-  { 
-    key: 'workshopDuration', 
-    question: "How long will your workshop be? Please specify the duration and format.",
-    description: "Workshop duration and format"
-  },
-  { 
-    key: 'topicsAndActivities', 
-    question: "What key topics will you cover and what activities will participants engage in during the workshop?",
-    description: "Topics covered and activities"
-  },
-  { 
-    key: 'resourcesProvided', 
-    question: "What resources, materials, or follow-up support will participants receive?",
-    description: "Resources and materials provided"
-  }
-];
 
 // Add a function to validate answers using AI
 async function validateHybridOfferAnswer(questionKey, answer) {
