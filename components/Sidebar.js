@@ -29,7 +29,8 @@ import {
   User,
   CheckCircle2,
   AlertCircle,
-  Bell
+  Bell,
+  Bookmark
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -38,6 +39,7 @@ import { deleteThread } from '@/lib/utils/supabase';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePostHog } from '@/hooks/use-posthog';
+import SnippetModal from './SnippetModal';
 
 // Tool icons mapping
 const toolIcons = {
@@ -51,6 +53,7 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
   const { track } = usePostHog();
   const [expandedChats, setExpandedChats] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [showSnippets, setShowSnippets] = useState(false);
   const INITIAL_CHAT_COUNT = 6;
 
   const tools = Object.entries(TOOLS).map(([id, tool]) => ({
@@ -267,9 +270,11 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                         variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
                         className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
                         onClick={() => {
+                          console.log('[Sidebar] Chat clicked:', { chatId: chat.id, title: chat.title });
                           setCurrentChat(chat);
                           setSelectedTool(chat.tool_id || null);
                           router.push('/chat/' + chat.id);
+                          setIsMobileOpen(false);
                         }}
                       >
                         {getChatIcon(chat)}
@@ -342,6 +347,18 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
                   )}
                 </Button>
                 
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                  onClick={() => {
+                    setShowSnippets(true);
+                    setIsMobileOpen(false);
+                  }}
+                >
+                  <Bookmark className="h-4 w-4 mr-2" />
+                  Snippets
+                </Button>
+                
                 {!profileComplete && (
                   <div className="px-2">
                     <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-md flex items-center gap-1">
@@ -367,6 +384,12 @@ export default function Sidebar({ selectedTool, setSelectedTool, chats, setChats
           onClick={() => setIsMobileOpen(false)}
         />
       )}
+      
+      {/* Snippets Modal */}
+      <SnippetModal 
+        open={showSnippets} 
+        onOpenChange={setShowSnippets}
+      />
     </>
   );
 } 

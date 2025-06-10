@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,6 +10,7 @@ export default function SnippetModal({ open, onOpenChange, message }) {
   const [snippets, setSnippets] = useState([]);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (open) {
@@ -28,10 +30,13 @@ export default function SnippetModal({ open, onOpenChange, message }) {
   };
 
   const saveSnippet = async () => {
-    if (!message) return;
+    if (!message) {
+      console.error("Save snippet failed: message object is missing.");
+      return;
+    }
     setSaving(true);
     try {
-      await fetch('/api/snippets', {
+      const res = await fetch('/api/snippets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -41,8 +46,14 @@ export default function SnippetModal({ open, onOpenChange, message }) {
           note
         })
       });
+
+      if (!res.ok) {
+        throw new Error('Failed to save snippet');
+      }
+
       setNote('');
-      fetchSnippets();
+      fetchSnippets(); // Refresh the list of snippets
+      onOpenChange(false); // Close the modal on success
     } catch (err) {
       console.error('Failed to save snippet:', err);
     } finally {
@@ -53,6 +64,15 @@ export default function SnippetModal({ open, onOpenChange, message }) {
   const deleteSnippet = async (id) => {
     await fetch(`/api/snippets/${id}`, { method: 'DELETE' });
     fetchSnippets();
+  };
+
+  const handleSnippetClick = (snippet) => {
+    console.log('[SnippetModal] Navigating to snippet:', { 
+      threadId: snippet.thread_id, 
+      messageId: snippet.message_id 
+    });
+    onOpenChange(false); // Close the modal
+    router.push(`/chat/${snippet.thread_id}#message-${snippet.message_id}`);
   };
 
   return (
@@ -77,12 +97,17 @@ export default function SnippetModal({ open, onOpenChange, message }) {
         <div className="space-y-2 max-h-60 overflow-auto border-t pt-2">
           {snippets.map(sn => (
             <div key={sn.id} className="flex items-start gap-2 text-sm">
-              <a
-                href={`/chat/${sn.thread_id}#message-${sn.message_id}`}
-                className="flex-1 hover:underline"
+              <button
+                onClick={() => handleSnippetClick(sn)}
+                className="flex-1 hover:underline text-left cursor-pointer hover:bg-muted p-2 rounded"
               >
                 {sn.content.slice(0, 80)}
-              </a>
+                {sn.note && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Note: {sn.note}
+                  </div>
+                )}
+              </button>
               <Button size="icon" variant="ghost" onClick={() => deleteSnippet(sn.id)}>
                 &times;
               </Button>

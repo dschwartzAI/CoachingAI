@@ -1151,67 +1151,96 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     }
   };
 
-  // Improved auto-scroll function
-  const scrollToBottom = () => {
-    if (scrollAreaRef.current) {
-      // Try multiple methods to find the scrollable element
-      const scrollArea = scrollAreaRef.current;
-      
-      // Method 1: Look for the viewport element (Radix ScrollArea)
-      let scrollElement = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-      
-      // Method 2: Look for any element with overflow scroll
-      if (!scrollElement) {
-        scrollElement = scrollArea.querySelector('div[style*="overflow"]');
-      }
-      
-      // Method 3: Use the scroll area itself
-      if (!scrollElement) {
-        scrollElement = scrollArea;
-      }
-      
-      if (scrollElement) {
-        // Force scroll to bottom with multiple approaches
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-        
-        // Also try scrollIntoView on the last message if available
-        if (lastMessageRef.current) {
+  // Improved auto-scroll function with better viewport detection
+  const scrollToBottom = (smooth = false) => {
+    if (!scrollAreaRef.current) return;
+    
+    // Find the viewport element - Radix ScrollArea uses data-radix-scroll-area-viewport
+    const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') ||
+                    scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]');
+    
+    if (viewport) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        if (smooth && lastMessageRef.current) {
+          // Smooth scroll to last message
           lastMessageRef.current.scrollIntoView({ 
             behavior: 'smooth', 
-            block: 'end' 
+            block: 'end',
+            inline: 'nearest'
           });
+        } else {
+          // Instant scroll to bottom
+          viewport.scrollTop = viewport.scrollHeight;
         }
-      }
+      });
     }
   };
 
-  // Auto-scroll when messages change
+  // Auto-scroll when messages change or loading states change
   useEffect(() => {
+    // Scroll immediately when new messages arrive
     scrollToBottom();
+    
+    // Also scroll after a short delay to catch any async rendering
+    const timer = setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [currentChat?.messages?.length, isResponseLoading, isWaitingForN8n]);
 
-  // Auto-scroll with delay to ensure DOM is rendered
+  // Scroll on chat change
   useEffect(() => {
-    if (currentChat?.messages?.length > 0) {
-      // Immediate scroll
-      scrollToBottom();
-      
-      // Delayed scroll to catch any late-rendering content
-      const timeoutId = setTimeout(() => {
+    if (currentChat?.id) {
+      // Wait for DOM to update then scroll
+      requestAnimationFrame(() => {
         scrollToBottom();
-      }, 100);
-      
-      // Additional scroll for complex content like documents
-      const timeoutId2 = setTimeout(() => {
-        scrollToBottom();
-      }, 500);
-      
-      return () => {
-        clearTimeout(timeoutId);
-        clearTimeout(timeoutId2);
-      };
+      });
     }
-  }, [currentChat?.id, currentChat?.messages]);
+  }, [currentChat?.id]);
+
+  // Ensure scroll after component mount and when messages load
+  useEffect(() => {
+    // Initial scroll after mount
+    const mountTimer = setTimeout(() => {
+      scrollToBottom();
+    }, 200);
+    
+    return () => clearTimeout(mountTimer);
+  }, []);
+
+  // Use MutationObserver to detect DOM changes and maintain scroll position
+  useEffect(() => {
+    if (!scrollAreaRef.current) return;
+    
+    const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return;
+    
+    // Create observer to watch for content changes
+    const observer = new MutationObserver((mutations) => {
+      // Check if we should auto-scroll (user is near bottom)
+      const isNearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+      
+      if (isNearBottom) {
+        requestAnimationFrame(() => {
+          viewport.scrollTop = viewport.scrollHeight;
+        });
+      }
+    });
+    
+    // Observe changes to the messages container
+    const messagesContainer = viewport.querySelector('.flex.flex-col.space-y-4');
+    if (messagesContainer) {
+      observer.observe(messagesContainer, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+    
+    return () => observer.disconnect();
+  }, [currentChat?.id]);
 
   // Determine if the offer creation process is complete for UI feedback
   // Check both local state and metadata for completion
@@ -1516,7 +1545,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 
                 // Trigger scroll to show the new document message
                 setTimeout(() => {
-                  scrollToBottom();
+                  scrollToBottom(true);
                 }, 100);
                 
                 // Show browser notification if user has granted permission
@@ -1862,14 +1891,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
     
     // Trigger scroll to show the final response
     setTimeout(() => {
-      scrollToBottom();
+      scrollToBottom(true);
     }, 100);
   };
 
   return (
-    <div className="flex flex-col h-full max-w-full">
-      {/* Chat header - left-aligned title */}
-      <div className="border-b p-3 sm:p-4 flex items-center sticky top-0 bg-background z-10">
+    <div className="flex flex-col h-screen bg-background">
+      {/* Chat header - remains sticky */}
+      <div className="border-b p-3 sm:p-4 flex items-center sticky top-0 bg-background z-10 shrink-0">
         <div className="flex items-center space-x-2 w-full px-4 sm:px-6 lg:px-8">
           <div className="font-semibold">
             {currentChat && currentChat.title ? (
@@ -1881,13 +1910,13 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </div>
 
-      {/* Messages container - updated with responsive spacing and max-width constraint */}
+      {/* Messages container - flex-1 to take available space */}
       <ScrollArea 
         ref={scrollAreaRef} 
-        className="flex-1 overflow-y-auto"
+        className="flex-1"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8 pb-32">
+          <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
               <div className="flex items-center justify-center min-h-[60vh]">
@@ -2038,8 +2067,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         </div>
       </ScrollArea>
 
-      {/* Input area - centered with max-width constraint */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-[300px] bg-background border-t">
+      {/* Input area - now part of the flex layout, not fixed */}
+      <div className="border-t bg-background shrink-0">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <form onSubmit={handleSubmit} className="relative">
             <Textarea

@@ -251,22 +251,25 @@ export default function ChatLayout({ initialChatId } = {}) {
 
   // When chats are loaded, select chat based on initialChatId if provided
   useEffect(() => {
-    if (initialChatId && chats.length > 0) {
+    if (initialChatId && chats.length > 0 && !isLoading) {
       const found = chats.find(c => c.id === initialChatId);
-      if (found && currentChat?.id !== found.id) {
+      if (found) {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting chat from initialChatId:', initialChatId);
         setCurrentChatWithTracking(found);
+        setSelectedTool(found.tool_id || null);
+      } else {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat not found for initialChatId:', initialChatId);
+        // If the specific chat isn't found, redirect to the first available chat or create a new one
+        if (chats.length > 0) {
+          setCurrentChatWithTracking(chats[0]);
+          setSelectedTool(chats[0].tool_id || null);
+          router.replace(`/chat/${chats[0].id}`);
+        } else {
+          createDefaultChat();
+        }
       }
     }
-  }, [initialChatId, chats]);
-
-  // Redirect to chat route when currentChat changes
-  useEffect(() => {
-    if (currentChat?.id) {
-      if (pathname !== `/chat/${currentChat.id}`) {
-        router.replace(`/chat/${currentChat.id}`);
-      }
-    }
-  }, [currentChat?.id, pathname]);
+  }, [initialChatId, chats, isLoading]);
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {
@@ -301,7 +304,12 @@ export default function ChatLayout({ initialChatId } = {}) {
   };
 
   const handleBookmarkMessage = (message) => {
-    setSnippetMessage(message);
+    // Add the thread_id from currentChat to the message
+    const messageWithThreadId = {
+      ...message,
+      thread_id: currentChat?.id
+    };
+    setSnippetMessage(messageWithThreadId);
     setShowSnippetModal(true);
   };
 
