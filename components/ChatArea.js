@@ -15,26 +15,7 @@ import { initializeThread, saveMessage, subscribeToThread } from '@/lib/utils/su
 import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
-
-// Define questions with keys, matching the backend order
-const hybridOfferQuestions = [
-  { key: 'offerDescription', question: "Tell us about the offer high level" },
-  { key: 'targetAudience', question: "Who is your target audience?" },
-  { key: 'painPoints', question: "What are their main pain points?" },
-  { key: 'solution', question: "What is the unique way you solve this problem?" },
-  { key: 'pricing', question: "What is your pricing structure?" },
-  { key: 'clientResult', question: "Finally, what's your biggest client result?" }
-];
-
-// Define workshop generator questions
-const workshopQuestions = [
-  { key: 'participantOutcomes', question: "What specific outcomes will participants achieve?" },
-  { key: 'targetAudience', question: "Who is your ideal workshop participant?" },
-  { key: 'problemAddressed', question: "What problem does your workshop solve?" },
-  { key: 'workshopDuration', question: "How long will your workshop be?" },
-  { key: 'topicsAndActivities', question: "What topics and activities will you cover?" },
-  { key: 'resourcesProvided', question: "What resources will participants receive?" }
-];
+import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
@@ -1916,7 +1897,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         className="flex-1"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8">
+          <div className="flex flex-col-reverse space-y-reverse space-y-4 sm:space-y-6 py-4 sm:py-8">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
               <div className="flex items-center justify-center min-h-[60vh]">
@@ -1932,40 +1913,48 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 </div>
               </div>
             ) : (
-              currentChat.messages
-                .filter((message) => {
+              (() => {
+                const filteredMessages = currentChat.messages.filter((message) => {
                   // Filter out document generation status messages if document is already complete
-                  const isGenerationStatus = typeof message.content === 'string' && 
-                    message.content.includes('document-generation-status');
-                  
+                  const isGenerationStatus =
+                    typeof message.content === "string" &&
+                    message.content.includes("document-generation-status");
+
                   if (isGenerationStatus) {
                     // Check if there are any completed document messages in the chat
-                    const hasCompletedDocuments = currentChat.messages.some(msg => 
-                      isDocumentMessage(msg) && !msg.content.includes('document-generation-status')
+                    const hasCompletedDocuments = currentChat.messages.some(
+                      (msg) =>
+                        isDocumentMessage(msg) &&
+                        !msg.content.includes("document-generation-status")
                     );
-                    
+
                     // Also check metadata for completion
-                    const isDocumentComplete = currentChat.metadata?.documentGenerated === true || 
+                    const isDocumentComplete =
+                      currentChat.metadata?.documentGenerated === true ||
                       currentChat.metadata?.isGeneratingDocument === false;
-                    
+
                     // Filter out generation status if document is complete
                     if (hasCompletedDocuments || isDocumentComplete) {
-                      console.log('[ChatArea] Filtering out generation status message - document is complete');
+                      console.log(
+                        "[ChatArea] Filtering out generation status message - document is complete"
+                      );
                       return false;
                     }
                   }
-                  
+
                   return true;
-                })
-                .map((message, index, filteredArray) => {
-                  // Check if this is the last message in the filtered array
-                  const isLastMessage = index === filteredArray.length - 1;
-                  
+                });
+
+                return filteredMessages.map((message, index) => {
+                  const isLastMessage = index === 0;
+
                   return (
                     <div
                       key={message.id || `message-${index}`}
                       id={`message-${message.id}`}
-                      className={`group relative ${message.role === "user" ? "flex justify-end" : ""}`}
+                      className={`group relative ${
+                        message.role === "user" ? "flex justify-end" : ""
+                      }`}
                       ref={isLastMessage ? lastMessageRef : null}
                     >
                       <div className="absolute top-1 right-1 message-actions">
@@ -2027,7 +2016,8 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                       </div>
                     </div>
                   );
-                })
+                });
+              })()
             )}
 
             {/* Show n8n document generation loader */}

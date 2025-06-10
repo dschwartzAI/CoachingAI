@@ -230,6 +230,7 @@ export default function ChatLayout({ initialChatId } = {}) {
           title: "Error",
           description: "Failed to load your conversations. Please try again.",
           variant: "destructive",
+          removeDelay: 10000,
         });
         
         // Create a default chat when there's an error loading
@@ -251,25 +252,35 @@ export default function ChatLayout({ initialChatId } = {}) {
 
   // When chats are loaded, select chat based on initialChatId if provided
   useEffect(() => {
-    if (initialChatId && chats.length > 0 && !isLoading) {
+    if (initialChatId && chats.length > 0) {
+      if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Attempting to set chat from initialChatId:', initialChatId);
       const found = chats.find(c => c.id === initialChatId);
-      if (found) {
-        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Setting chat from initialChatId:', initialChatId);
+      if (found && currentChat?.id !== found.id) {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Found chat matching initialChatId, setting now...');
         setCurrentChatWithTracking(found);
         setSelectedTool(found.tool_id || null);
       } else {
-        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Chat not found for initialChatId:', initialChatId);
-        // If the specific chat isn't found, redirect to the first available chat or create a new one
-        if (chats.length > 0) {
-          setCurrentChatWithTracking(chats[0]);
-          setSelectedTool(chats[0].tool_id || null);
-          router.replace(`/chat/${chats[0].id}`);
-        } else {
-          createDefaultChat();
-        }
+        if (process.env.NODE_ENV !== "production") console.warn('[ChatLayout] Did not find chat matching initialChatId or it was already set.');
       }
     }
-  }, [initialChatId, chats, isLoading]);
+  }, [initialChatId, chats]);
+
+  // Only redirect if we're not already on the correct path
+  useEffect(() => {
+    // Avoid redirecting if currentChat is not set or doesn't have a valid ID
+    if (!currentChat?.id || !isValidUUID(currentChat.id)) {
+      if (process.env.NODE_ENV !== "production" && currentChat?.id) {
+        console.log(`[ChatLayout] Redirect prevented for non-UUID chat ID: ${currentChat.id}`);
+      }
+      return;
+    }
+
+    const targetPath = `/chat/${currentChat.id}`;
+    if (pathname !== targetPath) {
+      if (process.env.NODE_ENV !== "production") console.log(`[ChatLayout] Redirecting to ${targetPath} from ${pathname}`);
+      router.replace(targetPath);
+    }
+  }, [currentChat?.id, pathname, router]);
 
   // New useEffect to synchronize selectedTool with currentChat.tool_id
   useEffect(() => {

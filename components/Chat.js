@@ -85,6 +85,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
           title: "Authentication Warning",
           description: "You appear to be using the app without being logged in. Your chats may not be saved.",
           variant: "destructive",
+          removeDelay: 10000,
         });
       }
     };
@@ -177,6 +178,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         title: "Error",
         description: `Failed to start the conversation: ${error.message}`,
         variant: "destructive",
+        removeDelay: 10000,
       });
       setError(error.message);
     } finally {
@@ -186,14 +188,14 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
   };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [messages]);
 
   // Add a separate effect to scroll when loading state changes
   useEffect(() => {
     if (isLoading) {
       if (process.env.NODE_ENV !== "production") console.log('[Chat] Loading state changed, scrolling to bottom');
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [isLoading]);
 
@@ -295,6 +297,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         title: "Error",
         description: `Failed to start a new chat: ${error.message}`,
         variant: "destructive",
+        removeDelay: 10000,
       });
       setError(error.message);
       return null;
@@ -384,7 +387,8 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
         toast({
           variant: "destructive",
           title: "Error",
-          description: `Failed to get AI response: ${err.message}`
+          description: `Failed to get AI response: ${err.message}`,
+          removeDelay: 10000,
         });
       } finally {
         setIsLoading(false);
@@ -498,7 +502,8 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Failed to get AI response: ${err.message}`
+        description: `Failed to get AI response: ${err.message}`,
+        removeDelay: 10000,
       });
     } finally {
       setIsLoading(false);
@@ -551,7 +556,7 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
       {tool && <ToolProgress tool={tool} messages={messages} thread={thread} />}
       
       <ScrollArea className="flex-grow p-6">
-        <div className="space-y-6 max-w-3xl mx-auto">
+        <div className="flex flex-col-reverse space-y-reverse space-y-6 max-w-3xl mx-auto pt-32">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <RefreshCw className="h-8 w-8 mb-2 animate-spin-slow" />
@@ -562,9 +567,12 @@ export default function Chat({ thread: initialThread, onThreadUpdate }) {
             </div>
           )}
           
-          {messages.map((msg) => (
-            <Message key={msg.id || msg.tempId || messages.indexOf(msg)} message={msg} />
-          ))}
+          {messages
+            .slice()
+            .reverse()
+            .map((msg, index, arr) => (
+              <Message key={msg.id || msg.tempId || index} message={msg} />
+            ))}
           
           {/* Use the new LoadingMessage component with explicit response loading state */}
           {isResponseLoading && <LoadingMessage />}
