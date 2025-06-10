@@ -1839,7 +1839,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
         className="flex-1 overflow-y-auto"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col space-y-4 sm:space-y-6 py-4 sm:py-8 pb-32">
+          <div className="flex flex-col-reverse space-y-reverse space-y-4 sm:space-y-6 py-4 sm:py-8 pt-32">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
               <div className="flex items-center justify-center min-h-[60vh]">
@@ -1855,7 +1855,7 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                 </div>
               </div>
             ) : (
-              currentChat.messages
+              const filteredMessages = currentChat.messages
                 .filter((message) => {
                   // Filter out document generation status messages if document is already complete
                   const isGenerationStatus = typeof message.content === 'string' && 
@@ -1879,10 +1879,14 @@ export default function ChatArea({ selectedTool, currentChat, setCurrentChat, ch
                   }
                   
                   return true;
-                })
-                .map((message, index, filteredArray) => {
-                  // Check if this is the last message in the filtered array
-                  const isLastMessage = index === filteredArray.length - 1;
+                });
+
+              filteredMessages
+                .slice()
+                .reverse()
+                .map((message, index, reversedArray) => {
+                  // In the reversed array, index 0 is the last message
+                  const isLastMessage = index === 0;
                   
                   return (
                     <div
