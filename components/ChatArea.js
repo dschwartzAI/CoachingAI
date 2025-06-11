@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark, Bot, User } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark, Bot, User, PanelLeftOpen } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -281,7 +281,7 @@ function DocumentMessage({ message }) {
 
 // Add a component for rendering HTML landing pages
 function LandingPageMessage({ content }) {
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true); // Changed from false to true
   const [copied, setCopied] = useState(false);
   
   // Extract HTML code from the message content
@@ -334,7 +334,7 @@ function LandingPageMessage({ content }) {
         <MarkdownMessage content={content.replace(/```html\n[\s\S]*?\n```/g, '').replace(/```\n<!DOCTYPE html[\s\S]*?<\/html>\n```/g, '').replace(/<!DOCTYPE html[\s\S]*?<\/html>/g, '').trim()} />
       </div>
       
-      {/* HTML Code Section */}
+      {/* HTML Preview and Code Section */}
       <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-3">
           <h4 className="font-semibold text-sm">Landing Page HTML</h4>
@@ -369,7 +369,7 @@ function LandingPageMessage({ content }) {
         
         {showPreview && (
           <div className="mb-4">
-            <div className="border rounded bg-white" style={{ height: '400px' }}>
+            <div className="border rounded bg-white" style={{ height: '600px' }}>
               <iframe
                 srcDoc={htmlCode}
                 className="w-full h-full rounded"
@@ -380,20 +380,14 @@ function LandingPageMessage({ content }) {
           </div>
         )}
         
-        <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
-          <pre className="whitespace-pre-wrap">{htmlCode}</pre>
-        </div>
-        
-        <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-          <p><strong>Instructions:</strong></p>
-          <ol className="list-decimal list-inside space-y-1 mt-1">
-            <li>Copy the HTML code above</li>
-            <li>In HighLevel, go to Sites → Pages → Create New Page</li>
-            <li>Choose "Custom Code" or "Blank Page"</li>
-            <li>Paste the HTML code into the custom code section</li>
-            <li>Save and publish your landing page</li>
-          </ol>
-        </div>
+        <details className="mt-4">
+          <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
+            View HTML Code
+          </summary>
+          <div className="mt-2 bg-gray-100 dark:bg-gray-900 rounded p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+            <pre className="whitespace-pre-wrap">{htmlCode}</pre>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -436,6 +430,8 @@ export default function ChatArea() {
   const {
     currentChat,
     selectedTool,
+    isSidebarCollapsed,
+    toggleSidebar,
     updateChat,
     replaceOptimisticChat
   } = useChatStore();
@@ -1783,7 +1779,7 @@ export default function ChatArea() {
         className="flex-1 overflow-y-auto"
       >
         <div className="min-h-full flex flex-col justify-end">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
             <div className="flex flex-col gap-4 sm:gap-6 py-4 sm:py-8">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
@@ -1963,7 +1959,7 @@ export default function ChatArea() {
 
       {/* Input area - now part of the flex layout, not fixed */}
       <div className="border-t bg-background shrink-0">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <form onSubmit={handleSubmit} className="relative">
             <Textarea
               ref={textareaRef}
