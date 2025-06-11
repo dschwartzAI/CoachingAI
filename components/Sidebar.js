@@ -481,9 +481,11 @@ export default function Sidebar({ onShowProfile }) {
               )}
             </>
           ) : (
-            <Button className="w-full" onClick={() => router.push('/login')}>
-              <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
-            </Button>
+            <div className="w-full flex justify-center">
+              <Button className="w-full" onClick={() => router.push('/login')}>
+                <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
+              </Button>
+            </div>
           )}
         </div>
       </div>
