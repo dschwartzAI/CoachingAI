@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ChatArea from "@/components/ChatArea";
-import useChatStore from "@/lib/stores/chat-store";
+import { useChatStore } from "@/lib/stores/chat-store";
 import { useAuth } from "@/components/AuthProvider";
 
 export default function HomePage() {

@@ -16,8 +16,9 @@ import { getAIResponse } from '@/lib/utils/ai';
 import { useToast } from '@/hooks/use-toast';
 import { usePostHog } from '@/hooks/use-posthog';
 import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
-import useChatStore from '@/lib/stores/chat-store';
+import { useChatStore } from '@/lib/stores/chat-store';
 import { useBookmark } from '@/components/ChatLayoutWrapper';
+import { useChatTitle } from '@/lib/hooks/use-chat-title';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
@@ -627,10 +628,12 @@ export default function ChatArea() {
   const { track } = usePostHog();
   const { toast } = useToast();
   const { onBookmark } = useBookmark();
+  const { currentChat, messages = [] } = useChatStore(); // Default messages to []
+  const { generateTitle } = useChatTitle();
+  const [lastTitleGeneration, setLastTitleGeneration] = useState(0);
   
   // Get state and actions from global store
   const {
-    currentChat,
     selectedTool,
     isSidebarCollapsed,
     toggleSidebar,
@@ -1959,6 +1962,21 @@ export default function ChatArea() {
       scrollToBottom(true);
     }, 100);
   };
+
+  useEffect(() => {
+    if (!currentChat?.id || !Array.isArray(messages) || !messages.length) return;
+    const userMessageCount = messages.filter(m => m.role === 'user').length;
+    const now = Date.now();
+    if (
+      messages.length >= 3 &&
+      userMessageCount >= 2 &&
+      !currentChat.hasCustomTitle &&
+      now - lastTitleGeneration > 5000
+    ) {
+      generateTitle(currentChat.id, messages);
+      setLastTitleGeneration(now);
+    }
+  }, [currentChat, messages, generateTitle, lastTitleGeneration]);
 
   return (
     <div className="flex flex-col h-screen bg-background">

@@ -41,7 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePostHog } from '@/hooks/use-posthog';
 import SnippetModal from './SnippetModal';
-import useChatStore from '@/lib/stores/chat-store';
+import { useChatStore } from '@/lib/stores/chat-store';
 
 // Tool icons mapping
 const toolIcons = {
@@ -355,7 +355,6 @@ export default function Sidebar({ onShowProfile }) {
             >
               <MessagesSquare className="h-5 w-5" />
             </Button>
-            
             {tools.map((tool) => {
               const IconComponent = toolIcons[tool.id] || MessageSquare;
               return (
@@ -371,9 +370,6 @@ export default function Sidebar({ onShowProfile }) {
                 </Button>
               );
             })}
-            
-            <div className="flex-1" />
-            
             {/* Recent chats - show first 3 */}
             {visibleChats.slice(0, 3).map((chat) => (
               <Button
@@ -387,14 +383,62 @@ export default function Sidebar({ onShowProfile }) {
                 {getChatIcon(chat).props.children}
               </Button>
             ))}
+            {/* Collapsed user profile at the bottom */}
+            <div className="mt-auto flex flex-col items-center gap-2 w-full">
+              {user ? (
+                <>
+                  <Avatar className="h-8 w-8 border">
+                    <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
+                    <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        onShowProfile();
+                      }}
+                      title="Profile Settings"
+                      className="h-8 w-8"
+                    >
+                      <User className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setShowSnippets(true);
+                      }}
+                      title="Snippets"
+                      className="h-8 w-8"
+                    >
+                      <Bookmark className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={signOut}
+                      title="Log Out"
+                      className="h-8 w-8"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Button className="w-full" onClick={() => router.push('/login')}>
+                  <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
         {/* User Profile - Styled like the image */}
-        <div className="p-4 border-t mt-auto">
-          {user ? (
-            <>
-              {!isSidebarCollapsed ? (
+        {!isSidebarCollapsed && (
+          <div className="p-4 border-t mt-auto">
+            {user ? (
+              <>
                 <div className={`transition-all duration-300 ease-in-out ${
                   isSidebarCollapsed ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'
                 }`}>
@@ -437,7 +481,6 @@ export default function Sidebar({ onShowProfile }) {
                         <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
                       )}
                     </Button>
-                    
                     <Button
                       variant="ghost"
                       className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
@@ -452,7 +495,6 @@ export default function Sidebar({ onShowProfile }) {
                       <Bookmark className="h-4 w-4 mr-2" />
                       Snippets
                     </Button>
-                    
                     {!profileComplete && (
                       <div className="px-2">
                         <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-md flex items-center gap-1">
@@ -463,58 +505,16 @@ export default function Sidebar({ onShowProfile }) {
                     )}
                   </div>
                 </div>
-              ) : (
-                <div className={`flex flex-col items-center gap-2 transition-all duration-300 ease-in-out ${
-                  isSidebarCollapsed ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
-                }`}>
-                  <Avatar className="h-8 w-8 border">
-                    <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
-                    <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        onShowProfile();
-                      }}
-                      title="Profile Settings"
-                      className="h-8 w-8"
-                    >
-                      <User className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setShowSnippets(true);
-                      }}
-                      title="Snippets"
-                      className="h-8 w-8"
-                    >
-                      <Bookmark className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={signOut}
-                      title="Log Out"
-                      className="h-8 w-8"
-                    >
-                      <LogOut className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="w-full flex justify-center">
-              <Button className="w-full" onClick={() => router.push('/login')}>
-                <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
-              </Button>
-            </div>
-          )}
-        </div>
+              </>
+            ) : (
+              <div className="w-full flex justify-center">
+                <Button className="w-full" onClick={() => router.push('/login')}>
+                  <LogIn className="mr-2 h-4 w-4" /> Login / Sign Up
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       
       {/* Overlay to close sidebar when clicking outside on mobile */}

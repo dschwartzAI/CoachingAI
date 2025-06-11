@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import ChatArea from "@/components/ChatArea";
-import useChatStore from "@/lib/stores/chat-store";
+import { useChatStore } from "@/lib/stores/chat-store";
 
 export default function ChatPage({ params }) {
   const { setCurrentChat } = useChatStore();

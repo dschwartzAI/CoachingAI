@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "./AuthProvider";
-import useChatStore from '@/lib/stores/chat-store';
+import { useChatStore } from '@/lib/stores/chat-store';
 
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);

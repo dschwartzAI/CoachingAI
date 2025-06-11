@@ -1719,6 +1719,34 @@ export async function POST(request) {
 
     } else if (tool === 'workshop-generator') {
       console.log('[CHAT_API_DEBUG] Processing workshop generator tool logic (non-init path)');
+
+      // ======== NEW CONTEXTUAL WORKSHOP HANDLER ========
+      try {
+        const { handleWorkshopConversation } = await import('@/lib/workshop/handle-workshop-conversation');
+        const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
+        const payload = handleWorkshopConversation(lastUserMsg, chatId);
+        // Merge any previously stored collectedAnswers so we don't lose data stored in DB
+        payload.collectedAnswers = { ...collectedAnswers, ...payload.collectedAnswers };
+        // Persist payload back into thread metadata (best-effort)
+        try {
+          await supabase
+            .from('threads')
+            .update({ metadata: {
+              currentQuestionKey: payload.currentQuestionKey,
+              questionsAnswered: payload.questionsAnswered,
+              isComplete: payload.isComplete,
+              collectedAnswers: payload.collectedAnswers
+            }})
+            .eq('id', chatId);
+        } catch(dbUpdateErr) {
+          console.error('[CHAT_API_DEBUG] Failed updating thread metadata with new handler', dbUpdateErr);
+        }
+        return NextResponse.json(payload);
+      } catch(handlerErr) {
+        console.error('[CHAT_API_DEBUG] New workshop handler failed', handlerErr);
+      }
+      // ======== END NEW CONTEXTUAL HANDLER ========
+
       currentQuestionKey = body.currentQuestionKey || 'participantOutcomes';
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
       const totalQuestions = workshopQuestions.length;

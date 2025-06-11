@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import Sidebar from "./Sidebar";
 import NotificationBell from "./NotificationBell";
-import useChatStore from "@/lib/stores/chat-store";
+import { useChatStore } from "@/lib/stores/chat-store";
 import { FullPageLoading } from "./ui/loading";
 import ProfileModal from "./ProfileModal";
 import SnippetModal from "./SnippetModal";
