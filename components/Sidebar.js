@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import NotificationBell from "./NotificationBell";
 import { 
   LogIn,
   LogOut,
@@ -34,7 +33,7 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen
-} from 'lucide-react';
+} from "lucide-react";
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
 import { deleteThread } from '@/lib/utils/supabase';
@@ -54,6 +53,7 @@ export default function Sidebar({ onShowProfile }) {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const { track } = usePostHog();
+  const [isLoading, setIsLoading] = useState(false);
   const [expandedChats, setExpandedChats] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
@@ -64,14 +64,15 @@ export default function Sidebar({ onShowProfile }) {
     chats,
     currentChat,
     selectedTool,
-    profileComplete,
-    isLoading,
-    isSidebarCollapsed,
+    loadChats,
     setCurrentChat,
-    setSelectedTool,
+    deleteChat,
     createNewChat,
-    deleteChat: deleteChatFromStore,
-    updateChat,
+    isSidebarLoading,
+    profileComplete,
+    profileChecked,
+    checkProfileCompletion,
+    isSidebarCollapsed,
     toggleSidebar
   } = useChatStore();
 
@@ -80,6 +81,14 @@ export default function Sidebar({ onShowProfile }) {
     ...tool
   }));
 
+  // Load chats when component mounts or user changes
+  useEffect(() => {
+    if (user?.id) {
+      setIsLoading(true);
+      loadChats(user.id).finally(() => setIsLoading(false));
+    }
+  }, [user?.id, loadChats]);
+
   // Close sidebar on mobile when navigating
   useEffect(() => {
     // Only close on mobile (when screen width is less than md breakpoint)
@@ -87,6 +96,13 @@ export default function Sidebar({ onShowProfile }) {
       setIsMobileOpen(false);
     }
   }, [currentChat]);
+
+  // Check profile completion when user loads
+  useEffect(() => {
+    if (user?.id && !profileChecked) {
+      checkProfileCompletion(user.id);
+    }
+  }, [user?.id, profileChecked, checkProfileCompletion]);
 
   const handleNewChat = (toolId = null) => {
     const newChat = createNewChat(toolId);
@@ -142,7 +158,7 @@ export default function Sidebar({ onShowProfile }) {
       console.log('[Sidebar] Chat deleted successfully:', chatId);
       
       // Remove from store
-      deleteChatFromStore(chatId);
+      deleteChat(chatId);
     } catch (err) {
       console.error('[Sidebar] Delete chat error:', err);
       alert('Failed to delete chat. Please try again.');
@@ -176,13 +192,14 @@ export default function Sidebar({ onShowProfile }) {
         {/* Header with logo */}
         <div className="p-4 flex items-center justify-between border-b">
           {!isSidebarCollapsed ? (
-            <div className="flex items-center justify-between w-full opacity-100 transition-all duration-300 ease-in-out">
+            <div className={`flex items-center justify-between w-full transition-all duration-300 ease-in-out ${
+              isSidebarCollapsed ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+            }`}>
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5" />
                 <span className="font-semibold">Sovereign AI</span>
               </div>
               <div className="flex items-center gap-2">
-                <NotificationBell />
                 <Button 
                   variant="ghost" 
                   size="icon" 
@@ -203,7 +220,9 @@ export default function Sidebar({ onShowProfile }) {
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center w-full opacity-100 transition-all duration-300 ease-in-out">
+            <div className={`flex items-center justify-center w-full transition-all duration-300 ease-in-out ${
+              isSidebarCollapsed ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+            }`}>
               <Button 
                 variant="ghost" 
                 size="icon"
@@ -217,7 +236,9 @@ export default function Sidebar({ onShowProfile }) {
         </div>
         
         {!isSidebarCollapsed ? (
-          <div className="flex-grow flex flex-col overflow-hidden opacity-100 transition-all duration-300 ease-in-out">
+          <div className={`flex-grow flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'
+          }`}>
             {/* Specialized Tools Section */}
             <div className="p-4 border-b">
               <div className="flex items-center justify-between mb-3">
@@ -321,7 +342,9 @@ export default function Sidebar({ onShowProfile }) {
             </div>
           </div>
         ) : (
-          <div className="flex-grow flex flex-col items-center py-4 gap-2 opacity-100 transition-all duration-300 ease-in-out">
+          <div className={`flex-grow flex flex-col items-center py-4 gap-2 transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+          }`}>
             {/* Collapsed state - Quick action buttons */}
             <Button
               variant={!selectedTool ? "secondary" : "ghost"}
@@ -372,7 +395,9 @@ export default function Sidebar({ onShowProfile }) {
           {user ? (
             <>
               {!isSidebarCollapsed ? (
-                <div className="opacity-100 transition-all duration-300 ease-in-out">
+                <div className={`transition-all duration-300 ease-in-out ${
+                  isSidebarCollapsed ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'
+                }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 overflow-hidden">
                       <Avatar className="h-8 w-8 border">
@@ -439,7 +464,9 @@ export default function Sidebar({ onShowProfile }) {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-2 opacity-100 transition-all duration-300 ease-in-out">
+                <div className={`flex flex-col items-center gap-2 transition-all duration-300 ease-in-out ${
+                  isSidebarCollapsed ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+                }`}>
                   <Avatar className="h-8 w-8 border">
                     <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
                     <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>

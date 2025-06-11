@@ -4,6 +4,7 @@ import { useEffect, createContext, useContext } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import Sidebar from "./Sidebar";
+import NotificationBell from "./NotificationBell";
 import useChatStore from "@/lib/stores/chat-store";
 import { FullPageLoading } from "./ui/loading";
 import ProfileModal from "./ProfileModal";
@@ -136,6 +137,11 @@ export default function ChatLayoutWrapper({ children }) {
           {children}
         </div>
         
+        {/* Notification Bell - Fixed in top right corner */}
+        <div className="fixed top-4 right-4 z-50">
+          <NotificationBell />
+        </div>
+        
         <ProfileModal
           open={showProfileModal}
           onOpenChange={setShowProfileModal}
@@ -149,4 +155,4 @@ export default function ChatLayoutWrapper({ children }) {
       </div>
     </BookmarkContext.Provider>
   );
-} 
+}
