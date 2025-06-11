@@ -30,7 +30,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Bell,
-  Bookmark
+  Bookmark,
+  Monitor
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -43,8 +44,8 @@ import useChatStore from '@/lib/stores/chat-store';
 
 // Tool icons mapping
 const toolIcons = {
-  'hybrid-offer': BrainCog,
-  'workshop-generator': PenTool
+  'hybrid-offer': FileText,
+  'workshop-generator': Monitor
 };
 
 export default function Sidebar({ onShowProfile }) {
