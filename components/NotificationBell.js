@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bell, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ export default function NotificationBell() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [processedChats, setProcessedChats] = useState(new Set());
   const { user } = useAuth();
+  const dropdownRef = useRef(null);
   
   // Get state from global store
   const { chats, setCurrentChat } = useChatStore();
@@ -72,35 +73,46 @@ export default function NotificationBell() {
     }
   }, [processedChats, user?.id]);
 
-  // Check for new document completions
+  // Check for new document completions - only when chats actually change
   useEffect(() => {
     if (!chats || !user) return;
+
+    // Only process if we have actual chats with messages
+    const validChats = chats.filter(chat => 
+      chat.messages && 
+      chat.messages.length > 0 && 
+      chat.id && 
+      typeof chat.id === 'string'
+    );
+
+    if (validChats.length === 0) return;
 
     const newNotifications = [];
     const newProcessedChats = new Set(processedChats);
     
-    chats.forEach(chat => {
+    validChats.forEach(chat => {
       // Skip if we've already processed this chat for notifications
       if (processedChats.has(chat.id)) return;
 
       // Check if this chat has a completed document
       const hasDocumentMessage = chat.messages?.some(message => 
         message.role === 'assistant' && 
-        (message.content?.includes('Document generated successfully') ||
-         message.content?.includes('✅ Document generated successfully!')) &&
+        message.content && // Ensure content exists
+        (message.content.includes('Document generated successfully') ||
+         message.content.includes('✅ Document generated successfully!')) &&
         (message.metadata?.documentLinks?.googleDocLink || 
-         message.content?.includes('https://docs.google.com/document/'))
+         message.content.includes('https://docs.google.com/document/'))
       );
       
       // Also check thread metadata for document completion
-      const hasDocumentInMetadata = chat.metadata?.documentGenerated && 
+      const hasDocumentInMetadata = chat.metadata?.documentGenerated === true && 
                                    chat.metadata?.documentLinks?.googleDocLink;
       
       if (hasDocumentMessage || hasDocumentInMetadata) {
         // Mark this chat as processed
         newProcessedChats.add(chat.id);
         
-        // Create notification
+        // Create notification only for legitimate document completions
         newNotifications.push({
           id: `doc-ready-${chat.id}-${Date.now()}`,
           chatId: chat.id,
@@ -112,14 +124,30 @@ export default function NotificationBell() {
       }
     });
 
+    // Only update if we have new notifications
     if (newNotifications.length > 0) {
       setNotifications(prev => [...newNotifications, ...prev]);
     }
 
+    // Only update processed chats if there are new ones
     if (newProcessedChats.size > processedChats.size) {
       setProcessedChats(newProcessedChats);
     }
-  }, [chats, user, processedChats]);
+  }, [chats, user]); // Removed processedChats from dependencies to prevent loops
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showNotifications]);
 
   const removeNotification = (notificationId) => {
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
@@ -146,7 +174,7 @@ export default function NotificationBell() {
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       <Button
         variant="ghost"
         size="icon"
@@ -165,67 +193,76 @@ export default function NotificationBell() {
       </Button>
 
       {showNotifications && (
-        <Card className="absolute top-full left-full ml-2 mt-2 w-80 max-w-[calc(100vw-2rem)] z-50 shadow-lg border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm">Notifications</h3>
-              {notifications.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearAllNotifications}
-                  className="text-xs h-6 px-2"
-                >
-                  Clear all
-                </Button>
-              )}
-            </div>
-            
-            {notifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No notifications
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className="p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors"
-                    onClick={() => handleNotificationClick(notification)}
+        <>
+          {/* Invisible backdrop to close dropdown when clicking outside */}
+          <div 
+            className="fixed inset-0 z-40"
+            onClick={() => setShowNotifications(false)}
+          />
+          
+          {/* Notification dropdown with higher z-index */}
+          <Card className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] z-50 shadow-xl border bg-background">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">Notifications</h3>
+                {notifications.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAllNotifications}
+                    className="text-xs h-6 px-2"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                          <p className="text-sm font-medium truncate">
-                            Document Ready
+                    Clear all
+                  </Button>
+                )}
+              </div>
+              
+              {notifications.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No notifications
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className="p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80 transition-colors"
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                            <p className="text-sm font-medium truncate">
+                              Document Ready
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Your {notification.chatTitle} document is ready to view
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {notification.timestamp.toLocaleTimeString()}
                           </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Your {notification.chatTitle} document is ready to view
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {notification.timestamp.toLocaleTimeString()}
-                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeNotification(notification.id);
+                          }}
+                          className="h-6 w-6 p-0 flex-shrink-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeNotification(notification.id);
-                        }}
-                        className="h-6 w-6 p-0 flex-shrink-0"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

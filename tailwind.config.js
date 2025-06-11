@@ -75,6 +75,15 @@ module.exports = {
         "accordion-up": "accordion-up 0.2s ease-out",
         "spin-slow": "spin-slow 3s linear infinite",
       },
+      zIndex: {
+        '40': '40',  // Backdrop
+        '50': '50',  // Dropdown menus, notifications
+        '60': '60',  // Modals
+        '70': '70',  // Tooltips
+        '80': '80',  // Toasts
+        '90': '90',  // Critical overlays
+        '100': '100' // Maximum priority items
+      }
     },
   },
   plugins: [

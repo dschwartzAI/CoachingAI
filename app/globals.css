@@ -110,6 +110,46 @@
   }
 }
 
+/* Z-index layering system */
+@layer utilities {
+  /* Ensure proper stacking context */
+  .chat-area {
+    z-index: 10;
+  }
+  
+  .sidebar {
+    z-index: 20;
+  }
+  
+  .notification-backdrop {
+    z-index: 40;
+  }
+  
+  .notification-dropdown {
+    z-index: 50;
+  }
+  
+  .modal-backdrop {
+    z-index: 60;
+  }
+  
+  .modal {
+    z-index: 70;
+  }
+  
+  .tooltip {
+    z-index: 80;
+  }
+  
+  .toast {
+    z-index: 90;
+  }
+  
+  .critical-overlay {
+    z-index: 100;
+  }
+}
+
 /* Chat-specific styles for ChatGPT-like appearance */
 @layer components {
   /* Prose styling for assistant messages */
