@@ -30,7 +30,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Bell,
-  Bookmark
+  Bookmark,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { TOOLS } from '@/lib/config/tools';
@@ -63,11 +65,13 @@ export default function Sidebar({ onShowProfile }) {
     selectedTool,
     profileComplete,
     isLoading,
+    isSidebarCollapsed,
     setCurrentChat,
     setSelectedTool,
     createNewChat,
     deleteChat: deleteChatFromStore,
-    updateChat
+    updateChat,
+    toggleSidebar
   } = useChatStore();
 
   const tools = Object.entries(TOOLS).map(([id, tool]) => ({
@@ -163,33 +167,60 @@ export default function Sidebar({ onShowProfile }) {
       <MobileMenuButton />
       
       <div className={`
-        w-[300px] h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-40
-        transition-transform duration-300 ease-in-out
+        ${isSidebarCollapsed ? 'w-[60px]' : 'w-[300px]'} h-screen border-r flex flex-col bg-background fixed left-0 top-0 z-40
+        transition-all duration-300 ease-in-out
         md:translate-x-0 md:shadow-none
-        ${isMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'}
+        ${isMobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Header with logo */}
         <div className="p-4 flex items-center justify-between border-b">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            <span className="font-semibold">Sovereign AI</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <NotificationBell />
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="md:hidden"
-              onClick={() => setIsMobileOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
+          {!isSidebarCollapsed ? (
+            <>
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                <span className="font-semibold">Sovereign AI</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <NotificationBell />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="hidden md:flex"
+                  onClick={toggleSidebar}
+                  title="Close sidebar"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="md:hidden"
+                  onClick={() => setIsMobileOpen(false)}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center w-full">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={toggleSidebar}
+                title="Open sidebar"
+                className="h-8 w-8"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
         
         <div className="flex-grow flex flex-col overflow-hidden">
           {/* Specialized Tools Section */}
-          <div className="p-4 border-b">
+          <div className={`p-4 border-b transition-all duration-300 ${
+            isSidebarCollapsed ? 'opacity-0 invisible' : 'opacity-100 visible'
+          }`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
                 <Wrench className="h-5 w-5 mr-2 text-muted-foreground" />
@@ -228,7 +259,9 @@ export default function Sidebar({ onShowProfile }) {
           </div>
 
           {/* Chats/Past Conversations Section */}
-          <div className="p-4 flex flex-col overflow-hidden flex-1">
+          <div className={`p-4 flex flex-col overflow-hidden flex-1 transition-all duration-300 ${
+            isSidebarCollapsed ? 'opacity-0 invisible' : 'opacity-100 visible'
+          }`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
                 <MessagesSquare className="h-5 w-5 mr-2 text-muted-foreground" />
@@ -295,7 +328,9 @@ export default function Sidebar({ onShowProfile }) {
         <div className="p-4 border-t mt-auto">
           {user ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className={`flex items-center justify-between transition-all duration-300 ${
+                isSidebarCollapsed ? 'opacity-0 invisible absolute' : 'opacity-100 visible'
+              }`}>
                 <div className="flex items-center gap-3 overflow-hidden">
                   <Avatar className="h-8 w-8 border">
                     <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
@@ -314,7 +349,9 @@ export default function Sidebar({ onShowProfile }) {
                   <LogOut className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="flex flex-col gap-1 mt-2">
+              <div className={`flex flex-col gap-1 mt-2 transition-all duration-300 ${
+                isSidebarCollapsed ? 'opacity-0 invisible absolute' : 'opacity-100 visible'
+              }`}>
                 <Button
                   variant="ghost"
                   className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
@@ -359,6 +396,41 @@ export default function Sidebar({ onShowProfile }) {
                   </div>
                 )}
               </div>
+
+              {/* Collapsed state icons */}
+              {isSidebarCollapsed && user && (
+                <div className="flex flex-col items-center gap-2 transition-all duration-300">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleNewChat(null)}
+                    title="New chat"
+                    className="h-8 w-8"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      onShowProfile();
+                    }}
+                    title="Profile"
+                    className="h-8 w-8"
+                  >
+                    <User className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={signOut}
+                    title="Log out"
+                    className="h-8 w-8"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <Button className="w-full" onClick={() => router.push('/login')}>

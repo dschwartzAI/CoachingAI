@@ -39,6 +39,7 @@ export default function ChatLayoutWrapper({ children }) {
     profileChecked,
     isInitialLoad,
     isSidebarLoading,
+    isSidebarCollapsed,
     loadChats,
     setCurrentChat,
     setSelectedTool,
@@ -131,7 +132,9 @@ export default function ChatLayoutWrapper({ children }) {
           onShowProfile={() => setShowProfileModal(true)}
           profileComplete={profileComplete}
         />
-        <div className="w-full md:ml-[300px] flex-1 overflow-hidden h-screen transition-all duration-300">
+        <div className={`w-full flex-1 overflow-hidden h-screen transition-all duration-300 ${
+          isSidebarCollapsed ? 'md:ml-[60px]' : 'md:ml-[300px]'
+        }`}>
           {children}
         </div>
         
