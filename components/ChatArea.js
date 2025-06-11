@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark, Bot, User, PanelLeftOpen } from 'lucide-react'; // Icons for status and Loader2
+import { CheckCircle2, Circle, HelpCircle, Loader2, ExternalLink, Download, FileText, ArrowUp, Bookmark, Bot, User, PanelLeftOpen, Check, Copy, ChevronUp, ChevronDown } from 'lucide-react'; // Icons for status and Loader2
 import LoadingMessage from "@/components/LoadingMessage"; // Import the LoadingMessage component
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -393,6 +393,196 @@ function LandingPageMessage({ content }) {
   );
 }
 
+// Workshop Landing Page Message Component with proper content ordering
+function WorkshopLandingPageMessage({ content }) {
+  const [activeTab, setActiveTab] = useState('preview'); // Default to preview
+  const [copied, setCopied] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
+  
+  // Extract HTML code from the message content
+  const extractHTMLCode = (text) => {
+    // Look for HTML code blocks
+    const htmlMatch = text.match(/```html\n([\s\S]*?)\n```/);
+    return htmlMatch ? htmlMatch[1] : null;
+  };
+
+  // Extract content sections
+  const extractSections = (text) => {
+    const sections = {
+      intro: '',
+      html: '',
+      afterPreview: ''
+    };
+
+    // Find the HTML code block
+    const htmlMatch = text.match(/```html\n([\s\S]*?)\n```/);
+    if (!htmlMatch) return sections;
+
+    sections.html = htmlMatch[1];
+
+    // Split content around the HTML block
+    const parts = text.split(htmlMatch[0]);
+    
+    // Intro is everything before the HTML (up to "Landing Page Preview:")
+    const introMatch = parts[0].match(/([\s\S]*?)(?=\*\*Landing Page Preview:\*\*)/);
+    sections.intro = introMatch ? introMatch[1].trim() : parts[0].trim();
+    
+    // Everything after the HTML block is the instructions
+    if (parts[1]) {
+      sections.afterPreview = parts[1].trim();
+    }
+
+    return sections;
+  };
+
+  const sections = extractSections(content);
+  const htmlCode = sections.html;
+
+  const copyToClipboard = async () => {
+    if (htmlCode) {
+      try {
+        await navigator.clipboard.writeText(htmlCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    }
+  };
+
+  const downloadHTML = () => {
+    if (htmlCode) {
+      const blob = new Blob([htmlCode], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'workshop-landing-page.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  if (!htmlCode) {
+    // If no HTML code found, use the regular LandingPageMessage component
+    return <LandingPageMessage content={content} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Intro message */}
+      {sections.intro && (
+        <div className="mb-4">
+          <MarkdownMessage content={sections.intro} />
+        </div>
+      )}
+      
+      {/* HTML Preview Section with Tabs */}
+      <div className="border rounded-lg overflow-hidden bg-background">
+        {/* Tab Header */}
+        <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
+          <div className="flex gap-1">
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === 'preview' 
+                  ? 'bg-background text-foreground shadow-sm' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Preview
+            </button>
+            <button
+              onClick={() => setActiveTab('code')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === 'code' 
+                  ? 'bg-background text-foreground shadow-sm' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              HTML Code
+            </button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyToClipboard}
+              className="h-8 text-xs"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3 w-3 mr-1" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copy HTML
+                </>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={downloadHTML}
+              className="h-8 text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Download
+            </Button>
+          </div>
+        </div>
+        
+        {/* Tab Content */}
+        <div className="p-4">
+          {activeTab === 'preview' ? (
+            <div className="border rounded-lg bg-white overflow-hidden" style={{ height: '600px' }}>
+              <iframe
+                srcDoc={htmlCode}
+                className="w-full h-full"
+                title="Workshop Landing Page Preview"
+                sandbox="allow-same-origin allow-scripts"
+              />
+            </div>
+          ) : (
+            <div className="bg-muted rounded-lg p-4 overflow-x-auto max-h-[600px] overflow-y-auto">
+              <pre className="text-xs font-mono">
+                <code>{htmlCode}</code>
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Instructions Section - Collapsible */}
+      {sections.afterPreview && (
+        <div className="border rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="w-full px-4 py-3 bg-muted/50 hover:bg-muted/70 transition-colors flex items-center justify-between text-left"
+          >
+            <span className="font-medium text-sm">Instructions & Customization Options</span>
+            {showInstructions ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+          
+          {showInstructions && (
+            <div className="p-4 border-t">
+              <MarkdownMessage content={sections.afterPreview} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Add a function to check if a message contains landing page HTML
 function isLandingPageMessage(message) {
   if (typeof message.content !== 'string') return false;
@@ -401,6 +591,18 @@ function isLandingPageMessage(message) {
   const hasHTMLCode = message.content.includes('```html') || 
                      message.content.includes('<!DOCTYPE html') ||
                      (message.content.includes('<html') && message.content.includes('</html>'));
+  
+  return hasHTMLCode;
+}
+
+// Add a function to check if a message is a workshop landing page
+function isWorkshopLandingPageMessage(message) {
+  if (typeof message.content !== 'string') return false;
+  
+  // Check if it's a workshop generator message with HTML
+  const hasHTMLCode = message.content.includes('```html') && 
+                     (message.content.includes('Landing Page Preview:') || 
+                      message.content.includes('workshop landing page'));
   
   return hasHTMLCode;
 }
@@ -1886,6 +2088,8 @@ export default function ChatArea() {
                                 <>
                                   {isDocumentMessage(message) ? (
                                     <DocumentMessage message={message} />
+                                  ) : isWorkshopLandingPageMessage(message) ? (
+                                    <WorkshopLandingPageMessage content={message.content} />
                                   ) : isLandingPageMessage(message) ? (
                                     <LandingPageMessage content={message.content} />
                                   ) : (
