@@ -1783,7 +1783,7 @@ export default function ChatArea() {
         className="flex-1 overflow-y-auto"
       >
         <div className="min-h-full flex flex-col justify-end">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
             <div className="flex flex-col gap-4 sm:gap-6 py-4 sm:py-8">
             {/* First message or empty state when no messages */}
             {!currentChat?.messages?.length ? (
@@ -1963,7 +1963,7 @@ export default function ChatArea() {
 
       {/* Input area - now part of the flex layout, not fixed */}
       <div className="border-t bg-background shrink-0">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <form onSubmit={handleSubmit} className="relative">
             <Textarea
               ref={textareaRef}

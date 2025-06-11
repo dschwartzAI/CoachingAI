@@ -295,70 +295,84 @@ export default function Sidebar({ onShowProfile }) {
         <div className="p-4 border-t mt-auto">
           {user ? (
             <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <Avatar className="h-8 w-8 border">
+              {!isSidebarCollapsed ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <Avatar className="h-8 w-8 border">
+                        <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
+                        <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium truncate" title={user.email}>
+                          {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "User"}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {user.email || "example@example.com"}
+                        </span>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-1 mt-2">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                      onClick={() => {
+                        onShowProfile();
+                        // Only close sidebar on mobile
+                        if (window.innerWidth < 768) {
+                          setIsMobileOpen(false);
+                        }
+                      }}
+                    >
+                      <User className="h-4 w-4 mr-2" />
+                      Profile Settings
+                      {profileComplete ? (
+                        <CheckCircle2 className="h-3 w-3 ml-auto text-green-500" />
+                      ) : (
+                        <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
+                      )}
+                    </Button>
+                    
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
+                      onClick={() => {
+                        setShowSnippets(true);
+                        // Only close sidebar on mobile
+                        if (window.innerWidth < 768) {
+                          setIsMobileOpen(false);
+                        }
+                      }}
+                    >
+                      <Bookmark className="h-4 w-4 mr-2" />
+                      Snippets
+                    </Button>
+                    
+                    {!profileComplete && (
+                      <div className="px-2">
+                        <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-md flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Complete your profile for better personalization
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <Avatar className="h-8 w-8 border cursor-pointer" onClick={toggleSidebar} title="Expand sidebar">
                     <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email} />
                     <AvatarFallback>{user.email?.[0].toUpperCase() || "U"}</AvatarFallback>
                   </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium truncate" title={user.email}>
-                      {user.email?.split('@')[0].split('.')[0][0].toUpperCase() + user.email?.split('@')[0].split('.')[0].slice(1) || "User"}
-                    </span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {user.email || "example@example.com"}
-                    </span>
-                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={signOut} title="Log Out">
+                    <LogOut className="h-3 w-3" />
+                  </Button>
                 </div>
-                <Button variant="ghost" size="icon" onClick={signOut} title="Log Out">
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex flex-col gap-1 mt-2">
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
-                  onClick={() => {
-                    onShowProfile();
-                    // Only close sidebar on mobile
-                    if (window.innerWidth < 768) {
-                      setIsMobileOpen(false);
-                    }
-                  }}
-                >
-                  <User className="h-4 w-4 mr-2" />
-                  Profile Settings
-                  {profileComplete ? (
-                    <CheckCircle2 className="h-3 w-3 ml-auto text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-3 w-3 ml-auto text-amber-500" />
-                  )}
-                </Button>
-                
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start px-2 h-8 text-sm hover:bg-muted"
-                  onClick={() => {
-                    setShowSnippets(true);
-                    // Only close sidebar on mobile
-                    if (window.innerWidth < 768) {
-                      setIsMobileOpen(false);
-                    }
-                  }}
-                >
-                  <Bookmark className="h-4 w-4 mr-2" />
-                  Snippets
-                </Button>
-                
-                {!profileComplete && (
-                  <div className="px-2">
-                    <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-md flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      Complete your profile for better personalization
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </>
           ) : (
             <Button className="w-full" onClick={() => router.push('/login')}>

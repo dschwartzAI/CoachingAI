@@ -202,7 +202,7 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   /* Reduce padding on mobile */
-  .max-w-3xl {
+  .max-w-3xl, .max-w-4xl {
     @apply px-3;
   }
 }
