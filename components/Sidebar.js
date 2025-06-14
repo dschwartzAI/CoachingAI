@@ -46,7 +46,8 @@ import { useChatStore } from '@/lib/stores/chat-store';
 // Tool icons mapping
 const toolIcons = {
   'hybrid-offer': FileText,
-  'workshop-generator': Monitor
+  'workshop-generator': Monitor,
+  'ideal-client-extractor': Search
 };
 
 export default function Sidebar({ onShowProfile }) {

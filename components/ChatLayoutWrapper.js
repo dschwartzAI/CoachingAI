@@ -99,10 +99,28 @@ export default function ChatLayoutWrapper({ children }) {
 
   // Handle bookmark message
   const handleBookmarkMessage = (message) => {
+    console.log('[ChatLayoutWrapper] Bookmark triggered with:', {
+      messageId: message?.id,
+      currentChatId: currentChat?.id,
+      hasCurrentChat: !!currentChat
+    });
+    
+    if (!currentChat?.id) {
+      console.error('[ChatLayoutWrapper] Cannot bookmark: currentChat.id is missing');
+      toast({
+        title: "Failed to save snippet",
+        description: "Unable to identify the current conversation. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     const messageWithThreadId = {
       ...message,
-      thread_id: currentChat?.id
+      thread_id: currentChat.id
     };
+    
+    console.log('[ChatLayoutWrapper] Setting snippet message with thread_id:', messageWithThreadId.thread_id);
     setSnippetMessage(messageWithThreadId);
     setShowSnippetModal(true);
   };

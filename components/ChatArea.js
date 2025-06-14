@@ -608,6 +608,11 @@ function isWorkshopLandingPageMessage(message) {
   return hasHTMLCode;
 }
 
+// Helper function to generate a temporary ID for messages
+function generateMessageId() {
+  return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 export default function ChatArea() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -651,7 +656,7 @@ export default function ChatArea() {
     if (msgs.length && msgs[msgs.length - 1].isStreaming) {
       msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
     } else {
-      msgs.push({ role: 'assistant', content, isStreaming: true });
+      msgs.push({ id: generateMessageId(), role: 'assistant', content, isStreaming: true });
     }
     
     // Update the chat with new messages
@@ -773,7 +778,7 @@ export default function ChatArea() {
       // Context did NOT switch, but currentChat prop might have updated (e.g., with new metadata)
       // Re-apply state from metadata if available to ensure consistency
       console.log(`[ChatArea Context Change Effect] Context NOT switched. Checking for metadata updates.`);
-      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
+      if ((currentSelectedTool === 'hybrid-offer' || currentSelectedTool === 'workshop-generator' || currentSelectedTool === 'ideal-client-extractor') && currentChat?.metadata && typeof currentChat.metadata === 'object') {
          // Compare metadata to potentially avoid redundant state updates if needed, or just re-apply
          console.log(`[ChatArea] Re-applying state from metadata on update:`, currentChat.metadata);
          setCollectedAnswers(currentChat.metadata.collectedAnswers || {});
@@ -801,15 +806,17 @@ export default function ChatArea() {
   // This effect might be redundant if the above effect correctly initializes from metadata.
   // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
-      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') && currentChat?.messages?.length > 0) {
+      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor') && currentChat?.messages?.length > 0) {
           // A more robust way would be to persist/load answers+key with the chat 
           // For now, just don't reset to first key if history exists
           if (!currentQuestionKey) {
               const questionsArray = selectedTool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
               setCurrentQuestionKey(questionsArray[questionsAnswered]?.key || questionsArray[0].key); // Use questions answered to determine key
           }
-      } else if (selectedTool === 'hybrid-offer') {
-          setCurrentQuestionKey(hybridOfferQuestions[0].key);
+                      } else if (selectedTool === 'hybrid-offer') {
+            setCurrentQuestionKey(hybridOfferQuestions[0].key);
+        } else if (selectedTool === 'ideal-client-extractor') {
+            setCurrentQuestionKey(null); // No predefined questions for this tool
       } else if (selectedTool === 'workshop-generator') {
           setCurrentQuestionKey(workshopQuestions[0].key);
       }
@@ -824,7 +831,7 @@ export default function ChatArea() {
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
     if (
-        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator') &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor') &&
         !initiationAttemptedForContext && 
         !isInitiating &&
         !isLoading &&
@@ -886,6 +893,7 @@ export default function ChatArea() {
           console.log("[ChatArea Initiate Func] API response data:", JSON.stringify(data, null, 2));
           
           const assistantMessage = { 
+              id: generateMessageId(),
               role: "assistant", 
               content: data.message || "Let's start creating your hybrid offer."
           };
@@ -934,7 +942,7 @@ export default function ChatArea() {
 
       } catch (error) {
           console.error('[ChatArea Initiate Func] Error initiating chat:', error);
-          const errorAssistantMessage = { role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
+          const errorAssistantMessage = { id: generateMessageId(), role: "assistant", content: `Sorry, I couldn't start the session: ${error.message}` };
           const errorChat = { ...currentChat, messages: [...(currentChat?.messages || []), errorAssistantMessage] };
           updateChat(currentChat?.id || chatIdToInitiate, errorChat);
       } finally {
@@ -980,7 +988,7 @@ export default function ChatArea() {
     setIsLoading(true);
     setIsResponseLoading(true);
 
-    const newMessage = { role: "user", content: trimmedInput };
+    const newMessage = { id: generateMessageId(), role: "user", content: trimmedInput };
     setInput("");
 
     let chatToUpdate = currentChat; // Use the guaranteed currentChat
@@ -1083,12 +1091,13 @@ export default function ChatArea() {
            const finalMessages = [...updatedMessages];
            if (finalMessages.length > 0 && finalMessages[finalMessages.length - 1].isStreaming) {
              finalMessages[finalMessages.length - 1] = { 
+               id: finalMessages[finalMessages.length - 1].id || generateMessageId(),
                role: 'assistant', 
                content: responseText,
                isStreaming: false 
              };
            } else {
-             finalMessages.push({ role: 'assistant', content: responseText });
+             finalMessages.push({ id: generateMessageId(), role: 'assistant', content: responseText });
            }
            
            // Update the chat with the finalized message
@@ -1150,6 +1159,7 @@ export default function ChatArea() {
           
           // Add a temporary thinking message
           const thinkingMessage = { 
+            id: generateMessageId(),
             role: 'assistant', 
             content: data.message || "I'm thinking...",
             isTemporary: true 
@@ -1169,10 +1179,10 @@ export default function ChatArea() {
           return; // Exit early since we'll update UI when polling completes
         }
 
-        // Create assistant message
+        // Create assistant message with ID
         const assistantMessage = typeof data.message === 'string' 
-            ? { role: 'assistant', content: data.message }
-            : data.message || { role: 'assistant', content: "I couldn't generate a proper response." };
+            ? { id: generateMessageId(), role: 'assistant', content: data.message }
+            : data.message || { id: generateMessageId(), role: 'assistant', content: "I couldn't generate a proper response." };
             
         // Use returned data or default values for text responses
         const returnedAnswers = data.isTextResponse ? {} : (data.collectedAnswers || collectedAnswers || {});
@@ -1240,7 +1250,13 @@ export default function ChatArea() {
         });
 
         // Update the chat with the final response
-        updateChat(correctChatId, finalCurrentChat);
+        // Check if we need to replace the temporary chat with the real one
+        if (tempId !== correctChatId) {
+          console.log(`[CHAT_DEBUG] Replacing temporary chat ${tempId} with real chat ${correctChatId}`);
+          replaceOptimisticChat(tempId, finalCurrentChat);
+        } else {
+          updateChat(correctChatId, finalCurrentChat);
+        }
 
         // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
         console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
@@ -1262,7 +1278,7 @@ export default function ChatArea() {
 
     } catch (error) {
         console.error('[CHAT_DEBUG] Error in handleSubmit:', error);
-        const errorAssistantMessage = { role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
+        const errorAssistantMessage = { id: generateMessageId(), role: "assistant", content: `Sorry, an error occurred: ${error.message}` };
         const errorChat = { ...optimisticChat, messages: [...updatedMessages, errorAssistantMessage] };
         updateChat(tempId, errorChat);
         
@@ -1464,7 +1480,7 @@ export default function ChatArea() {
           .catch(err => console.error('[SSE Connect] Error in document generation setup:', err));
           
         // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
-        const initialMessage = { role: 'assistant', content: initialMessagePayload.content };
+        const initialMessage = { id: generateMessageId(), role: 'assistant', content: initialMessagePayload.content };
         if (currentChat?.id === chatId) {
           const updatedChat = {...currentChat, messages: [...currentChat.messages, initialMessage]};
           updateChat(chatId, updatedChat);
@@ -1631,6 +1647,7 @@ export default function ChatArea() {
                 
                 // Update the UI for other open instances of this chat
                 const documentMessage = { 
+                  id: generateMessageId(),
                   role: 'assistant', 
                   content: contentToSaveToDB,
                   metadata: {
@@ -1725,6 +1742,7 @@ export default function ChatArea() {
         
         // Add an error message to the chat if we're on the relevant chat
         const sseErrorMessage = { 
+          id: generateMessageId(),
           role: 'assistant', 
           content: eventData.message || "Connection error while generating document. Please try again later.", 
           isJSX: false
@@ -1782,6 +1800,7 @@ export default function ChatArea() {
           
           // Add an error message to the chat
           const streamErrorMessage = { 
+            id: generateMessageId(),
             role: 'assistant', 
             content: "Error streaming document data. Please try again.", 
             isJSX: false
@@ -1829,6 +1848,7 @@ export default function ChatArea() {
       
       // Add an error message to the chat
       const connectionErrorMessage = { 
+        id: generateMessageId(),
         role: 'assistant', 
         content: `Connection error: ${error.message}. Please try again later.`, 
         isJSX: false
@@ -1864,6 +1884,7 @@ export default function ChatArea() {
         console.error("[CHAT_DEBUG] Polling timed out after max attempts");
         // Update with an error message
         const errorMessage = { 
+          id: generateMessageId(),
           role: 'assistant', 
           content: "I'm sorry, the request timed out. Please try again." 
         };
@@ -1898,12 +1919,17 @@ export default function ChatArea() {
         
         if (data.status === "completed") {
           // We got the final response
-          const assistantMessage = { role: 'assistant', content: data.message };
+          const assistantMessage = { 
+            id: generateMessageId(),
+            role: 'assistant', 
+            content: data.message 
+          };
           updateChatWithFinalResponse(chatWithThinking, assistantMessage, chatId, updatedMessages);
           return;
         } else if (data.status === "failed" || data.status === "cancelled") {
           // Handle error
           const errorMessage = { 
+            id: generateMessageId(),
             role: 'assistant', 
             content: `Sorry, an error occurred: ${data.error || 'Unknown error'}` 
           };
@@ -1922,6 +1948,7 @@ export default function ChatArea() {
         } else {
           // Too many errors, give up
           const errorMessage = { 
+            id: generateMessageId(),
             role: 'assistant', 
             content: `Sorry, there was an error retrieving the response: ${error.message}` 
           };
@@ -2066,7 +2093,16 @@ export default function ChatArea() {
                           {/* Bookmark button - positioned outside message bubble */}
                           {message.role !== "user" && (
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-1">
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onBookmark && onBookmark(message)}>
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
+                                console.log('[ChatArea] Assistant bookmark clicked for message:', {
+                                  messageId: message.id,
+                                  messageRole: message.role,
+                                  hasContent: !!message.content,
+                                  contentPreview: typeof message.content === 'string' ? message.content.substring(0, 50) + '...' : 'non-string',
+                                  fullMessage: message
+                                });
+                                onBookmark && onBookmark(message);
+                              }}>
                                 <Bookmark className="h-3 w-3" />
                               </Button>
                             </div>
@@ -2126,7 +2162,16 @@ export default function ChatArea() {
                           {/* Bookmark button for user messages - positioned on the left side */}
                           {message.role === "user" && (
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-1">
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onBookmark && onBookmark(message)}>
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
+                                console.log('[ChatArea] User bookmark clicked for message:', {
+                                  messageId: message.id,
+                                  messageRole: message.role,
+                                  hasContent: !!message.content,
+                                  contentPreview: typeof message.content === 'string' ? message.content.substring(0, 50) + '...' : 'non-string',
+                                  fullMessage: message
+                                });
+                                onBookmark && onBookmark(message);
+                              }}>
                                 <Bookmark className="h-3 w-3" />
                               </Button>
                             </div>

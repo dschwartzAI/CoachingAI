@@ -1088,6 +1088,69 @@ export async function POST(request) {
 
     // FAST PATH: Handle tool initialization FIRST before any profile/context building
     // NOTE: hybrid-offer needs profile context, so it uses the full path below
+    if (isToolInit && tool === 'ideal-client-extractor') {
+      const toolConfig = TOOLS[tool];
+      const initialMessage = toolConfig.initialMessage;
+      
+      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
+
+      const initialMetadataForDB = {
+        currentQuestionKey: null, // No predefined questions for this tool
+        questionsAnswered: 0,
+        isComplete: false,
+        collectedAnswers: {}
+      };
+
+      const initResponsePayload = {
+        message: initialMessage,
+        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
+        collectedAnswers: { ...initialMetadataForDB.collectedAnswers },
+        questionsAnswered: initialMetadataForDB.questionsAnswered,
+        isComplete: initialMetadataForDB.isComplete,
+        chatId: finalChatIdForDB,
+        systemPrompt: toolConfig.systemMessage
+      };
+
+      // Save thread to database
+      try {
+        console.log(`[CHAT_API_DEBUG] Attempting to save new ideal-client-extractor thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        const { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', finalChatIdForDB)
+          .single();
+
+        if (lookupError && lookupError.code === 'PGRST116') {
+          const threadTitle = toolConfig.name;
+          
+          const { error: insertError } = await supabase
+            .from('threads')
+            .insert({
+              id: finalChatIdForDB,
+              user_id: userId,
+              tool_id: tool,
+              title: threadTitle,
+              metadata: initialMetadataForDB
+            });
+
+          if (insertError) {
+            console.error('[CHAT_API_DEBUG] Error inserting new ideal-client-extractor thread during tool init:', insertError);
+          } else {
+            console.log('[CHAT_API_DEBUG] New ideal-client-extractor thread saved successfully during tool init:', finalChatIdForDB);
+          }
+        } else if (existingThread) {
+          console.log('[CHAT_API_DEBUG] Ideal-client-extractor thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+        } else if (lookupError) {
+          console.error('[CHAT_API_DEBUG] Error looking up ideal-client-extractor thread during tool init:', lookupError);
+        }
+      } catch (dbSaveError) {
+        console.error('[CHAT_API_DEBUG] DB exception during ideal-client-extractor tool init thread save:', dbSaveError);
+      }
+
+      console.log('[CHAT_API_DEBUG] Sending initial ideal-client-extractor response (tool init)');
+      return NextResponse.json(initResponsePayload);
+    }
+    
     if (isToolInit && tool === 'workshop-generator') {
       const initialSystemPrompt = `You are creating a workshop for coaches, consultants, and trainers.`;
       const initialMessage = "Welcome! I'm excited to help you create a compelling workshop. Let's start with the most important part - what specific outcomes or goals will participants achieve by the end of your workshop?";
@@ -2098,6 +2161,68 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         };
 
         console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
+      }
+    } else if (tool === 'ideal-client-extractor') {
+      console.log('[CHAT_API_DEBUG] Processing ideal-client-extractor tool logic (non-init path)');
+      
+      // For ideal-client-extractor, we use Claude Opus for the entire conversation
+      const toolConfig = TOOLS[tool];
+      
+      // Prepare the conversation for Claude Opus
+      const claudeMessages = [
+        {
+          role: "user",
+          content: toolConfig.systemMessage
+        }
+      ];
+      
+      // Add all conversation messages (excluding the system message)
+      messages.forEach(msg => {
+        claudeMessages.push({
+          role: msg.role,
+          content: msg.content
+        });
+      });
+      
+      try {
+        console.log('[CHAT_API_DEBUG] Sending conversation to Claude Opus for ideal-client-extractor');
+        
+        const claudeResponse = await anthropic.messages.create({
+          model: "claude-3-opus-20240229",
+          max_tokens: 4000,
+          temperature: 0.8, // Higher temperature for more conversational responses
+          messages: claudeMessages
+        });
+
+        const responseContent = claudeResponse.content[0].text;
+        
+        console.log('[CHAT_API_DEBUG] Claude Opus response received for ideal-client-extractor');
+        
+        // For ideal-client-extractor, we don't have predefined completion criteria
+        // The tool is designed for ongoing conversation
+        toolResponsePayload = {
+          message: responseContent,
+          currentQuestionKey: null, // No predefined questions
+          collectedAnswers: {}, // No structured answers to collect
+          questionsAnswered: 0, // Not applicable for this tool
+          isComplete: false, // Always allow continuation
+          chatId: chatId
+        };
+
+        console.log('[CHAT_API_DEBUG] Constructed ideal-client-extractor toolResponsePayload');
+        
+      } catch (claudeError) {
+        console.error('[CHAT_API_DEBUG] Error calling Claude Opus for ideal-client-extractor:', claudeError);
+        
+        // Fallback response
+        toolResponsePayload = {
+          message: "I apologize, but I'm having trouble processing your request right now. Could you please try again?",
+          currentQuestionKey: null,
+          collectedAnswers: {},
+          questionsAnswered: 0,
+          isComplete: false,
+          chatId: chatId
+        };
       }
     } else if (!tool) {
       console.log('[CHAT_API_DEBUG] Using 2-step coaching process for regular chat');

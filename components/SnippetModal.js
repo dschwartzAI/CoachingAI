@@ -46,11 +46,26 @@ export default function SnippetModal({ open, onOpenChange, message }) {
       return;
     }
     
+    // Ensure we have a thread_id - this should be set by the parent component
+    if (!message.thread_id) {
+      console.error("Save snippet failed: thread_id is missing from message object.", message);
+      toast({
+        title: "Failed to save snippet",
+        description: "Unable to identify the conversation. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    console.log('[SnippetModal] Full message object:', message);
     console.log('[SnippetModal] Saving snippet with data:', {
       thread_id: message.thread_id,
       message_id: message.id,
       content: message.content?.substring(0, 100) + '...',
-      note
+      note,
+      hasThreadId: !!message.thread_id,
+      hasMessageId: !!message.id,
+      hasContent: !!message.content
     });
     
     setSaving(true);
