@@ -7,6 +7,24 @@ import remarkGfm from 'remark-gfm';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
+  // Check if content is short and simple (no markdown formatting)
+  const isShortSimple = content.length <= 100 && 
+    !content.includes('\n') && 
+    !content.includes('**') && 
+    !content.includes('*') && 
+    !content.includes('`') && 
+    !content.includes('#') && 
+    !content.includes('[') && 
+    !content.includes('](') &&
+    !content.includes('- ') &&
+    !content.includes('1. ');
+
+  // For short, simple messages, render as plain text to avoid paragraph margins
+  if (isShortSimple) {
+    return <span className="text-base leading-relaxed">{content}</span>;
+  }
+
+  // For longer or formatted content, use markdown with proper prose styling
   return (
     <ReactMarkdown
       className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 

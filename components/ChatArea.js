@@ -22,9 +22,27 @@ import { useChatTitle } from '@/lib/hooks/use-chat-title';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
+  // Check if content is short and simple (no markdown formatting)
+  const isShortSimple = content.length <= 100 && 
+    !content.includes('\n') && 
+    !content.includes('**') && 
+    !content.includes('*') && 
+    !content.includes('`') && 
+    !content.includes('#') && 
+    !content.includes('[') && 
+    !content.includes('](') &&
+    !content.includes('- ') &&
+    !content.includes('1. ');
+
+  // For short, simple messages, render as plain text to avoid paragraph margins
+  if (isShortSimple) {
+    return <span className="text-base leading-relaxed">{content}</span>;
+  }
+
+  // For longer or formatted content, use markdown with proper prose styling
   return (
     <ReactMarkdown
-      //className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
+      className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none" 
       remarkPlugins={[remarkGfm]}
       components={{
         // Allow <a> tags to be rendered properly
@@ -2133,7 +2151,7 @@ export default function ChatArea() {
                                 inline-block px-4 py-2.5 rounded-lg text-base leading-relaxed
                                 ${message.role === "user" 
                                   ? "bg-primary text-primary-foreground max-w-[85%]" 
-                                  : "bg-muted text-foreground prose prose-base max-w-none prose-p:my-1.5 prose-headings:my-3 prose-pre:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5"
+                                  : "bg-muted text-foreground max-w-none"
                                 }
                               `}
                             >
