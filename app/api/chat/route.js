@@ -2190,7 +2190,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
       }
     } else if (tool === 'daily-client-machine') {
-      console.log('[CHAT_API_DEBUG] Processing daily-client-machine tool logic');
+      console.log('[CHAT_API_DEBUG] Processing daily-client-machine tool logic (page-by-page approach)');
       
       // For daily-client-machine, we use GPT-4o for cost-effective copywriting
       const toolConfig = TOOLS[tool];
@@ -2201,189 +2201,395 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to tailor your questions and copy generation to their specific industry and needs.`;
       }
       
-      // IMPORTANT: Retrieve full conversation history from database to maintain context
-      let fullMessages = messages;
+      // Retrieve thread metadata to get collected answers and current page
+      let threadMetadata = {};
+      let currentAnswers = { ...collectedAnswers };
+      let currentPageId = 'opt-in'; // Default to first page
+      
       if (chatId && supabase) {
         try {
-          console.log('[CHAT_API_DEBUG] Retrieving full conversation history for daily-client-machine');
-          const { data: dbMessages, error: dbError } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('thread_id', chatId)
-            .order('timestamp', { ascending: true });
+          const { data: threadData, error: threadError } = await supabase
+            .from('threads')
+            .select('metadata')
+            .eq('id', chatId)
+            .single();
           
-          if (!dbError && dbMessages && dbMessages.length > 0) {
-            console.log(`[CHAT_API_DEBUG] Retrieved ${dbMessages.length} messages from database`);
-            // Use database messages as the full conversation history
-            fullMessages = dbMessages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            }));
-            
-            // Add the current message if it's not already in the database
-            const lastMessage = messages[messages.length - 1];
-            if (lastMessage && !dbMessages.find(m => m.content === lastMessage.content && m.role === lastMessage.role)) {
-              fullMessages.push(lastMessage);
-              console.log('[CHAT_API_DEBUG] Added current message to full history');
+          if (!threadError && threadData?.metadata) {
+            threadMetadata = threadData.metadata;
+            if (threadMetadata.collectedAnswers) {
+              Object.assign(currentAnswers, threadMetadata.collectedAnswers);
             }
-          } else if (dbError) {
-            console.error('[CHAT_API_DEBUG] Error retrieving messages from database:', dbError);
-            // Fall back to using messages from frontend
+            if (threadMetadata.currentPageId) {
+              currentPageId = threadMetadata.currentPageId;
+            }
+            console.log('[CHAT_API_DEBUG] Retrieved thread metadata - Page:', currentPageId, 'Answers:', Object.keys(currentAnswers));
           }
         } catch (error) {
-          console.error('[CHAT_API_DEBUG] Exception retrieving messages:', error);
-          // Fall back to using messages from frontend
+          console.error('[CHAT_API_DEBUG] Error retrieving thread metadata:', error);
         }
       }
       
-      console.log(`[CHAT_API_DEBUG] Using ${fullMessages.length} messages for daily-client-machine context`);
+      // Determine the current page based on completed answers
+      const currentPage = toolConfig.getCurrentPage ? toolConfig.getCurrentPage(currentAnswers) : toolConfig.pages[0];
+      const currentPageIndex = currentPage && currentPage.id !== 'foundation' ? 
+        toolConfig.pages.findIndex(p => p.id === currentPage.id) : -1;
       
-      // Check if this is the final step where we need to generate the complete copy
-      const currentAnswers = { ...collectedAnswers };
-      const isComplete = toolConfig.isComplete(currentAnswers);
+      console.log('[CHAT_API_DEBUG] Current page:', currentPage?.name, 'Index:', currentPageIndex);
       
-      if (isComplete && !body.copyGenerated) {
-        console.log('[CHAT_API_DEBUG] All DCM questions answered, generating complete copy with HighLevel templates');
+      // Check if we just completed foundation questions and need to show architecture
+      const progress = toolConfig.getProgress ? toolConfig.getProgress(currentAnswers) : null;
+      const justCompletedFoundation = progress && 
+        progress.foundation.complete && 
+        (!threadMetadata.foundationShown) &&
+        currentPage && currentPage.id !== 'foundation';
+      
+      if (justCompletedFoundation) {
+        console.log('[CHAT_API_DEBUG] Foundation complete - showing funnel architecture');
+        
+        // Generate funnel architecture visualization
+        const architectureMessage = `# 🎯 YOUR DAILY CLIENT MACHINE ARCHITECTURE
+
+Based on your foundation:
+- **Problem:** ${currentAnswers.bigIdea}
+- **Method:** ${currentAnswers.uniqueMechanism}
+- **Audience:** ${currentAnswers.targetAvatar}
+
+## 📊 Your Complete Funnel Structure:
+
+**FRONT-END FUNNEL (Info Path)**
+1. **Opt-in Page** → Free guide about ${currentAnswers.uniqueMechanism}
+2. **$27-47 Product** → Implementation training
+3. **$17-37 Order Bump** → Templates/tools
+4. **$197-497 Upsell** → Done-with-you program
+5. **Thank You** → Set expectations & deliver value
+
+**BACK-END FUNNEL (Insight Path)**
+6. **$47-97/month Membership** → Ongoing support & community
+7. **$2k-10k High Ticket** → 1-on-1 transformation (booked from membership)
+
+**The Magic:** Your low-ticket customers fund ads to find high-ticket clients!
+
+---
+
+**Ready to build?** Let's start with your opt-in page. I'll ask you one question at a time, then generate professional copy for each page.
+
+First question coming up...`;
+        
+        // Update metadata to show foundation was displayed
+        const updatedMetadata = {
+          ...threadMetadata,
+          collectedAnswers: currentAnswers,
+          foundationShown: true,
+          currentPageId: currentPage.id
+        };
+        
+        toolResponsePayload = {
+          message: architectureMessage,
+          currentPageId: currentPage.id,
+          currentPageIndex: 0,
+          collectedAnswers: currentAnswers,
+          pageComplete: false,
+          totalPages: toolConfig.pages.length,
+          isComplete: false,
+          chatId: chatId,
+          metadata: updatedMetadata
+        };
+        
+        // Save thread metadata immediately
+        if (chatId && supabase) {
+          await supabase
+            .from('threads')
+            .update({ metadata: updatedMetadata })
+            .eq('id', chatId);
+        }
+        
+      }
+      // Check if current page is complete and should generate copy
+      else if (currentPage && currentPage.id !== 'foundation') {
+        var isCurrentPageComplete = toolConfig.isPageComplete(currentPage.id, currentAnswers);
+      } else {
+        var isCurrentPageComplete = false;
+      }
+      
+             // Check if user is requesting to generate copy for current page or move to next page
+       const shouldGeneratePageCopy = isCurrentPageComplete && (
+         body.generatePageCopy || 
+         (messages.length > 0 && messages[messages.length - 1]?.content?.toLowerCase().includes('generate'))
+       );
+      
+      // Special handling for exports and specific page generation requests
+      const lastUserMessage = messages.length > 0 ? messages[messages.length - 1]?.content?.toLowerCase() || '' : '';
+      
+      // Handle export requests
+      if (lastUserMessage.includes('export complete funnel') || lastUserMessage.includes('export all')) {
+        console.log('[CHAT_API_DEBUG] Generating complete funnel export');
         
         try {
-          // Import the copy generation template and HighLevel API
-          const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
+          const { generateDCMCopyTemplate } = await import('@/prompts/daily-client-machine-prompt.js');
+          const completeTemplate = generateDCMCopyTemplate(currentAnswers);
+          
+          const exportMessage = `# 🎉 Your Complete Daily Client Machine Export
+
+${completeTemplate}
+
+---
+
+**💾 NEXT STEPS:**
+1. **Copy this entire document** and save it as your funnel reference
+2. **Log into HighLevel** and clone the DCM 2.0 template funnel
+3. **Replace the template copy** with your personalized copy above
+4. **Test each page** before launching traffic
+5. **Set up tracking** to monitor performance
+
+**Questions?** Just ask and I'll help you implement any specific page!`;
+          
+          toolResponsePayload = {
+            message: exportMessage,
+            currentPageId: 'export',
+            currentPageIndex: 8,
+            collectedAnswers: currentAnswers,
+            pageComplete: true,
+            totalPages: toolConfig.pages.length,
+            isComplete: true,
+            chatId: chatId,
+            metadata: updatedMetadata
+          };
+          
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Error generating export:', error);
+          toolResponsePayload = {
+            message: "I encountered an issue generating your export. Let me help you continue building your funnel step by step instead.",
+            error: true,
+            chatId: chatId
+          };
+        }
+      }
+      // Handle specific page generation requests
+      else if (lastUserMessage.includes('generate') && (
+        lastUserMessage.includes('sales page') || 
+        lastUserMessage.includes('order form') || 
+        lastUserMessage.includes('upsell') ||
+        lastUserMessage.includes('thank you') ||
+        lastUserMessage.includes('membership') ||
+        lastUserMessage.includes('delivery')
+      )) {
+        console.log('[CHAT_API_DEBUG] Generating specific page copy');
+        
+        try {
+          const { generatePageCopy } = await import('@/prompts/daily-client-machine-prompt.js');
+          
+          // Determine which page to generate
+          let targetPageId = 'opt-in';
+          if (lastUserMessage.includes('sales')) targetPageId = 'sales-page';
+          else if (lastUserMessage.includes('order form')) targetPageId = 'order-form';
+          else if (lastUserMessage.includes('upsell')) targetPageId = 'upsell';
+          else if (lastUserMessage.includes('thank you')) targetPageId = 'thank-you';
+          else if (lastUserMessage.includes('membership')) targetPageId = 'membership';
+          else if (lastUserMessage.includes('delivery')) targetPageId = 'delivery';
+          
+          const pageCopy = generatePageCopy(targetPageId, currentAnswers);
+          
+          toolResponsePayload = {
+            message: pageCopy,
+            currentPageId: targetPageId,
+            currentPageIndex: toolConfig.pages.findIndex(p => p.id === targetPageId),
+            collectedAnswers: currentAnswers,
+            pageComplete: true,
+            totalPages: toolConfig.pages.length,
+            isComplete: targetPageId === 'delivery',
+            chatId: chatId,
+            metadata: updatedMetadata
+          };
+          
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Error generating page copy:', error);
+          toolResponsePayload = {
+            message: "I encountered an issue generating that page. Let me help you continue with the questions instead.",
+            error: true,
+            chatId: chatId
+          };
+        }
+      }
+      // Normal page copy generation flow
+      else if (shouldGeneratePageCopy && currentPage) {
+        console.log('[CHAT_API_DEBUG] Generating copy for page:', currentPage.name);
+        
+        try {
+          // Import HighLevel API for enhanced copy generation
           const { enhanceDCMPromptWithTemplates } = require('@/lib/utils/highlevel-api');
           
-          // Enhance the base copy template with real HighLevel DCM 2.0 templates
-          console.log('[CHAT_API_DEBUG] Fetching HighLevel templates...');
-          const baseCopyTemplate = generateDCMCopyTemplate(currentAnswers);
-          const enhancedCopyTemplate = await enhanceDCMPromptWithTemplates(baseCopyTemplate, currentAnswers);
+          // Create page-specific prompt
+          const pagePrompt = `You are generating copy for the ${currentPage.name} of a Daily Client Machine funnel.
+
+PAGE CONTEXT:
+- Page: ${currentPage.name}
+- Description: ${currentPage.description}
+- This is page ${currentPageIndex + 1} of 8 in the DCM funnel
+
+USER'S INFORMATION:
+${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join('\n')}
+
+Generate professional, conversion-focused copy for this specific page. Include:
+1. Compelling headlines
+2. Persuasive body copy
+3. Clear call-to-action
+4. Any necessary form fields or buttons
+
+Make it specific to their business and target audience. Use proven copywriting principles.`;
           
-          // Use GPT-4o to generate the final copy with HighLevel template context
+          // Enhance with HighLevel templates if available
+          console.log('[CHAT_API_DEBUG] Enhancing with HighLevel templates...');
+          const enhancedPrompt = await enhanceDCMPromptWithTemplates(pagePrompt, currentAnswers);
+          
+          // Generate the page copy
           const copyGenerationMessages = [
             {
               role: "system",
-              content: enhancedCopyTemplate
+              content: enhancedPrompt
             },
             {
-              role: "user", 
-              content: `Generate the complete Daily Client Machine funnel copy based on my answers. Use the real DCM 2.0 templates as inspiration for structure and proven copy elements, but customize everything for my specific business.
-
-My answers:
-${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join('\n')}
-
-Please generate copy for all 8 funnel pages with clear sections and headlines.`
+              role: "user",
+              content: `Generate the ${currentPage.name} copy now.`
             }
           ];
           
-          console.log('[CHAT_API_DEBUG] Generating enhanced copy with GPT-4o and HighLevel templates...');
+          console.log('[CHAT_API_DEBUG] Generating page copy with GPT-4o...');
           
           const copyResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: copyGenerationMessages,
-            max_tokens: 4000,
+            max_tokens: 3000,
             temperature: 0.7
           });
           
-          const generatedCopy = copyResponse.choices[0].message.content;
+          const generatedPageCopy = copyResponse.choices[0].message.content;
           
-          console.log('[CHAT_API_DEBUG] Enhanced DCM copy generated successfully with HighLevel templates');
+          // Determine next page
+          const nextPageIndex = currentPageIndex + 1;
+          const nextPage = nextPageIndex < toolConfig.pages.length ? toolConfig.pages[nextPageIndex] : null;
           
-          // Create a comprehensive response with the generated copy
-          determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
+          let responseMessage = `🎉 **${currentPage.name} Complete!** (Page ${currentPageIndex + 1}/8)
 
-I've enhanced your copy using real DCM 2.0 templates from James Kemp's proven funnels to ensure maximum effectiveness.
+${generatedPageCopy}
 
-Here's your personalized DCM copy for all 8 funnel pages:
+---
 
-${generatedCopy}
+**Progress:** ${currentPageIndex + 1} of 8 pages complete`;
+
+          if (nextPage) {
+            responseMessage += `
+
+**Ready for the next page?**
+Next up: **${nextPage.name}** - ${nextPage.description}
+
+Would you like to continue to page ${nextPageIndex + 1}? Just say "yes" or "continue" to move forward!`;
+          } else {
+            responseMessage += `
+
+🎊 **Congratulations!** Your complete Daily Client Machine funnel is ready!
 
 **Next Steps:**
-1. Save this copy document for reference
-2. Log into your HighLevel account
-3. Navigate to your cloned DCM 2.0 Templates funnel
-4. Follow the customization guide to replace all template content with your personalized copy
+1. Save all your page copy for reference
+2. Log into your HighLevel account  
+3. Import the DCM 2.0 template funnel
+4. Replace template content with your personalized copy
 5. Test your funnel before going live
 
-**Template Enhancement:**
-Your copy has been enhanced with proven elements from James Kemp's actual DCM 2.0 funnels, including:
-- Proven headline structures
-- Tested conversion elements
-- Optimized page flow sequences
-- Real funnel design standards
-
-**Need Changes?**
-Just let me know what you'd like to adjust, and I'll regenerate specific sections for you!`;
-
-        } catch (error) {
-          console.error('[CHAT_API_DEBUG] Error generating enhanced copy:', error);
-          
-          // Fallback to basic copy generation if HighLevel API fails
-          const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
-          const generatedCopy = generateDCMCopyTemplate(currentAnswers);
-          
-          determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
-
-Here's your personalized DCM copy for all 8 funnel pages:
-
-${generatedCopy}
-
-**Next Steps:**
-1. Save this copy document for reference
-2. Log into your HighLevel account
-3. Navigate to your cloned DCM 2.0 Templates funnel
-4. Follow the customization guide to replace all template content with your personalized copy
-5. Test your funnel before going live
-
-**Need Changes?**
-Just let me know what you'd like to adjust, and I'll regenerate specific sections for you!`;
-        }
-        
-        toolResponsePayload = {
-          message: determinedAiResponseContent,
-          currentQuestionKey: null,
-          collectedAnswers: currentAnswers,
-          questionsAnswered: toolConfig.questions.length,
-          isComplete: true,
-          copyGenerated: true,
-          chatId: chatId
-        };
-        
-        console.log('[CHAT_API_DEBUG] DCM copy generated successfully');
-      } else {
-        // Regular question flow using GPT-4o
-        
-        // First, retrieve thread metadata to get collected answers
-        let threadMetadata = {};
-        if (chatId && supabase) {
-          try {
-            const { data: threadData, error: threadError } = await supabase
-              .from('threads')
-              .select('metadata')
-              .eq('id', chatId)
-              .single();
-            
-            if (!threadError && threadData?.metadata) {
-              threadMetadata = threadData.metadata;
-              // Merge with any answers from the request body
-              if (threadMetadata.collectedAnswers) {
-                Object.assign(currentAnswers, threadMetadata.collectedAnswers);
-              }
-              console.log('[CHAT_API_DEBUG] Retrieved thread metadata with collected answers:', Object.keys(currentAnswers));
-            }
-          } catch (error) {
-            console.error('[CHAT_API_DEBUG] Error retrieving thread metadata:', error);
+**Need any changes?** Just let me know which page you'd like to refine!`;
           }
+          
+          determinedAiResponseContent = responseMessage;
+          
+          // Update thread metadata with current page completion
+          const updatedMetadata = {
+            ...threadMetadata,
+            collectedAnswers: currentAnswers,
+            currentPageId: nextPage ? nextPage.id : 'complete',
+            completedPages: [...(threadMetadata.completedPages || []), currentPage.id],
+            [`${currentPage.id}Copy`]: generatedPageCopy
+          };
+          
+          toolResponsePayload = {
+            message: determinedAiResponseContent,
+            currentPageId: nextPage ? nextPage.id : 'complete',
+            currentPageIndex: nextPageIndex,
+            collectedAnswers: currentAnswers,
+            pageComplete: true,
+            totalPages: toolConfig.pages.length,
+            isComplete: !nextPage,
+            chatId: chatId,
+            metadata: updatedMetadata
+          };
+          
+          console.log('[CHAT_API_DEBUG] Page copy generated successfully for:', currentPage.name);
+          
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Error generating page copy:', error);
+          
+          // Fallback response
+          determinedAiResponseContent = `I encountered an issue generating the copy for ${currentPage.name}. Let me help you continue with the questions instead.
+
+What would you like to do next?
+1. Try generating the copy again
+2. Move to the next page
+3. Refine your answers for this page`;
+          
+          toolResponsePayload = {
+            message: determinedAiResponseContent,
+            currentPageId: currentPage.id,
+            currentPageIndex: currentPageIndex,
+            collectedAnswers: currentAnswers,
+            pageComplete: false,
+            error: true,
+            chatId: chatId
+          };
         }
+        
+      } else {
+        // Regular question flow for current page or foundation
+        console.log('[CHAT_API_DEBUG] Continuing question flow for:', currentPage?.name || 'foundation');
         
         const openaiMessages = [];
         
-        // Add system message with context about collected answers
+        // Build contextual system message based on phase
         let contextualSystemMessage = enhancedSystemMessage;
+        
+        if (currentPage && currentPage.id === 'foundation') {
+          // Foundation phase
+          const nextQuestion = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers) : null;
+          
+          contextualSystemMessage += `\n\nCURRENT PHASE: Strategic Foundation
+${nextQuestion ? `Progress: ${nextQuestion.progress}` : ''}
+
+You are establishing the foundation for their Daily Client Machine. Ask ONE question at a time.
+Provide a brief example to clarify what you're looking for.
+Keep it conversational but focused.`;
+          
+        } else if (currentPage) {
+          // Page-specific phase
+          contextualSystemMessage += `\n\nCURRENT PAGE: ${currentPage.name} (Page ${currentPageIndex + 1}/8)
+DESCRIPTION: ${currentPage.description}
+
+QUESTIONS FOR THIS PAGE:
+${currentPage.questions.map(q => {
+  // Replace placeholders in questions
+  let processedQuestion = q.question;
+  Object.keys(currentAnswers).forEach(key => {
+    processedQuestion = processedQuestion.replace(`{${key}}`, currentAnswers[key]);
+  });
+  return `- ${processedQuestion}`;
+}).join('\n')}`;
+        }
+        
         if (Object.keys(currentAnswers).length > 0) {
-          contextualSystemMessage += `\n\nCOLLECTED INFORMATION SO FAR:\n`;
-          toolConfig.questions.forEach(q => {
-            if (currentAnswers[q.key]) {
-              contextualSystemMessage += `- ${q.key}: ${currentAnswers[q.key]}\n`;
-            }
-          });
-          contextualSystemMessage += `\nContinue with the next unanswered question or help refine existing answers if the user wants to change something.`;
+          contextualSystemMessage += `\n\nCOLLECTED ANSWERS:
+${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join('\n')}`;
+        }
+        
+        if (currentPage && currentPage.id === 'foundation') {
+          contextualSystemMessage += `\n\nYour goal: Ask the next foundation question clearly and concisely.`;
+        } else {
+          contextualSystemMessage += `\n\nYour goal: Ask the next unanswered question for the current page, or if the page is complete, offer to generate the page copy.`;
         }
         
         openaiMessages.push({
@@ -2391,24 +2597,23 @@ Just let me know what you'd like to adjust, and I'll regenerate specific section
           content: contextualSystemMessage
         });
         
-        // Add all conversation messages, ensuring we have at least one message
-        if (fullMessages.length === 0) {
-          // For tool initialization, add a default user message
-          openaiMessages.push({
-            role: "user",
-            content: "Let's get started with building my Daily Client Machine."
-          });
-        } else {
-          fullMessages.forEach(msg => {
-            openaiMessages.push({
-              role: msg.role,
-              content: msg.content
-            });
-          });
-        }
+                 // Add conversation history
+         if (messages.length === 0) {
+           openaiMessages.push({
+             role: "user",
+             content: "I want to build my Daily Client Machine funnel"
+           });
+         } else {
+           messages.forEach(msg => {
+             openaiMessages.push({
+               role: msg.role,
+               content: msg.content
+             });
+           });
+         }
         
         try {
-          console.log('[CHAT_API_DEBUG] Sending conversation to GPT-4o for daily-client-machine');
+          console.log('[CHAT_API_DEBUG] Sending conversation to GPT-4o for page questions');
           
           const openaiResponse = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -2419,66 +2624,59 @@ Just let me know what you'd like to adjust, and I'll regenerate specific section
 
           const responseContent = openaiResponse.choices[0].message.content;
           
-          console.log('[CHAT_API_DEBUG] GPT-4o response received for daily-client-machine');
+          console.log('[CHAT_API_DEBUG] GPT-4o response received for page questions');
           
-          // Analyze the conversation to extract answers and track progress
-          // Use GPT-4o to analyze if the user provided a valid answer
+          // Analyze if user provided an answer and extract it
           let updatedAnswers = { ...currentAnswers };
-          let analysisResult = null;
+          let nextQuestionKey = null;
           
-          // Only analyze if we have a current question and user messages
-          if (body.currentQuestionKey && fullMessages.length > 0) {
-            const currentQuestion = toolConfig.questions.find(q => q.key === body.currentQuestionKey);
-            if (currentQuestion) {
-              // Get the last user message
-              const lastUserMessage = fullMessages.filter(m => m.role === 'user').pop();
+          if (messages.length > 0) {
+            const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+            
+            if (lastUserMessage) {
+              // Find the next unanswered question based on phase
+              let unansweredQuestion = null;
               
-              if (lastUserMessage) {
+              if (currentPage && currentPage.id === 'foundation') {
+                // For foundation phase, use getNextQuestion
+                const nextQ = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers) : null;
+                if (nextQ) {
+                  unansweredQuestion = nextQ;
+                }
+              } else if (currentPage) {
+                // For page phase, find unanswered page question
+                unansweredQuestion = currentPage.questions.find(q => !updatedAnswers[q.key]);
+              }
+              
+              if (unansweredQuestion) {
+                // Try to extract answer for this question
                 try {
-                  // Use GPT to analyze if the user's message contains a valid answer
-                  const analysisPrompt = `You are analyzing a conversation for the Daily Client Machine tool.
+                  const analysisPrompt = `Analyze if this user response contains a valid answer for the question.
 
-Current question being asked: "${currentQuestion.question}"
-Question key: ${currentQuestion.key}
-Question hint: ${currentQuestion.hint}
+Question: "${unansweredQuestion.question}"
+User Response: "${lastUserMessage.content}"
 
-User's latest response: "${lastUserMessage.content}"
-
-Analyze if the user provided a valid answer to the current question.
-
-Return a JSON object with:
+Return JSON:
 {
   "hasValidAnswer": boolean,
-  "extractedAnswer": "string with the extracted answer if valid, or null",
-  "reasoning": "brief explanation of your decision"
+  "extractedAnswer": "string or null",
+  "reasoning": "brief explanation"
 }
 
-A valid answer should:
-- Be relevant to the specific question asked
-- Contain actionable/specific information (not vague or evasive)
-- For pricing questions, include actual numbers
-- For description questions, include concrete details
+Valid answers should be specific and actionable, not vague responses like "I'm not sure" or "maybe later".`;
 
-Examples of INVALID answers: "I'm not sure", "Maybe later", "Can we skip this?", "I don't know"
-Examples of VALID answers: Specific details, numbers, names, descriptions that answer the question`;
-
-                  const analysisCompletion = await openai.chat.completions.create({
+                  const analysisResponse = await openai.chat.completions.create({
                     model: "gpt-4o",
-                    messages: [{
-                      role: "system",
-                      content: analysisPrompt
-                    }],
+                    messages: [{ role: "system", content: analysisPrompt }],
                     temperature: 0.3,
                     response_format: { type: "json_object" }
                   });
                   
-                  analysisResult = JSON.parse(analysisCompletion.choices[0].message.content);
-                  console.log('[CHAT_API_DEBUG] Answer analysis result:', analysisResult);
+                  const analysisResult = JSON.parse(analysisResponse.choices[0].message.content);
                   
-                  // If we have a valid answer, save it
                   if (analysisResult.hasValidAnswer && analysisResult.extractedAnswer) {
-                    updatedAnswers[body.currentQuestionKey] = analysisResult.extractedAnswer;
-                    console.log(`[CHAT_API_DEBUG] Saved answer for ${body.currentQuestionKey}: ${analysisResult.extractedAnswer}`);
+                    updatedAnswers[unansweredQuestion.key] = analysisResult.extractedAnswer;
+                    console.log('[CHAT_API_DEBUG] Extracted answer for:', unansweredQuestion.key);
                   }
                 } catch (analysisError) {
                   console.error('[CHAT_API_DEBUG] Error analyzing answer:', analysisError);
@@ -2487,50 +2685,65 @@ Examples of VALID answers: Specific details, numbers, names, descriptions that a
             }
           }
           
-          // Determine next question
-          let nextQuestionKey = body.currentQuestionKey;
+          // Check if current page is now complete
+          const pageNowComplete = currentPage ? toolConfig.isPageComplete(currentPage.id, updatedAnswers) : false;
           
-          if (analysisResult?.hasValidAnswer) {
-            // Find the next unanswered question
-            const nextUnanswered = toolConfig.questions.find(q => q.required && !updatedAnswers[q.key]);
-            if (nextUnanswered) {
-              nextQuestionKey = nextUnanswered.key;
-              console.log(`[CHAT_API_DEBUG] Moving to next question: ${nextQuestionKey}`);
-            } else {
-              // All questions answered
-              nextQuestionKey = null;
-            }
-          }
-          // If no valid answer, stay on current question
-          
-          const questionsAnswered = Object.keys(updatedAnswers).length;
-          const isComplete = toolConfig.isComplete(updatedAnswers);
+          // Update thread metadata with current progress
+          const updatedMetadata = {
+            ...threadMetadata,
+            collectedAnswers: updatedAnswers,
+            currentPageId: currentPage?.id || 'opt-in',
+            currentPageIndex: currentPageIndex,
+            pageComplete: pageNowComplete,
+            lastUpdated: new Date().toISOString()
+          };
           
           toolResponsePayload = {
             message: responseContent,
-            currentQuestionKey: nextQuestionKey,
+            currentPageId: currentPage?.id || 'opt-in',
+            currentPageIndex: currentPageIndex,
             collectedAnswers: updatedAnswers,
-            questionsAnswered: questionsAnswered,
-            isComplete: isComplete,
-            chatId: chatId
-          };
-
-          console.log('[CHAT_API_DEBUG] Constructed daily-client-machine toolResponsePayload');
-          
-        } catch (openaiError) {
-          console.error('[CHAT_API_DEBUG] Error calling GPT-4o for daily-client-machine:', openaiError);
-          
-          // Fallback response
-          toolResponsePayload = {
-            message: "I apologize, but I'm having trouble processing your request right now. Could you please try again?",
-            currentQuestionKey: body.currentQuestionKey,
-            collectedAnswers: currentAnswers,
-            questionsAnswered: Object.keys(currentAnswers).length,
+            pageComplete: pageNowComplete,
+            totalPages: toolConfig.pages.length,
             isComplete: false,
+            chatId: chatId,
+            metadata: updatedMetadata
+          };
+          
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Error in page question flow:', error);
+          
+          determinedAiResponseContent = "I encountered an issue. Let's continue building your Daily Client Machine. What would you like to work on?";
+          
+          toolResponsePayload = {
+            message: determinedAiResponseContent,
+            currentPageId: currentPage?.id || 'opt-in',
+            currentPageIndex: currentPageIndex,
+            collectedAnswers: currentAnswers,
+            error: true,
             chatId: chatId
           };
         }
       }
+      
+      // Save thread metadata for daily-client-machine tool
+      if (chatId && supabase && toolResponsePayload.metadata) {
+        try {
+          const { error: threadUpdateError } = await supabase
+            .from('threads')
+            .update({ metadata: toolResponsePayload.metadata })
+            .eq('id', chatId);
+          
+          if (threadUpdateError) {
+            console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
+          } else {
+            console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for daily-client-machine');
+          }
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Exception updating thread metadata:', error);
+        }
+      }
+      
     } else if (tool === 'ideal-client-extractor') {
       console.log('[CHAT_API_DEBUG] Processing ideal-client-extractor tool logic (non-init path)');
       

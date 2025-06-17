@@ -1,0 +1,460 @@
+# CoachingAI Project Cursor Rules
+
+## Project Overview
+This is a Next.js coaching AI application with Supabase backend, OpenAI/Anthropic integration, and specialized coaching tools. The app uses a conversational AI system with memory management and tool-based workflows.
+
+## Tech Stack
+- **Frontend**: Next.js 14, React 18, Tailwind CSS, Radix UI components
+- **Backend**: Supabase (PostgreSQL), Server Actions, API Routes
+- **AI**: OpenAI GPT-4, Anthropic Claude, Vector embeddings
+- **Auth**: Supabase Auth
+- **State**: Zustand for client state
+- **Deployment**: Netlify
+- **Testing**: Jest, React Testing Library
+
+## File Naming & Organization Rules
+
+### General Naming
+- Use kebab-case for all files and folders: `chat-area.js`, `user-profile.js`
+- Use PascalCase for React components: `ChatArea`, `UserProfile`
+- Use camelCase for functions and variables: `getUserProfile`, `chatMessages`
+
+### Directory Structure
+```
+app/                    # Next.js app router
+├── api/               # API routes
+├── chat/              # Chat-related pages
+├── profile/           # User profile pages
+├── globals.css        # Global styles
+└── layout.js          # Root layout
+
+components/            # Shared React components
+├── ui/               # Reusable UI components
+├── ChatArea.js       # Main chat interface
+├── Sidebar.js        # Navigation sidebar
+└── AuthProvider.js   # Authentication wrapper
+
+lib/                  # Utility libraries
+├── config/           # Configuration files
+├── hooks/            # Custom React hooks
+├── stores/           # Zustand stores
+├── supabase/         # Supabase utilities
+├── utils/            # General utilities
+└── workshop/         # Workshop-specific logic
+
+db/                   # Database related
+├── schema/           # Database schemas
+└── migrations/       # Supabase migrations
+
+types/                # TypeScript type definitions
+prompts/              # AI prompt templates
+public/               # Static assets
+```
+
+## Code Style & Standards
+
+### React Components
+```javascript
+// Always specify "use client" or "use server" at the top
+"use client"
+
+import { useState, useEffect } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+
+export default function ComponentName({ prop1, prop2 }) {
+  // Hooks first
+  const [state, setState] = useState(null)
+  
+  // Effects after hooks
+  useEffect(() => {
+    // Effect logic
+  }, [])
+
+  // Event handlers
+  const handleClick = () => {
+    // Handler logic
+  }
+
+  // Render
+  return (
+    <div className="space-y-4">
+      {/* Component JSX */}
+    </div>
+  )
+}
+```
+
+### Server Components & Actions
+```javascript
+"use server"
+
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer'
+
+export default async function ServerComponent({ params }) {
+  // Await params in server components
+  const { id } = await params
+  
+  // Server logic
+  const data = await fetchData(id)
+  
+  return (
+    <div>
+      {/* Server component JSX */}
+    </div>
+  )
+}
+```
+
+### API Routes
+```javascript
+import { NextResponse } from 'next/server'
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer'
+
+export async function POST(request) {
+  try {
+    const body = await request.json()
+    
+    // API logic here
+    
+    return NextResponse.json({ success: true, data })
+  } catch (error) {
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+## Import Rules
+
+### Import Order
+1. React and Next.js imports
+2. Third-party libraries
+3. Internal utilities and configs
+4. Components
+5. Types
+
+```javascript
+// React/Next.js
+import { useState } from 'react'
+import { NextResponse } from 'next/server'
+
+// Third-party
+import { OpenAI } from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
+
+// Internal utilities
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer'
+import { TOOLS } from '@/lib/config/tools'
+
+// Components
+import ChatArea from '@/components/ChatArea'
+
+// Types
+import type { ChatMessage } from '@/types'
+```
+
+### Path Aliases
+- Use `@/` for all internal imports
+- Never use relative imports like `../../../`
+- Examples: `@/components/ChatArea`, `@/lib/utils/supabase`
+
+## Environment Variables
+
+### Naming Convention
+- Use `NEXT_PUBLIC_` prefix for client-side variables
+- Use descriptive names: `OPENAI_API_KEY`, `SUPABASE_URL`
+- Group related variables with prefixes: `N8N_WEBHOOK_URL`, `N8N_WORKSHOP_WEBHOOK_URL`
+
+### Required Variables
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+# AI Services
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_ASSISTANT_ID=
+OPENAI_VECTOR_STORE_ID=
+
+# Webhooks
+N8N_WEBHOOK_URL=
+NEXT_PUBLIC_N8N_WEBHOOK_URL=
+NEXT_PUBLIC_N8N_WORKSHOP_WEBHOOK_URL=
+
+# Development
+NEXT_PUBLIC_SKIP_AUTH=true
+ALLOW_ANONYMOUS_CHATS=false
+```
+
+## Database & Supabase Rules
+
+### Schema Naming
+- Use snake_case for database tables and columns
+- Use descriptive names: `chat_messages`, `user_profiles`, `tool_sessions`
+- Include `created_at` and `updated_at` in all tables
+
+### Supabase Client Usage
+```javascript
+// Server-side
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer'
+
+// Client-side
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+
+// In components
+const supabase = createClientComponentClient()
+```
+
+### RLS Policies
+- Always enable Row Level Security (RLS) on tables
+- Create policies for user-specific data access
+- Test policies thoroughly before deployment
+
+## AI Integration Rules
+
+### Model Selection
+- Use `gpt-4o-mini` for general chat and quick responses
+- Use `claude-opus` for complex analysis and tool workflows
+- Use `gpt-4` for high-quality content generation
+
+### Prompt Engineering
+```javascript
+const systemPrompt = `You are a specialized assistant for [specific task].
+
+CRITICAL INSTRUCTIONS:
+- [Specific behavior requirements]
+- [Output format requirements]
+- [Constraints and limitations]
+
+CONTEXT:
+- [Relevant context information]
+
+EXAMPLES:
+- [Provide clear examples]`
+```
+
+### Error Handling
+```javascript
+try {
+  const completion = await openai.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages: [...],
+    temperature: 0.7,
+  })
+  
+  return completion.choices[0].message.content
+} catch (error) {
+  console.error('AI API Error:', error)
+  // Provide fallback or user-friendly error
+  throw new Error('AI service temporarily unavailable')
+}
+```
+
+## Tool System Rules
+
+### Tool Configuration
+- Define tools in `@/lib/config/tools.js`
+- Include validation functions for tool completion
+- Provide clear system messages and question flows
+
+### Tool State Management
+```javascript
+// Tool session structure
+const toolSession = {
+  toolId: 'hybrid-offer',
+  collectedAnswers: {},
+  currentQuestionIndex: 0,
+  isComplete: false,
+  createdAt: new Date().toISOString()
+}
+```
+
+## Error Handling & Logging
+
+### Console Logging
+```javascript
+// Use descriptive prefixes
+console.log('[Chat API] Processing message:', messageId)
+console.error('[Supabase] Database error:', error)
+console.warn('[Auth] Invalid session detected')
+```
+
+### Error Boundaries
+- Wrap components in error boundaries
+- Provide fallback UI for failed states
+- Log errors for debugging
+
+### API Error Responses
+```javascript
+// Consistent error response format
+return NextResponse.json(
+  { 
+    error: 'Descriptive error message',
+    code: 'ERROR_CODE',
+    details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+  },
+  { status: 400 }
+)
+```
+
+## Performance & Optimization
+
+### React Optimization
+- Use `useMemo` and `useCallback` for expensive computations
+- Implement proper loading states with Suspense
+- Lazy load components when appropriate
+
+### Database Optimization
+- Use proper indexes on frequently queried columns
+- Implement pagination for large datasets
+- Use Supabase real-time subscriptions efficiently
+
+### AI API Optimization
+- Implement request caching where appropriate
+- Use streaming responses for long-form content
+- Set appropriate timeout values
+
+## Security Rules
+
+### Authentication
+- Always check user authentication in server actions
+- Use Supabase RLS for data access control
+- Validate user permissions before operations
+
+### Input Validation
+```javascript
+// Validate all user inputs
+function validateInput(input, type) {
+  if (!input || typeof input !== 'string') {
+    throw new Error('Invalid input')
+  }
+  
+  if (type === 'email' && !isValidEmail(input)) {
+    throw new Error('Invalid email format')
+  }
+  
+  return input.trim()
+}
+```
+
+### Environment Variables
+- Never expose sensitive keys to client-side
+- Use `NEXT_PUBLIC_` prefix only for safe client variables
+- Validate required environment variables on startup
+
+## Testing Rules
+
+### Component Testing
+```javascript
+import { render, screen, fireEvent } from '@testing-library/react'
+import '@testing-library/jest-dom'
+import ComponentName from './ComponentName'
+
+describe('ComponentName', () => {
+  it('renders correctly', () => {
+    render(<ComponentName />)
+    expect(screen.getByText('Expected text')).toBeInTheDocument()
+  })
+})
+```
+
+### API Testing
+- Test all API endpoints with various inputs
+- Mock external services (OpenAI, Anthropic)
+- Test error conditions and edge cases
+
+## Deployment & CI/CD
+
+### Pre-deployment Checklist
+- [ ] All environment variables configured
+- [ ] Database migrations applied
+- [ ] Tests passing
+- [ ] No console errors in production build
+- [ ] Performance metrics acceptable
+
+### Netlify Configuration
+- Use `netlify.toml` for build settings
+- Set proper redirects for SPA routing
+- Configure environment variables in Netlify dashboard
+
+## Common Pitfalls to Avoid
+
+### React/Next.js
+- Don't use `useEffect` without dependency arrays
+- Don't mutate state directly
+- Don't forget to await `params` in server components
+- Don't mix server and client component imports incorrectly
+
+### Supabase
+- Don't forget to enable RLS on new tables
+- Don't expose service role key to client-side
+- Don't forget to handle auth state changes
+
+### AI Integration
+- Don't make API calls without error handling
+- Don't forget to set appropriate model parameters
+- Don't expose API keys in client-side code
+- Don't make unnecessary API calls (implement caching)
+
+### Database
+- Don't create tables without proper indexes
+- Don't forget foreign key constraints
+- Don't skip data validation
+- Don't ignore migration order dependencies
+
+## Code Review Checklist
+
+Before committing code, ensure:
+- [ ] Proper error handling implemented
+- [ ] Environment variables used correctly
+- [ ] No hardcoded values or API keys
+- [ ] Consistent naming conventions followed
+- [ ] Proper TypeScript types (if using TS)
+- [ ] Tests written for new functionality
+- [ ] Performance implications considered
+- [ ] Security implications reviewed
+- [ ] Documentation updated if needed
+
+## Debugging Tips
+
+### Common Issues
+1. **Supabase connection issues**: Check environment variables and RLS policies
+2. **AI API failures**: Verify API keys and rate limits
+3. **Authentication problems**: Check auth provider configuration
+4. **Build failures**: Verify all imports and dependencies
+5. **Performance issues**: Check for unnecessary re-renders and API calls
+
+### Debugging Tools
+- Use React DevTools for component debugging
+- Use Supabase dashboard for database queries
+- Use browser network tab for API debugging
+- Use console.log with descriptive prefixes
+- Use error boundaries to catch React errors
+
+## Documentation Standards
+
+### Code Comments
+```javascript
+/**
+ * Processes chat messages and generates AI responses
+ * @param {Array} messages - Array of chat messages
+ * @param {string} toolId - Optional tool identifier
+ * @returns {Promise<Object>} AI response object
+ */
+async function processChat(messages, toolId = null) {
+  // Implementation
+}
+```
+
+### README Updates
+- Keep README.md current with setup instructions
+- Document new environment variables
+- Update deployment instructions when changed
+- Include troubleshooting sections for common issues
+
+This comprehensive set of rules should help maintain code quality, prevent common bugs, and ensure consistent development practices across the CoachingAI project. 

@@ -1,0 +1,55 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## 8. Error Handling & Logging Rules
+
+```markdown
+# Error Handling & Logging Rules
+
+## Console Logging
+```javascript
+// Use descriptive prefixes
+console.log('[Chat API] Processing message:', messageId)
+console.error('[Supabase] Database error:', error)
+console.warn('[Auth] Invalid session detected')
+```
+
+## API Error Responses
+```javascript
+// Consistent error response format
+return NextResponse.json(
+  { 
+    error: 'Descriptive error message',
+    code: 'ERROR_CODE',
+    details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+  },
+  { status: 400 }
+)
+```
+
+## Error Boundaries
+- Wrap components in error boundaries
+- Provide fallback UI for failed states
+- Log errors for debugging
+
+## API Route Pattern
+```javascript
+export async function POST(request) {
+  try {
+    const body = await request.json()
+    
+    // API logic here
+    
+    return NextResponse.json({ success: true, data })
+  } catch (error) {
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+      }
+}
+```
+```
