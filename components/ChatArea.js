@@ -806,7 +806,7 @@ export default function ChatArea() {
   // This effect might be redundant if the above effect correctly initializes from metadata.
   // Consider removing or refining this if the above is sufficient.
   useEffect(() => {
-      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor') && currentChat?.messages?.length > 0) {
+      if ((selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor' || selectedTool === 'daily-client-machine') && currentChat?.messages?.length > 0) {
           // A more robust way would be to persist/load answers+key with the chat 
           // For now, just don't reset to first key if history exists
           if (!currentQuestionKey) {
@@ -816,6 +816,8 @@ export default function ChatArea() {
                       } else if (selectedTool === 'hybrid-offer') {
             setCurrentQuestionKey(hybridOfferQuestions[0].key);
         } else if (selectedTool === 'ideal-client-extractor') {
+            setCurrentQuestionKey(null); // No predefined questions for this tool
+        } else if (selectedTool === 'daily-client-machine') {
             setCurrentQuestionKey(null); // No predefined questions for this tool
       } else if (selectedTool === 'workshop-generator') {
           setCurrentQuestionKey(workshopQuestions[0].key);
@@ -831,7 +833,7 @@ export default function ChatArea() {
         `Initiating=${isInitiating}, Loading=${isLoading}`
     );
     if (
-        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor') &&
+        (selectedTool === 'hybrid-offer' || selectedTool === 'workshop-generator' || selectedTool === 'ideal-client-extractor' || selectedTool === 'daily-client-machine') &&
         !initiationAttemptedForContext && 
         !isInitiating &&
         !isLoading &&

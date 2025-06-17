@@ -42,7 +42,7 @@ export default function Message({ message }) {
           : "bg-muted text-foreground rounded-tl-none overflow-auto"
       )}>
         {/* Render content with markdown for assistant messages or as text for users */}
-        <div className={isUser ? "whitespace-pre-wrap" : ""}>
+        <div className={isUser ? "break-words" : ""}>
           {message.isJSX ? (
             message.content
           ) : !isUser ? (

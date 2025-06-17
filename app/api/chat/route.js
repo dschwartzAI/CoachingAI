@@ -2,7 +2,7 @@ import { OpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerClientWithCookies } from '@/lib/utils/supabaseServer';
 import { NextResponse } from 'next/server';
-import { TOOLS } from '@/lib/config/tools';
+import { TOOLS, getNextQuestion } from '@/lib/config/tools';
 import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserProfile } from '@/lib/utils/supabase';
@@ -121,7 +121,16 @@ function calculateQuestionsAnswered(collectedAnswers, tool = 'hybrid-offer') {
   if (!collectedAnswers) return 0;
   
   // Get the appropriate questions array based on the tool
-  const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
+  let questionsArray;
+  if (tool === 'workshop-generator') {
+    questionsArray = workshopQuestions;
+  } else if (tool === 'daily-client-machine') {
+    // For DCM, get questions from the tool config
+    const toolConfig = TOOLS['daily-client-machine'];
+    questionsArray = toolConfig ? toolConfig.questions : [];
+  } else {
+    questionsArray = hybridOfferQuestions;
+  }
   
   // Count how many of the predefined questions have answers
   let count = 0;
@@ -1086,11 +1095,29 @@ export async function POST(request) {
       }
     }
 
-    // FAST PATH: Handle tool initialization FIRST before any profile/context building
-    // NOTE: hybrid-offer needs profile context, so it uses the full path below
+    // Handle ideal-client-extractor tool initialization with profile context
     if (isToolInit && tool === 'ideal-client-extractor') {
+      // Build profile context for this tool
+      let userProfile = null;
+      if (userId && !userId.startsWith('anon-')) {
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('full_name, occupation, desired_mrr, desired_hours')
+            .eq('user_id', userId)
+            .single();
+          if (!profileError) {
+            userProfile = profileData;
+          }
+        } catch (profileException) {
+          // Continue without profile if there's an error
+        }
+      }
+
       const toolConfig = TOOLS[tool];
-      const initialMessage = toolConfig.initialMessage;
+      
+      // Create initial message
+      const initialMessage = `I'll interview you to get the juicy details about your client persona(s)...then I'll give you a psychographic brief you can use in your copywriting.\n\nStarting high level...\n\n**Who is your ideal customer?** Describe their demographics, current situation, and main challenges.\n\nFor example:\n• "Small business owners with 5-20 employees struggling to scale"\n• "Working moms in their 30s-40s overwhelmed juggling career and family"\n• "Tech startup founders who've raised Series A but can't find product-market fit"`;
       
       const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
 
@@ -2162,21 +2189,144 @@ I'll be happy to regenerate the HTML with your specific changes!`;
 
         console.log('[CHAT_API_DEBUG] Constructed workshop toolResponsePayload:', JSON.stringify(toolResponsePayload, null, 2));
       }
+    } else if (tool === 'daily-client-machine') {
+      console.log('[CHAT_API_DEBUG] Processing daily-client-machine tool logic');
+      
+      // For daily-client-machine, we use GPT-4o for cost-effective copywriting
+      const toolConfig = TOOLS[tool];
+      
+      // Build enhanced system message with profile context
+      let enhancedSystemMessage = toolConfig.systemMessage;
+      if (userProfile && userProfile.occupation) {
+        enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to tailor your questions and copy generation to their specific industry and needs.`;
+      }
+      
+      // Check if this is the final step where we need to generate the complete copy
+      const currentAnswers = { ...collectedAnswers };
+      const isComplete = toolConfig.isComplete(currentAnswers);
+      
+      if (isComplete && !body.copyGenerated) {
+        console.log('[CHAT_API_DEBUG] All DCM questions answered, generating complete copy');
+        
+        // Import the copy generation template
+        const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
+        
+        // Generate the complete DCM copy
+        const generatedCopy = generateDCMCopyTemplate(currentAnswers);
+        
+        // Create a comprehensive response with the generated copy
+        determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
+
+Here's your personalized DCM copy for all 8 funnel pages:
+
+${generatedCopy}
+
+**Next Steps:**
+1. Save this copy document for reference
+2. Log into your HighLevel account
+3. Navigate to your cloned DCM 2.0 Templates funnel
+4. Follow the customization guide to replace all template content with your personalized copy
+5. Test your funnel before going live
+
+**Need Changes?**
+Just let me know what you'd like to adjust, and I'll regenerate specific sections for you!`;
+        
+        toolResponsePayload = {
+          message: determinedAiResponseContent,
+          currentQuestionKey: null,
+          collectedAnswers: currentAnswers,
+          questionsAnswered: toolConfig.questions.length,
+          isComplete: true,
+          copyGenerated: true,
+          chatId: chatId
+        };
+        
+        console.log('[CHAT_API_DEBUG] DCM copy generated successfully');
+      } else {
+        // Regular question flow using GPT-4o
+        const openaiMessages = [];
+        
+        // Add system message
+        openaiMessages.push({
+          role: "system",
+          content: enhancedSystemMessage
+        });
+        
+        // Add all conversation messages, ensuring we have at least one message
+        if (messages.length === 0) {
+          // For tool initialization, add a default user message
+          openaiMessages.push({
+            role: "user",
+            content: "Let's get started with building my Daily Client Machine."
+          });
+        } else {
+          messages.forEach(msg => {
+            openaiMessages.push({
+              role: msg.role,
+              content: msg.content
+            });
+          });
+        }
+        
+        try {
+          console.log('[CHAT_API_DEBUG] Sending conversation to GPT-4o for daily-client-machine');
+          
+          const openaiResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: openaiMessages,
+            max_tokens: 2000,
+            temperature: 0.7
+          });
+
+          const responseContent = openaiResponse.choices[0].message.content;
+          
+          console.log('[CHAT_API_DEBUG] GPT-4o response received for daily-client-machine');
+          
+          // Extract the current question key and update answers
+          const nextQuestion = getNextQuestion(toolConfig, messages);
+          const currentQuestionKey = nextQuestion ? nextQuestion.key : null;
+          
+          toolResponsePayload = {
+            message: responseContent,
+            currentQuestionKey: currentQuestionKey,
+            collectedAnswers: currentAnswers,
+            questionsAnswered: Object.keys(currentAnswers).length,
+            isComplete: false,
+            chatId: chatId
+          };
+
+          console.log('[CHAT_API_DEBUG] Constructed daily-client-machine toolResponsePayload');
+          
+        } catch (openaiError) {
+          console.error('[CHAT_API_DEBUG] Error calling GPT-4o for daily-client-machine:', openaiError);
+          
+          // Fallback response
+          toolResponsePayload = {
+            message: "I apologize, but I'm having trouble processing your request right now. Could you please try again?",
+            currentQuestionKey: body.currentQuestionKey,
+            collectedAnswers: currentAnswers,
+            questionsAnswered: Object.keys(currentAnswers).length,
+            isComplete: false,
+            chatId: chatId
+          };
+        }
+      }
     } else if (tool === 'ideal-client-extractor') {
       console.log('[CHAT_API_DEBUG] Processing ideal-client-extractor tool logic (non-init path)');
       
       // For ideal-client-extractor, we use Claude Opus for the entire conversation
       const toolConfig = TOOLS[tool];
       
-      // Prepare the conversation for Claude Opus
-      const claudeMessages = [
-        {
-          role: "user",
-          content: toolConfig.systemMessage
-        }
-      ];
+      // Build enhanced system message with profile context
+      let enhancedSystemMessage = toolConfig.systemMessage;
+      if (userProfile && userProfile.occupation) {
+        enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to ask more targeted questions and avoid asking about their general profession since you already know it. Focus on the specifics of their offering, target market, and customer psychology.`;
+      }
       
-      // Add all conversation messages (excluding the system message)
+      // Prepare the conversation for Claude Opus
+      const claudeMessages = [];
+      
+      // Add all conversation messages
       messages.forEach(msg => {
         claudeMessages.push({
           role: msg.role,
@@ -2191,6 +2341,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           model: "claude-3-opus-20240229",
           max_tokens: 4000,
           temperature: 0.8, // Higher temperature for more conversational responses
+          system: enhancedSystemMessage, // Enhanced system message with profile context
           messages: claudeMessages
         });
 
@@ -2305,6 +2456,17 @@ AVAILABLE TOOLS TO MENTION:
    - Creating lead magnets through education
    - "I want to teach..." or "How do I create a workshop..."
    - Structuring learning experiences
+
+3. DAILY CLIENT MACHINE BUILDER - This tool creates a complete DCM funnel system with copy for all 8 pages. Mention when users ask about:
+   - Building a complete funnel system
+   - Creating both low-ticket and high-ticket offers
+   - Setting up a product ladder or value ladder
+   - Generating clients AND customers daily
+   - Building a dual-mode funnel
+   - Creating VSLs or Big Idea videos
+   - Setting up membership or community offers
+   - "How do I build a funnel..." or "I need a complete system..."
+   - Scaling their business with automated funnels
 
 GUIDELINES:
 - Only suggest tools when the user's question is DIRECTLY related to creating these specific things
@@ -2545,6 +2707,41 @@ The user's conversation history and knowledge base research are provided below.$
             console.log('[CHAT_API_DEBUG] Workshop complete - creating tool memory summary');
             createToolMemorySummary(userId, chatId, 'workshop-generator', toolResponsePayload.collectedAnswers).catch(err => {
               console.error('[CHAT_API_DEBUG] Workshop memory capture failed:', err);
+            });
+          }
+        }
+      }
+
+      if (tool === 'daily-client-machine' && toolResponsePayload) {
+        console.log('[CHAT_API_DEBUG] Updating thread metadata for daily-client-machine (after saving message):', {
+          chatId,
+          questionsAnswered: toolResponsePayload.questionsAnswered,
+          currentQuestionKey: toolResponsePayload.currentQuestionKey,
+          isComplete: toolResponsePayload.isComplete,
+          collectedAnswersCount: Object.keys(toolResponsePayload.collectedAnswers || {}).length 
+        });
+        const { error: threadUpdateError } = await supabase
+          .from('threads')
+          .update({
+            metadata: {
+              currentQuestionKey: toolResponsePayload.currentQuestionKey,
+              questionsAnswered: toolResponsePayload.questionsAnswered,
+              isComplete: toolResponsePayload.isComplete,
+              collectedAnswers: toolResponsePayload.collectedAnswers,
+              copyGenerated: toolResponsePayload.copyGenerated || false
+            }
+          })
+          .eq('id', chatId);
+        if (threadUpdateError) {
+          console.error('[CHAT_API_DEBUG] Error updating thread metadata:', threadUpdateError);
+        } else {
+          console.log('[CHAT_API_DEBUG] Thread metadata updated successfully for daily-client-machine');
+          
+          // Capture tool memory when DCM is complete
+          if (toolResponsePayload.isComplete && toolResponsePayload.collectedAnswers) {
+            console.log('[CHAT_API_DEBUG] DCM complete - creating tool memory summary');
+            createToolMemorySummary(userId, chatId, 'daily-client-machine', toolResponsePayload.collectedAnswers).catch(err => {
+              console.error('[CHAT_API_DEBUG] DCM memory capture failed:', err);
             });
           }
         }
