@@ -24,6 +24,8 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
   const [biggestChallenge, setBiggestChallenge] = useState('');
+  const [psychographicBrief, setPsychographicBrief] = useState('');
+  const [psychographicBriefUpdatedAt, setPsychographicBriefUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -47,6 +49,8 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
         setDesiredMrr(data.profile.desired_mrr || '');
         setDesiredHours(data.profile.desired_hours || '');
         setBiggestChallenge(data.profile.biggest_challenge || '');
+        setPsychographicBrief(data.profile.psychographic_brief || '');
+        setPsychographicBriefUpdatedAt(data.profile.psychographic_brief_updated_at || '');
       }
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -96,7 +100,8 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
           current_mrr: currentMrr,
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
-          biggest_challenge: biggestChallenge
+          biggest_challenge: biggestChallenge,
+          psychographic_brief: psychographicBrief
         })
       });
       
@@ -215,6 +220,53 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
               className="min-h-24 resize-y"
               rows={4}
             />
+          </div>
+          
+          {/* Psychographic Brief Section */}
+          <div className="grid gap-2 pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="psychographicBrief">Ideal Client Psychographic Brief</Label>
+              {psychographicBriefUpdatedAt && (
+                <span className="text-xs text-muted-foreground">
+                  Updated: {new Date(psychographicBriefUpdatedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <Textarea 
+              id="psychographicBrief" 
+              value={psychographicBrief} 
+              onChange={(e) => setPsychographicBrief(e.target.value)} 
+              disabled={saving}
+              placeholder="Your comprehensive ideal client psychographic brief will appear here automatically when you complete the Ideal Client Extractor tool, or you can manually add/edit it here."
+              className="min-h-32 resize-y font-mono text-sm"
+              rows={8}
+            />
+            <div className="flex gap-2 mt-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                onClick={() => window.open('/chat?tool=ideal-client-extractor', '_blank')}
+                disabled={saving}
+              >
+                Generate New Brief
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  setPsychographicBrief('');
+                  setPsychographicBriefUpdatedAt('');
+                }}
+                disabled={saving || !psychographicBrief}
+              >
+                Clear Brief
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This brief helps all tools generate more targeted content for your specific ideal client.
+            </p>
           </div>
           
           {error && <p className="text-sm text-center text-destructive">{error}</p>}

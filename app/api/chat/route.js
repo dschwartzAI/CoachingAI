@@ -24,6 +24,51 @@ const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
+// Helper function to detect and save psychographic briefs from ICP tool responses
+async function detectAndSavePsychographicBrief(responseContent, userId) {
+  try {
+    // Detection criteria for comprehensive psychographic briefs
+    const isPsychographicBrief = (
+      responseContent.length > 1500 && // Must be substantial content
+      (
+        /psychographic\s+brief/i.test(responseContent) || // Contains "psychographic brief"
+        /ideal\s+client\s+psychographic/i.test(responseContent) || // Contains "ideal client psychographic"
+        (/demographics/i.test(responseContent) && /pain\s+points/i.test(responseContent)) || // Has both demographics and pain points
+        (/core\s+demographics/i.test(responseContent) && /goals\s+and\s+aspirations/i.test(responseContent)) // Structured format
+      )
+    );
+
+    if (!isPsychographicBrief) {
+      console.log('[CHAT_API_DEBUG] Response does not appear to be a comprehensive psychographic brief');
+      return;
+    }
+
+    console.log('[CHAT_API_DEBUG] Comprehensive psychographic brief detected, saving to user profile');
+    
+    const supabase = createServerClientWithCookies();
+    
+    // Update the user's profile with the psychographic brief
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ 
+        psychographic_brief: responseContent,
+        psychographic_brief_updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+    
+    if (error) {
+      console.error('[CHAT_API_DEBUG] Error saving psychographic brief to profile:', error);
+      return false;
+    }
+    
+    console.log('[CHAT_API_DEBUG] Psychographic brief saved successfully to user profile');
+    return true;
+  } catch (error) {
+    console.error('[CHAT_API_DEBUG] Error in detectAndSavePsychographicBrief:', error);
+    return false;
+  }
+}
+
 // Add a function to validate answers using AI
 async function validateHybridOfferAnswer(questionKey, answer) {
   if (!answer || answer.trim().length < 3) {
@@ -2753,28 +2798,32 @@ Valid answers should be specific and actionable, not vague responses like "I'm n
       // Build enhanced system message with profile context
       let enhancedSystemMessage = toolConfig.systemMessage;
       if (userProfile && userProfile.occupation) {
-        enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to ask more targeted questions and avoid asking about their general profession since you already know it. Focus on the specifics of their offering, target market, and customer psychology.`;
+        enhancedSystemMessage = `You are a copywriting expert. 
+
+Your job is to interview me and ask me as many probing questions as possible to better understand my customers and audience.
+
+IMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to ask more targeted questions and avoid asking about their general profession since you already know it. Focus on the specifics of their offering, target market, and customer psychology.
+
+If I don't give you enough context, ask follow up questions to get further clarity before proceeding to the next question.From there, create a psychographic brief in an organized manner I can reference when doing my copywriting.
+
+Use H2, bold, bullet points, paragraph, and table markdown to make the brief easy to read and understand.
+
+Reply to this message with your first question.
+
+${toolConfig.systemMessage.substring(toolConfig.systemMessage.indexOf('Common considerations'))}`;
       }
       
       // Prepare the conversation for Claude Opus
-      const claudeMessages = [];
-      
-      // Add all conversation messages
-      messages.forEach(msg => {
-        claudeMessages.push({
-          role: msg.role,
-          content: msg.content
-        });
-      });
+      const claudeMessages = messages.map(m => ({ role: m.role, content: m.content }));
       
       try {
         console.log('[CHAT_API_DEBUG] Sending conversation to Claude Opus for ideal-client-extractor');
         
         const claudeResponse = await anthropic.messages.create({
-          model: "claude-3-opus-20240229",
-          max_tokens: 4000,
-          temperature: 0.8, // Higher temperature for more conversational responses
-          system: enhancedSystemMessage, // Enhanced system message with profile context
+          model: "claude-opus-4-20250514",
+          max_tokens: 8000,
+          temperature: 0.7,
+          system: enhancedSystemMessage,
           messages: claudeMessages
         });
 
@@ -2782,23 +2831,37 @@ Valid answers should be specific and actionable, not vague responses like "I'm n
         
         console.log('[CHAT_API_DEBUG] Claude Opus response received for ideal-client-extractor');
         
-        // For ideal-client-extractor, we don't have predefined completion criteria
-        // The tool is designed for ongoing conversation
+        // Check if this response contains a comprehensive psychographic brief and auto-save it
+        const briefSaved = await detectAndSavePsychographicBrief(responseContent, userId);
+        
+        // Set the response content so it gets saved to the database
+        determinedAiResponseContent = responseContent;
+        
         toolResponsePayload = {
           message: responseContent,
           currentQuestionKey: null, // No predefined questions
           collectedAnswers: {}, // No structured answers to collect
           questionsAnswered: 0, // Not applicable for this tool
-          isComplete: false, // Always allow continuation
+          isComplete: false, // Let the conversation flow naturally
           chatId: chatId
         };
-
+        
         console.log('[CHAT_API_DEBUG] Constructed ideal-client-extractor toolResponsePayload');
+        
+        // Add a flag to the response payload to indicate brief was saved
+        if (briefSaved) {
+          toolResponsePayload = {
+            ...toolResponsePayload,
+            psychographicBriefSaved: true
+          };
+        }
         
       } catch (claudeError) {
         console.error('[CHAT_API_DEBUG] Error calling Claude Opus for ideal-client-extractor:', claudeError);
         
         // Fallback response
+        determinedAiResponseContent = "I apologize, but I'm having trouble processing your request right now. Could you please try again?";
+        
         toolResponsePayload = {
           message: "I apologize, but I'm having trouble processing your request right now. Could you please try again?",
           currentQuestionKey: null,

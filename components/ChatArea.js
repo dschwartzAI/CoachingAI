@@ -1278,6 +1278,15 @@ export default function ChatArea() {
           updateChat(correctChatId, finalCurrentChat);
         }
 
+        // Show toast notification if psychographic brief was saved
+        if (data.psychographicBriefSaved && toast) {
+          toast({
+            title: "Psychographic Brief Saved! 🎯",
+            description: "Your ideal client profile has been saved to your profile settings.",
+            duration: 5000,
+          });
+        }
+
         // If the hybrid offer is complete, initiate SSE connection (only for hybrid-offer tool)
         console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
         if (isComplete && correctChatId && selectedTool === 'hybrid-offer') {

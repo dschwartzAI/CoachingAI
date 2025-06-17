@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -17,6 +18,8 @@ export default function ProfilePage() {
   const [desiredMrr, setDesiredMrr] = useState('');
   const [desiredHours, setDesiredHours] = useState('');
   const [allowMemory, setAllowMemory] = useState(false);
+  const [psychographicBrief, setPsychographicBrief] = useState('');
+  const [psychographicBriefUpdatedAt, setPsychographicBriefUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -41,6 +44,13 @@ export default function ProfilePage() {
           setDesiredMrr(data.profile.desired_mrr || '');
           setDesiredHours(data.profile.desired_hours || '');
           setAllowMemory(data.profile.allow_memory ?? false);
+          console.log('[Profile Page] Setting psychographic brief:', {
+            hasBrief: !!data.profile.psychographic_brief,
+            briefLength: data.profile.psychographic_brief?.length,
+            updatedAt: data.profile.psychographic_brief_updated_at
+          });
+          setPsychographicBrief(data.profile.psychographic_brief || '');
+          setPsychographicBriefUpdatedAt(data.profile.psychographic_brief_updated_at || '');
         }
       } catch (err) {
         if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -92,7 +102,8 @@ export default function ProfilePage() {
           occupation,
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
-          allow_memory: allowMemory
+          allow_memory: allowMemory,
+          psychographic_brief: psychographicBrief
         })
       });
       const data = await res.json();
@@ -111,6 +122,12 @@ export default function ProfilePage() {
   if (loading || (!user && !loading)) {
     return <div className="p-4">Loading...</div>;
   }
+
+  console.log('[Profile Page] Current state:', {
+    psychographicBrief: psychographicBrief ? `${psychographicBrief.substring(0, 100)}...` : 'EMPTY',
+    psychographicBriefUpdatedAt,
+    briefLength: psychographicBrief?.length || 0
+  });
 
   return (
     <div className="container mx-auto flex items-center justify-center min-h-screen p-4">
@@ -147,6 +164,56 @@ export default function ProfilePage() {
                 disabled={saving}
               />
               <Label htmlFor="allowMemory">Allow coaching memory</Label>
+            </div>
+            {/* Psychographic Brief Section */}
+            <div className="grid gap-2 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="psychographicBrief">Ideal Client Psychographic Brief</Label>
+                {psychographicBriefUpdatedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    Updated: {new Date(psychographicBriefUpdatedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              <Textarea
+                id="psychographicBrief"
+                value={psychographicBrief}
+                onChange={(e) => setPsychographicBrief(e.target.value)}
+                placeholder="Generate a comprehensive psychographic brief using the Ideal Client Extractor tool..."
+                rows={6}
+                disabled={saving}
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push('/chat?tool=ideal-client-extractor')}
+                  disabled={saving}
+                >
+                  Generate New Brief
+                </Button>
+                {psychographicBrief && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm('Clear your psychographic brief? This cannot be undone.')) {
+                        setPsychographicBrief('');
+                        setPsychographicBriefUpdatedAt('');
+                      }
+                    }}
+                    disabled={saving}
+                  >
+                    Clear Brief
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This brief is automatically used as context for other tools like the Daily Client Machine to create more targeted copy.
+              </p>
             </div>
             {error && <p className="text-sm text-center text-destructive">{error}</p>}
             {success && <p className="text-sm text-center text-green-500">{success}</p>}

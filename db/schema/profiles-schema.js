@@ -18,6 +18,8 @@ export const userProfilesTable = pgTable("user_profiles", {
   business_description: text("business_description"),
   goals: text("goals"),
   challenges: text("challenges"),
+  psychographic_brief: text("psychographic_brief"),
+  psychographic_brief_updated_at: timestamp("psychographic_brief_updated_at"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at")
     .defaultNow()

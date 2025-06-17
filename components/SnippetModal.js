@@ -43,6 +43,11 @@ export default function SnippetModal({ open, onOpenChange, message }) {
   const saveSnippet = async () => {
     if (!message) {
       console.error("Save snippet failed: message object is missing.");
+      toast({
+        title: "Failed to save snippet",
+        description: "Message object is missing. Please try again.",
+        variant: "destructive",
+      });
       return;
     }
     
@@ -96,22 +101,28 @@ export default function SnippetModal({ open, onOpenChange, message }) {
       toast({
         title: "Snippet saved!",
         description: "Your message has been bookmarked successfully.",
-        variant: "default",
       });
 
       setNote('');
-      fetchSnippets(); // Refresh the list of snippets
-      onOpenChange(false); // Close the modal on success
+      
+      // Refresh the list and close modal after a short delay to show the toast
+      setTimeout(() => {
+        fetchSnippets(); // Refresh the list of snippets
+        onOpenChange(false); // Close the modal on success
+      }, 100);
+      
     } catch (err) {
       console.error('[SnippetModal] Failed to save snippet:', err);
       
       // Show error toast
       toast({
         title: "Failed to save snippet",
-        description: "Please try again. If the problem persists, check your connection.",
+        description: `Error: ${err.message}. Please try again.`,
         variant: "destructive",
       });
     } finally {
+      // Ensure saving state is always reset
+      console.log('[SnippetModal] Resetting saving state');
       setSaving(false);
     }
   };
@@ -165,7 +176,9 @@ export default function SnippetModal({ open, onOpenChange, message }) {
               placeholder="Add a note (optional)"
               rows={2}
             />
-            <Button onClick={saveSnippet} disabled={saving}>Save Snippet</Button>
+            <Button onClick={saveSnippet} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Snippet'}
+            </Button>
           </div>
         )}
         <div className="space-y-2 max-h-60 overflow-auto border-t pt-2">
