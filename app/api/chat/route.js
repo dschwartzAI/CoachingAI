@@ -2201,21 +2201,124 @@ I'll be happy to regenerate the HTML with your specific changes!`;
         enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to tailor your questions and copy generation to their specific industry and needs.`;
       }
       
+      // IMPORTANT: Retrieve full conversation history from database to maintain context
+      let fullMessages = messages;
+      if (chatId && supabase) {
+        try {
+          console.log('[CHAT_API_DEBUG] Retrieving full conversation history for daily-client-machine');
+          const { data: dbMessages, error: dbError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('thread_id', chatId)
+            .order('timestamp', { ascending: true });
+          
+          if (!dbError && dbMessages && dbMessages.length > 0) {
+            console.log(`[CHAT_API_DEBUG] Retrieved ${dbMessages.length} messages from database`);
+            // Use database messages as the full conversation history
+            fullMessages = dbMessages.map(msg => ({
+              role: msg.role,
+              content: msg.content
+            }));
+            
+            // Add the current message if it's not already in the database
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage && !dbMessages.find(m => m.content === lastMessage.content && m.role === lastMessage.role)) {
+              fullMessages.push(lastMessage);
+              console.log('[CHAT_API_DEBUG] Added current message to full history');
+            }
+          } else if (dbError) {
+            console.error('[CHAT_API_DEBUG] Error retrieving messages from database:', dbError);
+            // Fall back to using messages from frontend
+          }
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Exception retrieving messages:', error);
+          // Fall back to using messages from frontend
+        }
+      }
+      
+      console.log(`[CHAT_API_DEBUG] Using ${fullMessages.length} messages for daily-client-machine context`);
+      
       // Check if this is the final step where we need to generate the complete copy
       const currentAnswers = { ...collectedAnswers };
       const isComplete = toolConfig.isComplete(currentAnswers);
       
       if (isComplete && !body.copyGenerated) {
-        console.log('[CHAT_API_DEBUG] All DCM questions answered, generating complete copy');
+        console.log('[CHAT_API_DEBUG] All DCM questions answered, generating complete copy with HighLevel templates');
         
-        // Import the copy generation template
-        const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
-        
-        // Generate the complete DCM copy
-        const generatedCopy = generateDCMCopyTemplate(currentAnswers);
-        
-        // Create a comprehensive response with the generated copy
-        determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
+        try {
+          // Import the copy generation template and HighLevel API
+          const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
+          const { enhanceDCMPromptWithTemplates } = require('@/lib/utils/highlevel-api');
+          
+          // Enhance the base copy template with real HighLevel DCM 2.0 templates
+          console.log('[CHAT_API_DEBUG] Fetching HighLevel templates...');
+          const baseCopyTemplate = generateDCMCopyTemplate(currentAnswers);
+          const enhancedCopyTemplate = await enhanceDCMPromptWithTemplates(baseCopyTemplate, currentAnswers);
+          
+          // Use GPT-4o to generate the final copy with HighLevel template context
+          const copyGenerationMessages = [
+            {
+              role: "system",
+              content: enhancedCopyTemplate
+            },
+            {
+              role: "user", 
+              content: `Generate the complete Daily Client Machine funnel copy based on my answers. Use the real DCM 2.0 templates as inspiration for structure and proven copy elements, but customize everything for my specific business.
+
+My answers:
+${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join('\n')}
+
+Please generate copy for all 8 funnel pages with clear sections and headlines.`
+            }
+          ];
+          
+          console.log('[CHAT_API_DEBUG] Generating enhanced copy with GPT-4o and HighLevel templates...');
+          
+          const copyResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: copyGenerationMessages,
+            max_tokens: 4000,
+            temperature: 0.7
+          });
+          
+          const generatedCopy = copyResponse.choices[0].message.content;
+          
+          console.log('[CHAT_API_DEBUG] Enhanced DCM copy generated successfully with HighLevel templates');
+          
+          // Create a comprehensive response with the generated copy
+          determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
+
+I've enhanced your copy using real DCM 2.0 templates from James Kemp's proven funnels to ensure maximum effectiveness.
+
+Here's your personalized DCM copy for all 8 funnel pages:
+
+${generatedCopy}
+
+**Next Steps:**
+1. Save this copy document for reference
+2. Log into your HighLevel account
+3. Navigate to your cloned DCM 2.0 Templates funnel
+4. Follow the customization guide to replace all template content with your personalized copy
+5. Test your funnel before going live
+
+**Template Enhancement:**
+Your copy has been enhanced with proven elements from James Kemp's actual DCM 2.0 funnels, including:
+- Proven headline structures
+- Tested conversion elements
+- Optimized page flow sequences
+- Real funnel design standards
+
+**Need Changes?**
+Just let me know what you'd like to adjust, and I'll regenerate specific sections for you!`;
+
+        } catch (error) {
+          console.error('[CHAT_API_DEBUG] Error generating enhanced copy:', error);
+          
+          // Fallback to basic copy generation if HighLevel API fails
+          const { generateDCMCopyTemplate } = require('@/prompts/daily-client-machine-prompt');
+          const generatedCopy = generateDCMCopyTemplate(currentAnswers);
+          
+          determinedAiResponseContent = `Excellent! I've gathered all the information needed to create your complete Daily Client Machine funnel copy.
 
 Here's your personalized DCM copy for all 8 funnel pages:
 
@@ -2230,6 +2333,7 @@ ${generatedCopy}
 
 **Need Changes?**
 Just let me know what you'd like to adjust, and I'll regenerate specific sections for you!`;
+        }
         
         toolResponsePayload = {
           message: determinedAiResponseContent,
@@ -2244,23 +2348,58 @@ Just let me know what you'd like to adjust, and I'll regenerate specific section
         console.log('[CHAT_API_DEBUG] DCM copy generated successfully');
       } else {
         // Regular question flow using GPT-4o
+        
+        // First, retrieve thread metadata to get collected answers
+        let threadMetadata = {};
+        if (chatId && supabase) {
+          try {
+            const { data: threadData, error: threadError } = await supabase
+              .from('threads')
+              .select('metadata')
+              .eq('id', chatId)
+              .single();
+            
+            if (!threadError && threadData?.metadata) {
+              threadMetadata = threadData.metadata;
+              // Merge with any answers from the request body
+              if (threadMetadata.collectedAnswers) {
+                Object.assign(currentAnswers, threadMetadata.collectedAnswers);
+              }
+              console.log('[CHAT_API_DEBUG] Retrieved thread metadata with collected answers:', Object.keys(currentAnswers));
+            }
+          } catch (error) {
+            console.error('[CHAT_API_DEBUG] Error retrieving thread metadata:', error);
+          }
+        }
+        
         const openaiMessages = [];
         
-        // Add system message
+        // Add system message with context about collected answers
+        let contextualSystemMessage = enhancedSystemMessage;
+        if (Object.keys(currentAnswers).length > 0) {
+          contextualSystemMessage += `\n\nCOLLECTED INFORMATION SO FAR:\n`;
+          toolConfig.questions.forEach(q => {
+            if (currentAnswers[q.key]) {
+              contextualSystemMessage += `- ${q.key}: ${currentAnswers[q.key]}\n`;
+            }
+          });
+          contextualSystemMessage += `\nContinue with the next unanswered question or help refine existing answers if the user wants to change something.`;
+        }
+        
         openaiMessages.push({
           role: "system",
-          content: enhancedSystemMessage
+          content: contextualSystemMessage
         });
         
         // Add all conversation messages, ensuring we have at least one message
-        if (messages.length === 0) {
+        if (fullMessages.length === 0) {
           // For tool initialization, add a default user message
           openaiMessages.push({
             role: "user",
             content: "Let's get started with building my Daily Client Machine."
           });
         } else {
-          messages.forEach(msg => {
+          fullMessages.forEach(msg => {
             openaiMessages.push({
               role: msg.role,
               content: msg.content
@@ -2282,16 +2421,97 @@ Just let me know what you'd like to adjust, and I'll regenerate specific section
           
           console.log('[CHAT_API_DEBUG] GPT-4o response received for daily-client-machine');
           
-          // Extract the current question key and update answers
-          const nextQuestion = getNextQuestion(toolConfig, messages);
-          const currentQuestionKey = nextQuestion ? nextQuestion.key : null;
+          // Analyze the conversation to extract answers and track progress
+          // Use GPT-4o to analyze if the user provided a valid answer
+          let updatedAnswers = { ...currentAnswers };
+          let analysisResult = null;
+          
+          // Only analyze if we have a current question and user messages
+          if (body.currentQuestionKey && fullMessages.length > 0) {
+            const currentQuestion = toolConfig.questions.find(q => q.key === body.currentQuestionKey);
+            if (currentQuestion) {
+              // Get the last user message
+              const lastUserMessage = fullMessages.filter(m => m.role === 'user').pop();
+              
+              if (lastUserMessage) {
+                try {
+                  // Use GPT to analyze if the user's message contains a valid answer
+                  const analysisPrompt = `You are analyzing a conversation for the Daily Client Machine tool.
+
+Current question being asked: "${currentQuestion.question}"
+Question key: ${currentQuestion.key}
+Question hint: ${currentQuestion.hint}
+
+User's latest response: "${lastUserMessage.content}"
+
+Analyze if the user provided a valid answer to the current question.
+
+Return a JSON object with:
+{
+  "hasValidAnswer": boolean,
+  "extractedAnswer": "string with the extracted answer if valid, or null",
+  "reasoning": "brief explanation of your decision"
+}
+
+A valid answer should:
+- Be relevant to the specific question asked
+- Contain actionable/specific information (not vague or evasive)
+- For pricing questions, include actual numbers
+- For description questions, include concrete details
+
+Examples of INVALID answers: "I'm not sure", "Maybe later", "Can we skip this?", "I don't know"
+Examples of VALID answers: Specific details, numbers, names, descriptions that answer the question`;
+
+                  const analysisCompletion = await openai.chat.completions.create({
+                    model: "gpt-4o",
+                    messages: [{
+                      role: "system",
+                      content: analysisPrompt
+                    }],
+                    temperature: 0.3,
+                    response_format: { type: "json_object" }
+                  });
+                  
+                  analysisResult = JSON.parse(analysisCompletion.choices[0].message.content);
+                  console.log('[CHAT_API_DEBUG] Answer analysis result:', analysisResult);
+                  
+                  // If we have a valid answer, save it
+                  if (analysisResult.hasValidAnswer && analysisResult.extractedAnswer) {
+                    updatedAnswers[body.currentQuestionKey] = analysisResult.extractedAnswer;
+                    console.log(`[CHAT_API_DEBUG] Saved answer for ${body.currentQuestionKey}: ${analysisResult.extractedAnswer}`);
+                  }
+                } catch (analysisError) {
+                  console.error('[CHAT_API_DEBUG] Error analyzing answer:', analysisError);
+                }
+              }
+            }
+          }
+          
+          // Determine next question
+          let nextQuestionKey = body.currentQuestionKey;
+          
+          if (analysisResult?.hasValidAnswer) {
+            // Find the next unanswered question
+            const nextUnanswered = toolConfig.questions.find(q => q.required && !updatedAnswers[q.key]);
+            if (nextUnanswered) {
+              nextQuestionKey = nextUnanswered.key;
+              console.log(`[CHAT_API_DEBUG] Moving to next question: ${nextQuestionKey}`);
+            } else {
+              // All questions answered
+              nextQuestionKey = null;
+            }
+          }
+          // If no valid answer, stay on current question
+          
+          const questionsAnswered = Object.keys(updatedAnswers).length;
+          const isComplete = toolConfig.isComplete(updatedAnswers);
           
           toolResponsePayload = {
             message: responseContent,
-            currentQuestionKey: currentQuestionKey,
-            collectedAnswers: currentAnswers,
-            questionsAnswered: Object.keys(currentAnswers).length,
-            isComplete: false,
+            currentQuestionKey: nextQuestionKey,
+            collectedAnswers: updatedAnswers,
+            questionsAnswered: questionsAnswered,
+            isComplete: isComplete,
             chatId: chatId
           };
 
