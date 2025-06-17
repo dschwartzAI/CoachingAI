@@ -1288,6 +1288,86 @@ export async function POST(request) {
       return NextResponse.json(initResponsePayload);
     }
 
+    // Handle daily-client-machine tool initialization
+    if (isToolInit && tool === 'daily-client-machine') {
+      const toolConfig = TOOLS[tool];
+      
+      // Create initial message for DCM
+      const initialMessage = `I'll help you build your Daily Client Machine funnel step-by-step. This creates a dual-mode system that generates both low-ticket customers AND high-ticket clients daily.
+
+Let's start with the foundation. I'll ask you a few strategic questions to establish your funnel architecture, then we'll build each page with immediate copy generation.
+
+**Question 1 of 6:** What's the ONE specific problem you're most known for solving for your clients?
+
+For example:
+• "Help coaches get 5 new clients in 30 days"
+• "Show consultants how to double their rates without losing clients"
+• "Teach course creators to build 6-figure funnels"`;
+      
+      const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
+
+      const initialMetadataForDB = {
+        currentQuestionKey: 'bigIdea',
+        questionsAnswered: 0,
+        isComplete: false,
+        collectedAnswers: {},
+        currentPageId: 'foundation',
+        foundationShown: false
+      };
+
+      const initResponsePayload = {
+        message: initialMessage,
+        currentQuestionKey: initialMetadataForDB.currentQuestionKey,
+        collectedAnswers: { ...initialMetadataForDB.collectedAnswers },
+        questionsAnswered: initialMetadataForDB.questionsAnswered,
+        isComplete: initialMetadataForDB.isComplete,
+        chatId: finalChatIdForDB,
+        currentPageId: 'foundation',
+        currentPageIndex: 0,
+        totalPages: toolConfig.pages.length,
+        systemPrompt: toolConfig.systemMessage
+      };
+
+      // Save thread to database
+      try {
+        console.log(`[CHAT_API_DEBUG] Attempting to save new daily-client-machine thread for tool init. Chat ID: ${finalChatIdForDB}`);
+        const { data: existingThread, error: lookupError } = await supabase
+          .from('threads')
+          .select('id')
+          .eq('id', finalChatIdForDB)
+          .single();
+
+        if (lookupError && lookupError.code === 'PGRST116') {
+          const threadTitle = toolConfig.name;
+          
+          const { error: insertError } = await supabase
+            .from('threads')
+            .insert({
+              id: finalChatIdForDB,
+              user_id: userId,
+              tool_id: tool,
+              title: threadTitle,
+              metadata: initialMetadataForDB
+            });
+
+          if (insertError) {
+            console.error('[CHAT_API_DEBUG] Error inserting new daily-client-machine thread during tool init:', insertError);
+          } else {
+            console.log('[CHAT_API_DEBUG] New daily-client-machine thread saved successfully during tool init:', finalChatIdForDB);
+          }
+        } else if (existingThread) {
+          console.log('[CHAT_API_DEBUG] Daily-client-machine thread already existed during tool init, not re-inserting:', finalChatIdForDB);
+        } else if (lookupError) {
+          console.error('[CHAT_API_DEBUG] Error looking up daily-client-machine thread during tool init:', lookupError);
+        }
+      } catch (dbSaveError) {
+        console.error('[CHAT_API_DEBUG] DB exception during daily-client-machine tool init thread save:', dbSaveError);
+      }
+
+      console.log('[CHAT_API_DEBUG] Sending initial daily-client-machine response (tool init)');
+      return NextResponse.json(initResponsePayload);
+    }
+
     // Handle invalid tool IDs for initialization
     if (isToolInit && tool && !TOOLS[tool]) {
       console.error(`[CHAT_API_DEBUG] Tool initialization attempted for invalid tool: ${tool}`);
@@ -2240,10 +2320,19 @@ I'll be happy to regenerate the HTML with your specific changes!`;
       // For daily-client-machine, we use GPT-4o for cost-effective copywriting
       const toolConfig = TOOLS[tool];
       
-      // Build enhanced system message with profile context
+      // Build enhanced system message with full profile context (including psychographic brief)
       let enhancedSystemMessage = toolConfig.systemMessage;
-      if (userProfile && userProfile.occupation) {
-        enhancedSystemMessage += `\n\nIMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to tailor your questions and copy generation to their specific industry and needs.`;
+      if (userProfile) {
+        // Use the full profile context that includes psychographic brief
+        const { buildProfileContext } = await import('@/lib/utils/ai');
+        const profileContext = await buildProfileContext(userProfile);
+        enhancedSystemMessage += profileContext;
+        
+        console.log('[CHAT_API_DEBUG] Added profile context to DCM tool:', {
+          hasOccupation: !!userProfile.occupation,
+          hasPsychographicBrief: !!userProfile.psychographic_brief,
+          profileContextLength: profileContext.length
+        });
       }
       
       // Retrieve thread metadata to get collected answers and current page
@@ -2771,6 +2860,12 @@ Valid answers should be specific and actionable, not vague responses like "I'm n
         }
       }
       
+      // Set determinedAiResponseContent for daily-client-machine to ensure it gets saved
+      if (toolResponsePayload && toolResponsePayload.message) {
+        determinedAiResponseContent = toolResponsePayload.message;
+        console.log('[CHAT_API_DEBUG] Set determinedAiResponseContent for daily-client-machine');
+      }
+      
       // Save thread metadata for daily-client-machine tool
       if (chatId && supabase && toolResponsePayload.metadata) {
         try {
@@ -3129,15 +3224,54 @@ The user's conversation history and knowledge base research are provided below.$
       console.log('[CHAT_API_DEBUG] Preparing to save assistant message to DB.');
       let contentToSaveForDB = determinedAiResponseContent;
 
-      const { data: existingAsstMsg, error: asstMsgCheckErr } = await supabase.from('messages').select('id').eq('thread_id', chatId).eq('content', contentToSaveForDB).eq('role', 'assistant').limit(1);
-      if (asstMsgCheckErr) console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
+      // Check for exact duplicate messages (only for longer messages to avoid false positives)
+      let shouldCheckDuplicate = contentToSaveForDB.length > 100;
+      let existingAsstMsg = [];
       
-      if (!existingAsstMsg || existingAsstMsg.length === 0) {
-        const msgObj = { thread_id: chatId, role: 'assistant', content: contentToSaveForDB, timestamp: new Date().toISOString(), user_id: userId };
-        const { data: savedMsg, error: saveError } = await supabase.from('messages').insert(msgObj).select().single();
-        if (saveError) console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError); else console.log('[CHAT_API_DEBUG] Asst message saved:', { id: savedMsg?.id });
+      if (shouldCheckDuplicate) {
+        const { data: duplicateCheck, error: asstMsgCheckErr } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('thread_id', chatId)
+          .eq('content', contentToSaveForDB)
+          .eq('role', 'assistant')
+          .limit(1);
+        
+        if (asstMsgCheckErr) {
+          console.error('[CHAT_API_DEBUG] Error checking existing asst message:', asstMsgCheckErr);
+        } else {
+          existingAsstMsg = duplicateCheck || [];
+        }
+      }
+      
+      if (!shouldCheckDuplicate || existingAsstMsg.length === 0) {
+        const msgObj = { 
+          thread_id: chatId, 
+          role: 'assistant', 
+          content: contentToSaveForDB, 
+          timestamp: new Date().toISOString(), 
+          user_id: userId 
+        };
+        const { data: savedMsg, error: saveError } = await supabase
+          .from('messages')
+          .insert(msgObj)
+          .select()
+          .single();
+          
+        if (saveError) {
+          console.error('[CHAT_API_DEBUG] Error saving asst message:', saveError);
+        } else {
+          console.log('[CHAT_API_DEBUG] Asst message saved:', { 
+            id: savedMsg?.id, 
+            contentLength: contentToSaveForDB.length,
+            tool: tool || 'regular-chat'
+          });
+        }
       } else {
-        console.log('[CHAT_API_DEBUG] Asst message already exists, skipping save.');
+        console.log('[CHAT_API_DEBUG] Asst message already exists, skipping save.', {
+          contentLength: contentToSaveForDB.length,
+          tool: tool || 'regular-chat'
+        });
       }
 
       if (tool === 'hybrid-offer' && toolResponsePayload) {

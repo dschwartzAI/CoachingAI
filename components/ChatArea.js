@@ -924,8 +924,9 @@ export default function ChatArea() {
           
           // If API returns collectedAnswers and currentQuestionKey use them, otherwise default to first question
           const returnedAnswers = data.collectedAnswers || {};
+          // For DCM and ideal-client-extractor, we don't use predefined question arrays
           const questionsArray = tool === 'workshop-generator' ? workshopQuestions : hybridOfferQuestions;
-          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] ? questionsArray[0].key : null);
+          const nextQuestionKey = data.currentQuestionKey || (TOOLS[originalToolId] && (tool === 'hybrid-offer' || tool === 'workshop-generator') ? questionsArray[0].key : null);
           const initialQuestionsAnswered = data.questionsAnswered || 0;
           const initialIsComplete = data.isComplete || false;
 
