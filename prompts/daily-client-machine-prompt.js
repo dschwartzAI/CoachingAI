@@ -15,7 +15,20 @@ Think of it as demonstrating a specific system, not just making claims. You'll s
 
 For example: "The 3-Step Authority System that books 5-10 high-ticket clients monthly without sales calls"
 
-What's the specific system or mechanism you can demonstrate that solves your clients' biggest problem?`;
+What's the specific system or mechanism you can demonstrate that solves your clients' biggest problem?
+
+Your first asset will be a short "Big Idea Video". It's not hype— it's a live DEMO of your method in action.
+
+Ask yourself:
+• What ONE problem will I solve on camera?  
+• What step-by-step system can I visibly walk through so prospects see it works?  
+• What results or proof can I flash to prove it?  
+
+Example Big Idea Demo: "Watch me set up the 3-Step Authority System that lands 5-10 high-ticket clients a month without sales calls."
+
+Do you already have a memorable NAME for this system? If yes, share it— if not, we'll coin one.
+
+So, what system will you demo in your Big Idea video and what would you like to call it?`;
 
 // Daily Client Machine Copy Generation Template
 export function generateDCMCopyTemplate(answers) {
