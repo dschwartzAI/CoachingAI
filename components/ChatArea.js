@@ -41,7 +41,7 @@ function MarkdownMessage({ content }) {
 
   // For longer or formatted content, use markdown with proper prose styling
   return (
-    <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none">
+    <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none text-[inherit] [&_*]:text-[inherit]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
