@@ -151,14 +151,14 @@ export default function SnippetModal({ open, onOpenChange, message }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Snippets</DialogTitle>
           <DialogDescription>Bookmarked messages</DialogDescription>
         </DialogHeader>
         {message && (
           <div className="space-y-2 mb-4">
-            <p className="text-sm border rounded p-2">{message.content}</p>
+            <p className="text-sm border rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">{message.content}</p>
             <Textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
