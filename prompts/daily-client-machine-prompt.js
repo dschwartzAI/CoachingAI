@@ -6,11 +6,16 @@ I'll guide you through 3 quick questions to design your funnel architecture, the
 
 **Let's begin with question 1 of 3:**
 
-So let's tackle your Big Idea. What's the ONE specific problem you're most known for solving for your clients?
+So let's tackle your Big Idea. This will become your "demo" - showing the exact system or mechanism that gets results for your clients.
 
-For example, if you help coaches with AI, your big idea might be "Build a million-dollar solo coaching business using AI without hiring a team."
+Think of it as demonstrating a specific system, not just making claims. You'll show:
+• The exact steps you take
+• Who it's worked for
+• How they can implement it
 
-What specific problem do you solve?`;
+For example: "The 3-Step Authority System that books 5-10 high-ticket clients monthly without sales calls"
+
+What's the specific system or mechanism you can demonstrate that solves your clients' biggest problem?`;
 
 // Daily Client Machine Copy Generation Template
 export function generateDCMCopyTemplate(answers) {
@@ -338,11 +343,15 @@ Need help? **"Contact Support"** | **"Schedule 1:1 Call"**
 export const dcmSystemPrompt = `You are helping create a Daily Client Machine (DCM) - a dual-mode funnel system that generates both customers and clients.
 
 Key principles to remember:
-1. The front-end product should deliver immediate value at a low price point
-2. Each upsell should be complementary and logical
-3. The membership provides ongoing value and community
-4. Copy should address both information seekers and transformation seekers
-5. Use specific numbers, timeframes, and results throughout
+1. The Big Idea is a DEMO of a system - show exact steps, not just claims
+2. The front-end product should deliver immediate value at a low price point
+3. Each upsell should be complementary and logical
+4. The membership provides ongoing value and community
+5. Copy should address both information seekers and transformation seekers
+6. Use specific numbers, timeframes, and results throughout
+7. Frame everything as demonstrating mechanisms that work, not selling benefits
+
+Remember James Kemp's approach: "I frame my big idea as essentially a demo... a demo of a system, the exact steps X and Y exhibit."
 
 Always write in a conversational, benefit-focused tone that builds trust and demonstrates expertise.`;
 
@@ -402,7 +411,7 @@ Perfect for ${targetAudience} who want ${bigIdea?.toLowerCase() || 'better resul
 **Would you like to continue to the sales page? Just say "generate sales page" or let me know if you want to refine this copy first.**`;
 
     case 'sales-page':
-      return `# 💰 SALES PAGE COPY
+      return `# 💰 SALES PAGE COPY (VSL/DEMO PAGE)
 
 ## 🎯 MAIN HEADLINE:
 **"Finally! The ${bigIdeaDescription} That ${bigIdea}"**
@@ -417,16 +426,27 @@ ${mainProblems?.split(',').map((problem, index) =>
   `${index + 1}. ${problem.trim()}`
 ).join('\n') || '1. Traditional methods that waste time\n2. Expensive solutions that don\'t deliver\n3. Complicated systems that overwhelm'}
 
-## ✅ SOLUTION SECTION:
-**The ${bigIdeaDescription} is different because:**
+## ✅ SOLUTION DEMONSTRATION:
+**Let me show you exactly how ${bigIdeaDescription} works:**
 
-${uniqueAdvantage || 'It actually works'} - unlike everything else you've tried.
+**Step 1:** ${uniqueAdvantage?.split('.')[0] || 'The foundational element'}
+**Step 2:** How to implement it in your business
+**Step 3:** The specific results you'll see
+
+*[This is where your VSL/demo video goes - showing the exact system in action]*
+
+## 👥 WHO THIS WORKS FOR:
+This has already worked for ${targetAudience.toLowerCase()} who:
+• Want ${bigIdea?.toLowerCase()}
+• Are tired of ${mainProblems?.split(',')[0]?.toLowerCase() || 'complex solutions'}
+• Ready to implement a proven system
 
 ## 🎯 WHAT YOU GET:
 Complete ${frontEndProduct} including:
+• The exact ${bigIdeaDescription} system I just demonstrated
 • Step-by-step implementation guide
-• Real-world examples and templates  
-• Bonus resources worth $XXX
+• Real case studies showing how others did it
+• Templates and tools to make it easy
 • 30-day access to private community
 
 ## 💰 PRICING:
@@ -434,13 +454,13 @@ Complete ${frontEndProduct} including:
 **Today Only: $${frontEndPrice || '27'}**
 
 ## 🛡️ GUARANTEE:
-${guarantee || '30-day money-back guarantee - if it doesn\'t work, you get every penny back.'}
+${guarantee || '30-day money-back guarantee - if this system doesn\'t work for you, you get every penny back.'}
 
 ## 📞 CALL TO ACTION:
-**"Get ${frontEndProduct} for Only $${frontEndPrice || '27'} →"**
+**"Get The ${bigIdeaDescription} System for Only $${frontEndPrice || '27'} →"**
 
 ---
-*✅ Copy this into your HighLevel sales page and customize as needed!*
+*✅ Copy this into your HighLevel sales page. Remember: Your VSL should DEMONSTRATE the system, not just talk about it!*
 
 **Ready for the order form? Say "generate order form" or let me know if you want to refine this copy.**`;
 
