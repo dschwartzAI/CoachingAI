@@ -1293,16 +1293,17 @@ export async function POST(request) {
       const toolConfig = TOOLS[tool];
       
       // Create initial message for DCM
-      const initialMessage = `I'll help you build your Daily Client Machine funnel step-by-step. This creates a dual-mode system that generates both low-ticket customers AND high-ticket clients daily.
+      const initialMessage = `Welcome to the Daily Client Machine Builder! I'm here to help you create a powerful client acquisition system that works 24/7.
 
-Let's start with the foundation. I'll ask you a few strategic questions to establish your funnel architecture, then we'll build each page with immediate copy generation.
+How can I best support you today?
 
-**Question 1 of 6:** What's the ONE specific problem you're most known for solving for your clients?
+1. **🚀 Build from Scratch** - Create a new Daily Client Machine step-by-step
+2. **🛠️ Tech Support** - Help with GoHighLevel setup, page building, or cloning templates
+3. **✍️ Copywriting Help** - Improve your headlines, sales copy, or email sequences
+4. **🎯 Strategy Session** - Discuss your overall DCM strategy, lead magnets, or offer structure
+5. **🔍 Review & Optimize** - Analyze your existing funnel for improvements
 
-For example:
-• "Help coaches get 5 new clients in 30 days"
-• "Show consultants how to double their rates without losing clients"
-• "Teach course creators to build 6-figure funnels"`;
+Just type the number or describe what you need help with.`;
       
       const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
 
@@ -2333,6 +2334,39 @@ I'll be happy to regenerate the HTML with your specific changes!`;
           hasPsychographicBrief: !!userProfile.psychographic_brief,
           profileContextLength: profileContext.length
         });
+      }
+      
+      // Enhance with James's proven DCM template reference data
+      try {
+        const { enhanceDCMPromptWithJamesTemplates } = await import('@/lib/utils/highlevel-docs');
+        
+        // Determine request type based on user's message content
+        let requestType = 'build-from-scratch'; // default
+        const userMessage = messages[messages.length - 1]?.content?.toLowerCase() || '';
+        
+        if (userMessage.includes('tech') || userMessage.includes('setup') || userMessage.includes('highlevel')) {
+          requestType = 'tech-support';
+        } else if (userMessage.includes('copy') || userMessage.includes('headline') || userMessage.includes('write')) {
+          requestType = 'copywriting';
+        } else if (userMessage.includes('strategy') || userMessage.includes('plan') || userMessage.includes('structure')) {
+          requestType = 'strategy';
+        } else if (userMessage.includes('1') || userMessage.includes('scratch') || userMessage.includes('build')) {
+          requestType = 'build-from-scratch';
+        }
+        
+        // Get current answers for template reference
+        const currentAnswers = { ...collectedAnswers };
+        
+        enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(enhancedSystemMessage, currentAnswers, requestType);
+        
+        console.log('[CHAT_API_DEBUG] Enhanced DCM system message with James\'s template reference:', {
+          requestType,
+          hasTemplateData: enhancedSystemMessage.includes('JAMES\'S PROVEN DCM'),
+          messageLength: enhancedSystemMessage.length
+        });
+        
+      } catch (error) {
+        console.error('[CHAT_API_DEBUG] Failed to enhance DCM prompt with James\'s templates:', error);
       }
       
       // Retrieve thread metadata to get collected answers and current page
