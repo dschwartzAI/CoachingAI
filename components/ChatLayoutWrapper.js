@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import Sidebar from "./Sidebar";
 import NotificationBell from "./NotificationBell";
+import FeedbackButton from "./FeedbackButton";
 import { useChatStore } from '@/lib/stores/chat-store';
 import { FullPageLoading } from "./ui/loading";
 import ProfileModal from "./ProfileModal";
@@ -155,8 +156,9 @@ export default function ChatLayoutWrapper({ children }) {
           {children}
         </div>
         
-        {/* Notification Bell - Fixed in top right corner */}
-        <div className="fixed top-4 right-4 z-50">
+        {/* Notification Bell and Feedback Button - Fixed in top right corner */}
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+          <FeedbackButton />
           <NotificationBell />
         </div>
         
