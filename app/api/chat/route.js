@@ -1128,7 +1128,7 @@ export async function POST(request) {
 
     // Handle anonymous users more gracefully
     if (!userId) {
-      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
+      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true') {
         // Generate a consistent anonymous ID based on the chat ID for better tracking
         userId = 'anon-' + (chatId.substring(0, 8));
         console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
@@ -1365,6 +1365,27 @@ Just type the number or describe what you need help with.`;
         console.error('[CHAT_API_DEBUG] DB exception during daily-client-machine tool init thread save:', dbSaveError);
       }
 
+      // Save the welcome message to the database
+      try {
+        console.log('[CHAT_API_DEBUG] Saving DCM welcome message to database');
+        const { error: messageError } = await supabase
+          .from('messages')
+          .insert({
+            thread_id: finalChatIdForDB,
+            content: initialMessage,
+            role: 'assistant',
+            user_id: userId
+          });
+
+        if (messageError) {
+          console.error('[CHAT_API_DEBUG] Error saving DCM welcome message:', messageError);
+        } else {
+          console.log('[CHAT_API_DEBUG] DCM welcome message saved successfully');
+        }
+      } catch (messageException) {
+        console.error('[CHAT_API_DEBUG] Exception saving DCM welcome message:', messageException);
+      }
+
       console.log('[CHAT_API_DEBUG] Sending initial daily-client-machine response (tool init)');
       return NextResponse.json(initResponsePayload);
     }
@@ -1405,7 +1426,7 @@ Just type the number or describe what you need help with.`;
 
     // Handle anonymous users more gracefully
     if (!userId) {
-      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true' || process.env.NODE_ENV === 'development') {
+      if (process.env.ALLOW_ANONYMOUS_CHATS === 'true') {
         // Generate a consistent anonymous ID based on the chat ID for better tracking
         userId = 'anon-' + (chatId.substring(0, 8));
         console.log('[CHAT_API_DEBUG] Anonymous chat allowed, using temporary user ID:', userId);
@@ -2321,19 +2342,54 @@ I'll be happy to regenerate the HTML with your specific changes!`;
       // For daily-client-machine, we use GPT-4o for cost-effective copywriting
       const toolConfig = TOOLS[tool];
       
-      // Build enhanced system message with full profile context (including psychographic brief)
-      let enhancedSystemMessage = toolConfig.systemMessage;
+      // Build enhanced system message with full profile context and detailed validation requirements
+      let enhancedSystemMessage = `${toolConfig.systemMessage}
+
+CRITICAL VALIDATION REQUIREMENTS:
+You must require DETAILED, SPECIFIC responses before accepting any answer. Do not accept vague or generic responses.
+
+INSUFFICIENT EXAMPLES TO REJECT:
+- "help businesses scale" → ASK: "Scale how? From what revenue to what revenue? Using what specific method?"
+- "consulting services" → ASK: "What type of consulting? For which industry? What specific outcome do you deliver?"
+- "AI solutions" → ASK: "What specific AI solution? For what problem? What measurable result does it produce?"
+- "marketing help" → ASK: "What type of marketing? For which businesses? What specific growth outcome?"
+
+SUFFICIENT EXAMPLES TO ACCEPT:
+- "help B2B service businesses scale from $50K to $500K ARR using our 90-day AI-powered lead generation system"
+- "teach overwhelmed real estate agents how to get 10-15 qualified leads per month through Facebook ads and automated follow-up"
+- "help burned-out entrepreneurs systematize their operations so they work 20 hours less while increasing revenue by 30%"
+
+RESPONSE VALIDATION PROCESS:
+1. If response is vague/generic: Acknowledge what they shared, explain why you need more detail, ask specific follow-up questions
+2. If response is detailed/specific: Accept it and move to next question
+3. Always reference their profile context when available
+4. Provide examples relevant to their industry/situation`;
+
       if (userProfile) {
         // Use the full profile context that includes psychographic brief
         const { buildProfileContext } = await import('@/lib/utils/ai');
         const profileContext = await buildProfileContext(userProfile);
-        enhancedSystemMessage += profileContext;
+        enhancedSystemMessage += `
+
+PROFILE CONTEXT:
+${profileContext}
+
+PROFILE USAGE INSTRUCTIONS:
+- If they have a psychographic brief: Reference it immediately, use it to personalize all questions and examples
+- If they have occupation info: Use it to provide industry-specific guidance and skip basic profession questions  
+- If missing profile info: Gather it naturally during the conversation to improve personalization
+- Always acknowledge their existing context before asking for more details
+- Use language and examples that resonate with their specific industry and situation`;
         
         console.log('[CHAT_API_DEBUG] Added profile context to DCM tool:', {
           hasOccupation: !!userProfile.occupation,
           hasPsychographicBrief: !!userProfile.psychographic_brief,
           profileContextLength: profileContext.length
         });
+      } else {
+        enhancedSystemMessage += `
+
+PROFILE CONTEXT: No profile context available - gather this information as needed during the conversation.`;
       }
       
       // Enhance with James's proven DCM template reference data
@@ -2817,21 +2873,39 @@ ${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join(
               }
               
               if (unansweredQuestion) {
-                // Try to extract answer for this question
+                // Try to extract answer for this question with enhanced validation
                 try {
-                  const analysisPrompt = `Analyze if this user response contains a valid answer for the question.
+                  const analysisPrompt = `Analyze if this user response contains a sufficiently detailed answer for the Daily Client Machine question.
 
 Question: "${unansweredQuestion.question}"
 User Response: "${lastUserMessage.content}"
+
+VALIDATION CRITERIA:
+- Must be specific and actionable, not vague
+- Must contain enough detail to create quality marketing copy
+- Must demonstrate understanding of the concept
+- Must be more than just a few words or generic response
+
+EXAMPLES OF INSUFFICIENT ANSWERS:
+- "help businesses scale" (too vague)
+- "consulting" (too generic)
+- "I'm not sure" (no answer)
+- "maybe later" (avoidance)
+- "AI stuff" (too broad)
+
+EXAMPLES OF SUFFICIENT ANSWERS:
+- "help B2B service businesses scale from $50K to $500K ARR using AI-powered lead generation systems"
+- "teach real estate agents how to get 10-15 qualified leads per month through Facebook ads and automated follow-up sequences"
+- "help overwhelmed entrepreneurs systematize their business operations so they can work 20 hours less per week while increasing revenue"
 
 Return JSON:
 {
   "hasValidAnswer": boolean,
   "extractedAnswer": "string or null",
-  "reasoning": "brief explanation"
-}
-
-Valid answers should be specific and actionable, not vague responses like "I'm not sure" or "maybe later".`;
+  "reasoning": "brief explanation of why it's valid or invalid",
+  "needsMoreDetail": boolean,
+  "suggestedPrompt": "what specific follow-up question to ask if more detail is needed"
+}`;
 
                   const analysisResponse = await openai.chat.completions.create({
                     model: "gpt-4o",
@@ -2846,6 +2920,9 @@ Valid answers should be specific and actionable, not vague responses like "I'm n
                     updatedAnswers[unansweredQuestion.key] = analysisResult.extractedAnswer;
                     console.log('[CHAT_API_DEBUG] Extracted answer for:', unansweredQuestion.key);
                   }
+                  
+                  // Store analysis result for use in response generation
+                  unansweredQuestion.analysisResult = analysisResult;
                 } catch (analysisError) {
                   console.error('[CHAT_API_DEBUG] Error analyzing answer:', analysisError);
                 }

@@ -2264,10 +2264,10 @@ export default function ChatArea() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
-              className="w-full resize-none pr-12 pl-4 py-3 rounded-lg border shadow-sm focus:ring-2 focus:ring-primary/20 max-h-32 min-h-[52px] text-base"
+              className="w-full resize-none pr-12 pl-4 py-3 rounded-lg border shadow-sm focus:ring-2 focus:ring-primary/20 max-h-32 min-h-[52px] text-base text-left"
               rows={1}
               disabled={isLoading || isResponseLoading || isWaitingForN8n}
-              style={{ fontSize: '16px' }} /* Prevent iOS zoom */
+              style={{ fontSize: '16px', textAlign: 'left', direction: 'ltr' }} /* Prevent iOS zoom and ensure left alignment */
             />
             <Button
               type="submit"

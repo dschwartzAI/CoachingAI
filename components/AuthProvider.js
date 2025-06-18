@@ -50,6 +50,21 @@ export function AuthProvider({ children }) {
         // Set the user if we have a session
         setUser(session?.user || null);
         if (process.env.NODE_ENV !== "production") console.log('[Auth] Initial session:', session ? 'Active' : 'None');
+        
+        // Check if user needs to be redirected to login
+        const allowAnonymousChats = process.env.NEXT_PUBLIC_ALLOW_ANONYMOUS_CHATS === 'true';
+        const isPublicRoute = ['/login', '/signup', '/auth/callback', '/oauth2callback', '/forgot-password', '/reset-password'].some(route => 
+          window.location.pathname.startsWith(route)
+        );
+        
+        if (!session && !allowAnonymousChats && !isPublicRoute) {
+          if (process.env.NODE_ENV !== "production") console.log('[Auth] No session and anonymous chats not allowed, redirecting to login');
+          const loginUrl = `/login?redirectTo=${encodeURIComponent(window.location.pathname)}`;
+          router.push(loginUrl);
+          setLoading(false);
+          return;
+        }
+        
         if (session) {
           if (process.env.NODE_ENV !== "production") console.log('[Auth] User ID:', session.user.id);
           // Identify user in PostHog on initial load
@@ -78,7 +93,15 @@ export function AuthProvider({ children }) {
             if (process.env.NODE_ENV !== "production") console.log('[Auth] User signed out');
             // Reset PostHog session
             reset();
-            router.refresh();
+            
+            // Check if anonymous chats are allowed
+            const allowAnonymousChats = process.env.NEXT_PUBLIC_ALLOW_ANONYMOUS_CHATS === 'true';
+            if (!allowAnonymousChats) {
+              // Redirect to login if anonymous chats are not allowed
+              router.push('/login');
+            } else {
+              router.refresh();
+            }
           }
         });
         
@@ -185,6 +208,58 @@ export function AuthProvider({ children }) {
         }
       } catch (err) {
         if (process.env.NODE_ENV !== "production") console.error('[Auth] Unexpected error during Google sign-in:', err);
+        throw err;
+      }
+    },
+    resetPassword: async (email) => {
+      try {
+        // Get the base URL for password reset redirect
+        let baseUrl;
+        
+        if (typeof window !== 'undefined') {
+          // Client-side: use current window location
+          baseUrl = window.location.origin;
+        } else {
+          // Server-side: use environment variable or fallback
+          baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+        }
+        
+        // Construct the reset password redirect URL
+        const resetUrl = `${baseUrl}/reset-password`;
+        
+        console.log('[Auth] Using redirect URL for password reset:', resetUrl);
+        
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: resetUrl
+        });
+        
+        if (error) {
+          console.error('[Auth] Error sending password reset email:', error.message);
+          throw error;
+        }
+        
+        console.log('[Auth] Password reset email sent successfully');
+        return { success: true, message: 'Check your email for password reset instructions' };
+      } catch (err) {
+        console.error('[Auth] Unexpected error during password reset:', err);
+        throw err;
+      }
+    },
+    updatePassword: async (newPassword) => {
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+        
+        if (error) {
+          if (process.env.NODE_ENV !== "production") console.error('[Auth] Error updating password:', error.message);
+          throw error;
+        }
+        
+        if (process.env.NODE_ENV !== "production") console.log('[Auth] Password updated successfully');
+        return { success: true, message: 'Password updated successfully' };
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") console.error('[Auth] Unexpected error during password update:', err);
         throw err;
       }
     },
