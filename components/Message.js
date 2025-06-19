@@ -17,7 +17,10 @@ function MarkdownMessage({ content }) {
     !content.includes('[') && 
     !content.includes('](') &&
     !content.includes('- ') &&
-    !content.includes('1. ');
+    !content.includes('1. ') &&
+    !content.includes('2. ') &&
+    !content.includes('3. ') &&
+    !/^\d+\.\s/.test(content);
 
   // For short, simple messages, render as plain text to avoid paragraph margins
   if (isShortSimple) {
@@ -26,7 +29,7 @@ function MarkdownMessage({ content }) {
 
   // For longer or formatted content, use markdown with proper prose styling
   return (
-    <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 max-w-none text-[inherit] [&_*]:text-[inherit]">
+    <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 prose-ul:my-2 prose-ol:my-2 prose-li:my-0 max-w-none text-[inherit] [&_*]:text-[inherit]">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );

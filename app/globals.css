@@ -174,12 +174,24 @@
     @apply bg-transparent p-0;
   }
   
-  .prose ul, .prose ol {
-    @apply pl-6 text-base;
+  .prose ul {
+    @apply pl-6 text-base list-disc;
+  }
+  
+  .prose ol {
+    @apply pl-6 text-base list-decimal;
   }
   
   .prose li {
-    @apply leading-relaxed;
+    @apply leading-relaxed ml-0;
+  }
+  
+  .prose ul li {
+    @apply list-item;
+  }
+  
+  .prose ol li {
+    @apply list-item;
   }
   
   .prose blockquote {

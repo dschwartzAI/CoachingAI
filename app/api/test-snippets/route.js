@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   console.log('[Test Snippets] Starting database test');
   
-  const supabase = createServerClientWithCookies();
+    const supabase = createServerClientWithCookies();
   
   try {
     // Test 1: Check if user is authenticated
@@ -27,7 +27,7 @@ export async function GET() {
     const { data: tableTest, error: tableError } = await supabase
       .from('snippets')
       .select('count(*)', { count: 'exact', head: true });
-    
+
     console.log('[Test Snippets] Table test:', { 
       tableError: tableError?.message,
       count: tableTest 
@@ -45,8 +45,8 @@ export async function GET() {
       snippetCount: snippets?.length 
     });
 
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json({ 
+      success: true, 
       tests: {
         auth: { passed: true, userId: user.id },
         table: { 

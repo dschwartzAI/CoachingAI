@@ -53,16 +53,16 @@ export async function POST(request) {
 
   // Prepare the update object
   const updateData = {
-    user_id: user.id,
-    full_name,
-    occupation,
-    current_mrr,
-    desired_mrr,
-    desired_hours,
-    business_stage,
-    biggest_challenge,
-    primary_goal,
-    allow_memory
+      user_id: user.id,
+      full_name,
+      occupation,
+      current_mrr,
+      desired_mrr,
+      desired_hours,
+      business_stage,
+      biggest_challenge,
+      primary_goal,
+      allow_memory
   };
 
   // Only update psychographic brief fields if provided

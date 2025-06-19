@@ -70,7 +70,7 @@ async function detectAndSavePsychographicBrief(responseContent, userId) {
 }
 
 // Add a function to validate answers using AI
-async function validateHybridOfferAnswer(questionKey, answer) {
+async function validateHybridOfferAnswer(questionKey, answer, userProfile = null) {
   if (!answer || answer.trim().length < 3) {
     return {
       isValid: false,
@@ -78,11 +78,78 @@ async function validateHybridOfferAnswer(questionKey, answer) {
     };
   }
 
+  // Special validation for targetAudience - check if user has psychographic brief
+  if (questionKey === 'targetAudience') {
+    // Accept "same as my psychographic brief" or similar variations
+    const normalizedAnswer = answer.toLowerCase().trim();
+    const referencesPsychographicBrief = 
+      normalizedAnswer.includes('same as') && normalizedAnswer.includes('psychographic') ||
+      normalizedAnswer.includes('same as my brief') ||
+      normalizedAnswer.includes('as per my brief') ||
+      normalizedAnswer.includes('see my profile') ||
+      normalizedAnswer.includes('check my profile') ||
+      normalizedAnswer.includes('yes the same') ||
+      normalizedAnswer.includes('same') ||
+      normalizedAnswer.includes('yes same') ||
+      normalizedAnswer.includes('the same') ||
+      normalizedAnswer === 'yes' ||
+      normalizedAnswer.includes('my brief') ||
+      normalizedAnswer.includes('my profile');
+    
+    if (referencesPsychographicBrief && userProfile?.psychographic_brief) {
+      // User is referencing their existing brief, and they have one - this is valid
+      return { isValid: true, reason: null };
+    }
+    
+    if (!userProfile?.psychographic_brief) {
+      return {
+        isValid: false,
+        reason: "Please complete your psychographic brief first using the Ideal Client Extractor tool. This will help ensure your target audience is properly defined for your hybrid offer.",
+        needsPsychographicBrief: true
+      };
+    }
+  }
+
+  // Special validation for offerType - be lenient and let N8N classifier handle it
+  if (questionKey === 'offerType') {
+    // As long as they describe something about their offer type, accept it
+    if (answer.trim().length >= 5) {
+      console.log(`[Chat API] Auto-accepting offerType for N8N classification: "${answer}"`);
+      return { isValid: true, reason: null, topic: "offer type" };
+    } else {
+      return {
+        isValid: false,
+        reason: "Please describe your offer type in a bit more detail so I can understand what you're creating.",
+        topic: "offer type"
+      };
+    }
+  }
+
   // For offerDescription, if the answer is short (e.g., just a service name),
   // consider it valid without extensive AI validation.
   if (questionKey === 'offerDescription' && answer.trim().length < 50 && answer.trim().split(' ').length <= 5) {
     console.log(`[Chat API] Skipping extensive AI validation for short offerDescription: "${answer}"`);
     return { isValid: true, reason: null, topic: "service description" };
+  }
+
+  // For promiseSolution, be very lenient - accept any outcome or transformation statement
+  if (questionKey === 'promiseSolution') {
+    const cleanedAnswer = answer.toLowerCase();
+    
+    // Check for promise/outcome keywords
+    const hasPromiseKeywords = /\b(get|achieve|double|triple|increase|improve|generate|create|build|deliver|provide|give|help|make|earn|save|boost|grow|scale|transform|result|outcome|leads|revenue|sales|content|clients|customers|days|weeks|months|years)\b/.test(cleanedAnswer);
+    
+    // If it mentions any outcome or benefit, accept it
+    if (hasPromiseKeywords && answer.trim().split(' ').length >= 3) {
+      console.log(`[Chat API] Auto-accepting promiseSolution with promise indicators: "${answer}"`);
+      return { isValid: true, reason: null, topic: "promise and transformation" };
+    }
+    
+    // Even if no clear indicators, if it's a reasonable length, accept it
+    if (answer.trim().length > 10) {
+      console.log(`[Chat API] Auto-accepting promiseSolution with sufficient length: "${answer}"`);
+      return { isValid: true, reason: null, topic: "promise and transformation" };
+    }
   }
 
   // For clientResult, be much more lenient - accept any answer that mentions a result or outcome
@@ -113,31 +180,106 @@ async function validateHybridOfferAnswer(questionKey, answer) {
       return { isValid: true, reason: null, topic: "client success story" };
     }
   }
+
+  // For phases, be very lenient - accept any structured list or journey description
+  if (questionKey === 'phases') {
+    const cleanedAnswer = answer.toLowerCase();
+    
+    // Check for list indicators (numbers, bullets, steps)
+    const hasListStructure = /\b(1\.|2\.|3\.|4\.|5\.|step|phase|stage|first|second|third|then|next|finally|•|-)\b/.test(cleanedAnswer);
+    
+    // Check for journey/process keywords
+    const hasJourneyKeywords = /\b(journey|process|steps|stages|phases|progression|flow|path|sequence|order|start|begin|end|finish|complete)\b/.test(cleanedAnswer);
+    
+    // If it has list structure OR journey keywords, and is at least 3 words, accept it
+    if ((hasListStructure || hasJourneyKeywords) && answer.trim().split(' ').length >= 3) {
+      console.log(`[Chat API] Auto-accepting phases with structure indicators: "${answer}"`);
+      return { isValid: true, reason: null, topic: "client journey phases" };
+    }
+    
+    // Even if no clear indicators, if it's a reasonable length, accept it
+    if (answer.trim().length > 15) {
+      console.log(`[Chat API] Auto-accepting phases with sufficient length: "${answer}"`);
+      return { isValid: true, reason: null, topic: "client journey phases" };
+    }
+  }
+
+  // For plan, be very lenient - accept any name or request for name generation
+  if (questionKey === 'plan') {
+    const cleanedAnswer = answer.toLowerCase();
+    
+    // Check for system name keywords or requests for generation
+    const hasNameKeywords = /\b(framework|system|method|code|machine|blueprint|formula|model|approach|strategy|process|technique|way|name|called|title)\b/.test(cleanedAnswer);
+    
+    // Check for generation requests
+    const requestsGeneration = /\b(generate|create|make|come up|suggest|help|yes|please|no name|don't have|need)\b/.test(cleanedAnswer);
+    
+    // If it mentions a name, requests generation, or is substantial, accept it
+    if (hasNameKeywords || requestsGeneration || answer.trim().length > 10) {
+      console.log(`[Chat API] Auto-accepting plan with name indicators: "${answer}"`);
+      return { isValid: true, reason: null, topic: "system name or generation request" };
+    }
+  }
+  
+  // For uniqueMechanism, be very lenient - accept any name or request for name generation
+  if (questionKey === 'uniqueMechanism') {
+    const cleanedAnswer = answer.toLowerCase();
+    
+    // Check for system name keywords or requests for generation
+    const hasNameKeywords = /\b(framework|system|method|code|machine|blueprint|formula|model|approach|strategy|process|technique|way|name|called|title)\b/.test(cleanedAnswer);
+    
+    // Check for generation requests
+    const requestsGeneration = /\b(generate|create|make|come up|suggest|help|yes|please|no name|don't have|need)\b/.test(cleanedAnswer);
+    
+    // If it mentions a name, requests generation, or is substantial, accept it
+    if (hasNameKeywords || requestsGeneration || answer.trim().length > 10) {
+      console.log(`[Chat API] Auto-accepting uniqueMechanism with name indicators: "${answer}"`);
+      return { isValid: true, reason: null, topic: "system name or generation request" };
+    }
+  }
   
   const validationCriteria = {
-    offerDescription: "Should describe a product or service. It can be a concise name (e.g., 'Web Design Service') or a more detailed explanation. Must focus on WHAT is being offered, not pricing or audience.",
-    targetAudience: "Should describe who the offering is for - demographics, professions, or characteristics. Must focus on WHO the clients are, not what they're charged or the problems they have.",
-    painPoints: "Should identify problems or challenges that the target audience experiences. Must focus on PROBLEMS clients face, not solutions or pricing.",
-    solution: "Should explain how the product/service addresses the pain points in a unique way. Must focus on HOW problems are solved, not pricing or audience.",
-    pricing: "Should provide information about pricing structure, tiers, or general price range. Must focus on COSTS or pricing models, not other aspects.",
-    clientResult: "Should describe any client success, outcome, or result. Can be very brief (e.g., 'made a client $1M', 'helped increase sales'). ANY mention of helping clients achieve something positive is valid."
+    offerType: "Accept ANY description of their business model or offer type. Be extremely lenient - N8N will handle classification.",
+    offerDescription: "Accept any description of what they offer or sell, even if brief",
+    targetAudience: "Accept any description of their target audience. If they reference their psychographic brief, that's perfect.",
+    painPoints: "Accept any description of problems or challenges their audience faces",
+    promiseSolution: "Accept ANY outcome, transformation, or promise statement. Be VERY LENIENT - any benefit or result is valid.",
+    clientResult: "Accept ANY mention of helping clients or achieving results. Be extremely lenient.",
+    uniqueMechanism: "Accept any name for their system/methodology OR any request for name generation (yes, please create one, etc.)",
+    phases: "Accept ANY description of client transformation journey phases or emotional/business progression stages.",
+    paymentTerms: "Accept any mention of price, pricing structure, or payment options",
+    guaranteeScarcity: "Accept any description of guarantees, risk reversal, urgency, or scarcity elements"
   };
 
   const validationPrompt = [
     {
       role: "system",
-      content: `You are an assistant that validates answers for creating a hybrid offer.
-Your primary goal is to determine if an answer provides relevant and SUFFICIENT information for the SPECIFIC question being asked.
-Be strict about topic relevance - if someone answers about pricing when asked about solution approach, that's invalid.
-Check that the answer addresses the core of what's being asked, not just tangentially related information.
-If the answer discusses a different aspect of the business than what was asked, mark it as invalid.
-For 'offerDescription', a concise service name (e.g., 'Career Coaching', 'Airbnb Revenue Management') IS a valid and sufficient answer.
-For 'clientResult', be EXTREMELY LENIENT. ANY mention of helping a client, achieving a result, or positive outcome should be marked as valid. Examples of valid answers: 'made a client $1M', 'helped increase their sales', 'improved their revenue', 'we helped one company make extra money', 'increased leads for clients'. Do NOT require detailed explanations of HOW the result was achieved.
-Example of invalid answer: Question about unique solution approach → Answer about pricing structure.`
+      content: `You are a conversational assistant helping create a hybrid offer. Your job is to be EXTREMELY LENIENT and HELPFUL.
+
+CRITICAL INSTRUCTIONS:
+- Accept 99% of answers that are even remotely related to the question
+- Only reject if the answer is completely off-topic or nonsensical
+- For 'phases': ANY list, steps, or journey description is VALID (numbered lists, bullet points, stages, etc.)
+- For 'uniqueMechanism': ANY method, system, or approach description is VALID
+- For 'promiseSolution': ANY outcome or benefit statement is VALID
+- For 'clientResult': ANY mention of helping clients or results is VALID
+- If in doubt, ACCEPT the answer and move forward
+
+EXAMPLES OF VALID ANSWERS:
+- phases: "1. Research 2. Creation 3. Distribution" ✅
+- phases: "Discovery, Planning, Implementation, Results" ✅  
+- uniqueMechanism: "We use AI to create content" ✅
+- promiseSolution: "90 days of content" ✅
+- clientResult: "helped a client grow" ✅
+
+Only mark as invalid if the answer is:
+- Completely unrelated to business/offers
+- Just "I don't know" or similar non-answers
+- Clearly answering a different question entirely`
     },
     {
       role: "user",
-      content: `Question category: ${questionKey}\nValidation criteria: ${validationCriteria[questionKey]}\nUser's answer: "${answer}"\n\nIs this answer directly relevant to the question category? Does it address what was specifically asked according to the criteria?\nFocus on whether the user's answer *directly addresses* the question's core intent.\nReturn JSON in this format: { "isValid": boolean, "reason": "explanation if invalid", "topic": "what topic the answer actually addresses" }`
+      content: `Question category: ${questionKey}\nValidation criteria: ${validationCriteria[questionKey]}\nUser's answer: "${answer}"\n\nBe EXTREMELY LENIENT. Accept this answer unless it's completely off-topic or nonsensical.\nReturn JSON: { "isValid": boolean, "reason": "brief explanation if invalid", "topic": "what the answer addresses" }`
     }
   ];
 
@@ -1408,7 +1550,7 @@ Just type the number or describe what you need help with.`;
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('user_profiles')
-          .select('full_name, occupation, desired_mrr, desired_hours')
+          .select('full_name, occupation, desired_mrr, desired_hours, psychographic_brief')
           .eq('user_id', userId)
           .single();
         if (!profileError) {
@@ -1441,7 +1583,14 @@ Just type the number or describe what you need help with.`;
     // SECTION 1: Handle tool initialization (especially for hybrid-offer)
     if (isToolInit && tool === 'hybrid-offer') {
       const initialSystemPrompt = `You are creating a hybrid offer for businesses. (concise prompt details...)${profileContext}`;
-      const initialMessage = "What's your core product or service?";
+      const firstQuestion = hybridOfferQuestions.find(q => q.key === 'offerType');
+      
+      // Check if user has psychographic brief and use context-aware question if available
+      let initialMessage = firstQuestion ? firstQuestion.question : "What type of offer are you creating?";
+      if (userProfile?.psychographic_brief && firstQuestion?.contextAwareQuestion) {
+        initialMessage = firstQuestion.contextAwareQuestion;
+      }
+      
       const existingAnswers = body.collectedAnswers || {};
       const questionsAnsweredOnInit = calculateQuestionsAnswered(existingAnswers);
       
@@ -1451,7 +1600,7 @@ Just type the number or describe what you need help with.`;
       const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId; // chatId is already the potentially new UUID
 
       const initialMetadataForDB = {
-        currentQuestionKey: 'offerDescription',
+                  currentQuestionKey: 'offerType',
         questionsAnswered: 0,
         isComplete: false,
         // collectedAnswers should be empty at init, but let's ensure it is for metadata
@@ -1607,7 +1756,7 @@ Just type the number or describe what you need help with.`;
             : (tool ? TOOLS[tool]?.name || 'Tool Chat' : 'New conversation');
           
           const initialMetadata = tool === 'hybrid-offer' 
-            ? { currentQuestionKey: 'offerDescription', questionsAnswered: 0, isComplete: false } 
+            ? { currentQuestionKey: 'offerType', questionsAnswered: 0, isComplete: false } 
             : {};
           
           console.log(`[CHAT_API_DEBUG] Creating thread with data:`, {
@@ -1741,7 +1890,7 @@ Just type the number or describe what you need help with.`;
 
     if (tool === 'hybrid-offer') {
       console.log('[CHAT_API_DEBUG] Processing hybrid-offer tool logic (non-init path)');
-      currentQuestionKey = body.currentQuestionKey || 'offerDescription';
+      currentQuestionKey = body.currentQuestionKey || 'offerType';
       const currentQuestionsAnswered = calculateQuestionsAnswered(collectedAnswers, tool);
       const totalQuestions = hybridOfferQuestions.length;
 
@@ -1754,22 +1903,35 @@ Just type the number or describe what you need help with.`;
       const latestUserMessageContent = messages.length > 0 ? messages[messages.length - 1].content : "";
       const currentQuestionDetails = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
       const currentQuestionDescription = currentQuestionDetails?.description || 'the current topic';
-      const currentQuestionText = currentQuestionDetails?.question || 'this aspect of your offer';
+      
+      // Use context-aware question if user has psychographic brief
+      let currentQuestionText = currentQuestionDetails?.question || 'this aspect of your offer';
+      if (userProfile?.psychographic_brief && currentQuestionDetails?.contextAwareQuestion) {
+        currentQuestionText = currentQuestionDetails.contextAwareQuestion;
+      }
 
       let promptParts = [];
       promptParts.push("You are a friendly and cheeky helpful AI assistant guiding a user through creating a 'hybrid offer'. Your goal is to gather specific pieces of information by asking questions in a conversational manner.");
       promptParts.push("Your tone should be friendly, funny when appropriate, conversational, and engaging. Adapt your language based on the user's style in the chat history.");
 
       promptParts.push(`\nInformation collected so far for the hybrid offer (${currentQuestionsAnswered}/${totalQuestions} questions answered):`);
+      promptParts.push(`IMPORTANT: Questions must be asked in this exact order. Do NOT skip questions.`);
       hybridOfferQuestions.forEach((q, index) => {
         if (collectedAnswers[q.key]) {
-          promptParts.push(`✓ ${index + 1}. ${q.description}: Answered`); // Don't show the answer itself to keep prompt shorter
+          promptParts.push(`✓ ${index + 1}. ${q.key} (${q.description}): Answered`); // Don't show the answer itself to keep prompt shorter
         } else {
-          promptParts.push(`◯ ${index + 1}. ${q.description}: Not yet discussed`);
+          promptParts.push(`◯ ${index + 1}. ${q.key} (${q.description}): Not yet discussed`);
         }
       });
 
       promptParts.push(`\nWe are currently focusing on: '${currentQuestionDescription}' (Key: ${currentQuestionKey}). The guiding question for this topic is: "${currentQuestionText}"`);
+
+      // Add explicit debugging for the AI
+      promptParts.push(`\nCURRENT STATE DEBUG:`);
+      promptParts.push(`- Current question: ${currentQuestionKey}`);
+      promptParts.push(`- Questions answered so far: ${Object.keys(collectedAnswers).join(', ')}`);
+      promptParts.push(`- Total questions answered: ${currentQuestionsAnswered}/${totalQuestions}`);
+      promptParts.push(`- Next question should be the first unanswered question in this order: ${hybridOfferQuestions.map(q => q.key).join(' → ')}`);
 
       promptParts.push(`\nRecent Conversation History (last 5 messages):`);
       promptParts.push(chatHistoryString);
@@ -1793,7 +1955,7 @@ Just type the number or describe what you need help with.`;
             - targetAudience question: "I solve their problems with my amazing service" (this is solution, not audience)
          * For each question type, these are examples of SUFFICIENT answers:
             - offerDescription: "Google Ads management service" or "Social media content creation for small businesses"
-            - targetAudience: "Small business owners who don't have time for marketing"
+            - targetAudience: "Small business owners who don't have time for marketing" OR if user has psychographic brief: "same as my psychographic brief", "same as my brief", "see my profile"
             - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend"
             - solution: "We handle campaign creation, keyword research, and ongoing optimization"
             - pricing: "Monthly retainer of $1000" or "15% of ad spend"
@@ -1809,11 +1971,31 @@ Just type the number or describe what you need help with.`;
       promptParts.push(`2. savedAnswer (string): If validAnswer is true, extract or summarize the core information provided by the user for '${currentQuestionDescription}'. This will be saved. For 'clientResult', ensure it's a specific past achievement, not a general promise. If validAnswer is false, this can be an empty string or null.`);
       promptParts.push(`3. isComplete (boolean): After considering the user's latest answer, are all ${totalQuestions} hybrid offer questions now answered (i.e., validAnswer was true for the *final* question, or all questions already had answers)?`);
       promptParts.push(`4. nextQuestionKey (string):`);
-      promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* unanswered question from this list: ${hybridOfferQuestions.map(q => q.key).join(", ")}. The next question should be the first one in the sequence that hasn't been answered yet.`);
+      promptParts.push(`   - If validAnswer is true AND isComplete is false: Determine the *key* of the *next* question in the proper sequence from this ordered list: ${hybridOfferQuestions.map(q => q.key).join(", ")}. IMPORTANT: Follow the questions in this exact order - find the next question in the sequence that hasn't been answered yet. Do NOT skip questions.`);
+      promptParts.push(`   - CRITICAL: The order is: 1. offerType, 2. offerDescription, 3. targetAudience, 4. painPoints, 5. promiseSolution, 6. clientResult, 7. plan, 8. phases, 9. paymentTerms, 10. guaranteeScarcity`);
+      promptParts.push(`   - If offerType is answered but offerDescription is not, the nextQuestionKey MUST be "offerDescription"`);
       promptParts.push(`   - If validAnswer is false: This should be the *current* currentQuestionKey (${currentQuestionKey}), as we need to re-ask or clarify.`);
       promptParts.push(`   - If isComplete is true: This can be null.`);
+      
+      // Provide context-aware questions for the AI to use
+      if (userProfile?.psychographic_brief) {
+        promptParts.push(`\nIMPORTANT - Context-Aware Questions: Since the user has a psychographic brief, use these context-aware versions of questions when applicable:`);
+        hybridOfferQuestions.forEach(q => {
+          if (q.contextAwareQuestion && !collectedAnswers[q.key]) {
+            promptParts.push(`   - ${q.key}: "${q.contextAwareQuestion}"`);
+          }
+        });
+      }
       promptParts.push(`5. responseToUser (string): This is your natural language response to the user. It will be shown directly to them.`);
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
+      
+      // Add context-aware question guidance
+      if (userProfile?.psychographic_brief) {
+        promptParts.push(`   - IMPORTANT: The user has a psychographic brief on file. When asking the next question, you MUST use the context-aware version of the question provided above. Specifically:`);
+        promptParts.push(`     * For targetAudience: Use the exact context-aware question: "I see you have a psychographic brief saved in your profile. Does this offer target the same audience described in your brief? If yes, just type 'same as my psychographic brief'. If it's different, please describe the specific audience for this offer. (You can view your brief by clicking 'Profile Settings' in the sidebar)"`);
+        promptParts.push(`     * This acknowledges their existing profile and gives them the option to reference it or provide new information.`);
+        promptParts.push(`     * Accept answers like "same as my psychographic brief", "same as my brief", "see my profile", or "check my profile" as valid references to their existing brief.`);
+      }
       promptParts.push(`   - If validAnswer was true and currentQuestionKey was 'clientResult' AND isComplete is true (meaning clientResult was the last question): Acknowledge the great result. Then, transition to the completion message (e.g., "Fantastic result! That sounds like a powerful impact. Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now."). Do NOT ask for more details about the client result if it was already deemed valid and it completes the questionnaire.`);
       promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing or why their answer addressed a different topic than what was asked. For example: "I see you're sharing about your pricing structure, which is great information we'll cover soon! Right now though, I'd like to understand more about your unique solution approach - how exactly do you solve the problems your clients face?"`);
       promptParts.push(`   - If isComplete is true (and it wasn't handled by the specific clientResult completion case above): Acknowledge that all information has been gathered. Let them know the document generation process will begin (e.g., "Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now.").`);
@@ -1867,28 +2049,58 @@ Just type the number or describe what you need help with.`;
         
         try {
           // First, validate the answer using our dedicated validation function
-          const validationResult = await validateHybridOfferAnswer(currentQuestionKey, latestUserMessage);
+          const validationResult = await validateHybridOfferAnswer(currentQuestionKey, latestUserMessage, userProfile);
           
-          if (!validationResult.isValid) {
-            console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
-            
-            // If the answer is completely off-topic, we'll generate a direct but kind response
-            const invalidAnswerResponse = `I notice you're sharing about ${validationResult.topic || 'something different'}, which is valuable information! However, I'm currently asking about your ${hybridOfferQuestions.find(q => q.key === currentQuestionKey)?.description || currentQuestionKey}. Could you tell me more specifically about that?`;
-            
-            // Create response payload without advancing to next question
-            toolResponsePayload = {
-              message: invalidAnswerResponse,
-              currentQuestionKey: currentQuestionKey, // Stay on current question
-              collectedAnswers: { ...collectedAnswers }, // Keep existing answers
-              questionsAnswered: calculateQuestionsAnswered(collectedAnswers),
-              isComplete: false,
-              chatId: chatId
-            };
-            
-            // Return early with this simple validation response
-            console.log('[CHAT_API_DEBUG] Returning early with validation failure response');
-            return NextResponse.json(toolResponsePayload);
-          } else {
+                      if (!validationResult.isValid) {
+              console.log(`[CHAT_API_DEBUG] Answer validation failed for '${currentQuestionKey}': ${validationResult.reason}`);
+              
+              let invalidAnswerResponse;
+              
+              // Special handling for psychographic brief requirement
+              if (validationResult.needsPsychographicBrief) {
+                invalidAnswerResponse = `${validationResult.reason}\n\nTo get started with the Ideal Client Extractor tool, just type "ideal client extractor" or click on the tool from the main menu. Once you've completed that, come back and we'll continue with your hybrid offer!`;
+              } else {
+                // Generate helpful clarifying questions instead of rejections
+                const questionInfo = hybridOfferQuestions.find(q => q.key === currentQuestionKey);
+                const questionDescription = questionInfo?.description || currentQuestionKey;
+                
+                // Create helpful clarifying questions based on the question type
+                let clarifyingQuestion = "";
+                switch (currentQuestionKey) {
+                  case 'phases':
+                    clarifyingQuestion = "I can see you're describing your process, which is great! For the client transformation journey, I'm looking for the phases your clients experience emotionally or in their business growth. For example:\n\n• Struggling → Learning → Growing → Thriving\n• Confused → Clarity → Implementation → Success\n• Overwhelmed → Organized → Optimized → Scaling\n\nWhat phases do your clients go through in their transformation with you?";
+                    break;
+                  case 'uniqueMechanism':
+                    clarifyingQuestion = "Thanks for sharing! I'm looking for a name or title for your unique system/methodology. Do you have a branded name for your approach (like 'The 3K Code' or 'Daily Client Machine')? If not, just say 'please create one' and we'll generate a catchy name for your offer document.";
+                    break;
+                  case 'promiseSolution':
+                    clarifyingQuestion = "I appreciate you sharing that! For the transformation you promise, what specific outcome do your clients achieve? For example: 'Double revenue in 90 days' or 'Get 50 qualified leads per month'";
+                    break;
+                  case 'clientResult':
+                    clarifyingQuestion = "That's helpful context! Could you share a specific success story or result you've achieved for a client? Even something simple like 'helped a client increase sales by 30%' works perfectly.";
+                    break;
+                  default:
+                    clarifyingQuestion = `I appreciate you sharing that information! To make sure I capture the right details for your ${questionDescription}, could you tell me more specifically about that aspect of your offer?`;
+                }
+                
+                invalidAnswerResponse = clarifyingQuestion;
+              }
+              
+              // Create response payload without advancing to next question
+              toolResponsePayload = {
+                message: invalidAnswerResponse,
+                currentQuestionKey: currentQuestionKey, // Stay on current question
+                collectedAnswers: { ...collectedAnswers }, // Keep existing answers
+                questionsAnswered: calculateQuestionsAnswered(collectedAnswers),
+                isComplete: false,
+                chatId: chatId,
+                needsPsychographicBrief: validationResult.needsPsychographicBrief || false
+              };
+              
+              // Return early with this helpful clarifying response
+              console.log('[CHAT_API_DEBUG] Returning early with clarifying question response');
+              return NextResponse.json(toolResponsePayload);
+            } else {
             console.log(`[CHAT_API_DEBUG] Answer validation passed for '${currentQuestionKey}'`);
           }
         } catch (validationError) {
@@ -3014,19 +3226,17 @@ Return JSON:
       // Build enhanced system message with profile context
       let enhancedSystemMessage = toolConfig.systemMessage;
       if (userProfile && userProfile.occupation) {
-        enhancedSystemMessage = `You are a copywriting expert. 
-
-Your job is to interview me and ask me as many probing questions as possible to better understand my customers and audience.
-
-IMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to ask more targeted questions and avoid asking about their general profession since you already know it. Focus on the specifics of their offering, target market, and customer psychology.
-
-If I don't give you enough context, ask follow up questions to get further clarity before proceeding to the next question.From there, create a psychographic brief in an organized manner I can reference when doing my copywriting.
-
-Use H2, bold, bullet points, paragraph, and table markdown to make the brief easy to read and understand.
-
-Reply to this message with your first question.
-
-${toolConfig.systemMessage.substring(toolConfig.systemMessage.indexOf('Common considerations'))}`;
+        // Insert the occupation context at the beginning of the system message
+        const contextPrefix = `IMPORTANT CONTEXT: The user is a ${userProfile.occupation}. Use this information to ask more targeted questions and avoid asking about their general profession since you already know it. Focus on the specifics of their offering, target market, and customer psychology.\n\n`;
+        enhancedSystemMessage = toolConfig.systemMessage.replace(
+          'You are a master copywriting strategist',
+          contextPrefix + 'You are a master copywriting strategist'
+        );
+      }
+      
+      // Add extended thinking instructions if enabled
+      if (toolConfig.extendedThinking && toolConfig.thinkingInstructions) {
+        enhancedSystemMessage = `${enhancedSystemMessage}\n\n${toolConfig.thinkingInstructions}`;
       }
       
       // Prepare the conversation for Claude Opus
@@ -3037,8 +3247,9 @@ ${toolConfig.systemMessage.substring(toolConfig.systemMessage.indexOf('Common co
         
         const claudeResponse = await anthropic.messages.create({
           model: "claude-opus-4-20250514",
-          max_tokens: 8000,
-          temperature: 0.7,
+          max_tokens: toolConfig.maxTokens || 8000,
+          temperature: toolConfig.temperature || 0.85,
+          top_p: toolConfig.topP || 0.95,
           system: enhancedSystemMessage,
           messages: claudeMessages
         });

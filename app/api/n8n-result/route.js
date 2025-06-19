@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createSupabaseClient } from '@/lib/utils/supabase';
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
@@ -48,7 +49,7 @@ export async function POST(request) {
     }
 
     // Extract data from request body
-    const { answersData, chatHistory } = requestData;
+    const { answersData, chatHistory, userId } = requestData;
 
     if (!chatId) {
       if (process.env.NODE_ENV !== "production") console.error(`[SSE ${sseStartTime}] Error: Missing chatId in request body.`);
@@ -82,11 +83,37 @@ export async function POST(request) {
     
     if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatId: ${chatId}`);
     if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received answersData with ${Object.keys(answersData).length} fields`);
+    if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received userId: ${userId || 'none'}`);
     
     if (chatHistory) {
       if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] Received chatHistory with ${chatHistory.length} messages`);
     } else {
       if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId} ${sseStartTime}] No chatHistory received.`);
+    }
+
+    // Fetch user's first name from profile
+    let firstName = null;
+    if (userId && !userId.startsWith('anon-')) {
+      try {
+        const supabase = createSupabaseClient();
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('full_name')
+          .eq('user_id', userId)
+          .single();
+        
+        if (!profileError && profileData?.full_name) {
+          // Extract first name from full name
+          firstName = profileData.full_name.split(' ')[0];
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Retrieved first name: ${firstName}`);
+        } else {
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] No profile or full name found for user: ${userId}`);
+        }
+      } catch (profileException) {
+        if (process.env.NODE_ENV !== "production") console.error(`[SSE ${chatId}] Error fetching user profile:`, profileException);
+      }
+    } else {
+      if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Skipping profile fetch for anonymous or missing user ID`);
     }
 
     // Create a streaming response
@@ -116,8 +143,11 @@ export async function POST(request) {
             chatId: chatId,
             answers: answersData,
             conversation: chatHistory || [],
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            firstName: firstName // Add first name to the request body
           };
+          
+          if (process.env.NODE_ENV !== "production") console.log(`[SSE ${chatId}] Sending to N8N with firstName: ${firstName || 'null'}`);
           
           const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
             method: 'POST',

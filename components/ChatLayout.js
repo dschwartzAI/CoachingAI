@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Sidebar from "./Sidebar";
 import ChatArea from "./ChatArea";
 import ProfileModal from "./ProfileModal";
@@ -11,6 +11,7 @@ import { getThreads, getUserProfile, isProfileComplete } from "@/lib/utils/supab
 import { useToast } from "@/hooks/use-toast";
 import { FullPageLoading } from "./ui/loading";
 import { createNewThread } from "@/lib/utils/thread";
+import { TOOLS } from "@/lib/config/tools";
 
 // Helper function to check if an ID is a valid UUID
 const isValidUUID = (id) => {
@@ -35,6 +36,7 @@ export default function ChatLayout({ initialChatId } = {}) {
   const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // Keep track of temporary to permanent ID mappings
   const [idMappings, setIdMappings] = useState({});
@@ -321,6 +323,50 @@ export default function ChatLayout({ initialChatId } = {}) {
       setIsCurrentChatToolInit(false);
     }
   }, [currentChat?.id]);
+
+  // Handle URL query parameters for tool initialization
+  useEffect(() => {
+    const toolParam = searchParams.get('tool');
+    
+    if (toolParam && TOOLS[toolParam] && user?.id && !isLoading) {
+      if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Tool parameter detected in URL:', toolParam);
+      
+      // Check if we already have a current chat or if we're loading
+      if (currentChat && currentChat.tool_id === toolParam) {
+        if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Already have a chat for this tool, skipping initialization');
+        return;
+      }
+      
+      // Create a new tool-based chat
+      const toolChat = createNewThread(toolParam);
+      toolChat.isTemporary = false; // Make it persistent
+      toolChat.isNewChat = true;
+      toolChat.isCurrentChatToolInit = true;
+      
+      if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Creating new tool chat from URL parameter:', {
+        toolId: toolParam,
+        chatId: toolChat.id,
+        title: toolChat.title
+      });
+      
+      // Set the tool and chat
+      setSelectedTool(toolParam);
+      setCurrentChatWithTracking(toolChat);
+      setIsNewChat(true);
+      setIsCurrentChatToolInit(true);
+      
+      // Add to chats list
+      setChatsSafely(prevChats => [toolChat, ...prevChats]);
+      
+      // Clean up the URL by removing the tool parameter
+      const newUrl = new URL(window.location);
+      newUrl.searchParams.delete('tool');
+      window.history.replaceState({}, '', newUrl.pathname + newUrl.search);
+      
+      // Navigate to the new chat
+      router.push(`/chat/${toolChat.id}`);
+    }
+  }, [searchParams, user?.id, isLoading, currentChat?.tool_id, router]);
 
   // Handle profile completion
   const handleProfileComplete = () => {

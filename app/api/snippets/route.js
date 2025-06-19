@@ -65,7 +65,7 @@ export async function POST(request) {
   }
 
   console.log('[Snippets API] Attempting to insert snippet');
-  
+
   const { data, error } = await supabase
     .from('snippets')
     .insert({

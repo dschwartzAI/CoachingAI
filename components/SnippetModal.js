@@ -107,8 +107,8 @@ export default function SnippetModal({ open, onOpenChange, message }) {
       
       // Refresh the list and close modal after a short delay to show the toast
       setTimeout(() => {
-        fetchSnippets(); // Refresh the list of snippets
-        onOpenChange(false); // Close the modal on success
+      fetchSnippets(); // Refresh the list of snippets
+      onOpenChange(false); // Close the modal on success
       }, 100);
       
     } catch (err) {

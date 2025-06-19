@@ -86,18 +86,7 @@ function isDocumentMessage(message) {
   const hasDocumentMetadata = message.metadata?.documentLinks && 
     Object.values(message.metadata.documentLinks).some(link => link);
   
-  const result = hasDocumentContent || hasDocumentMetadata;
-  
-  console.log('[isDocumentMessage] Checking message:', {
-    messageId: message.id,
-    hasDocumentContent,
-    hasDocumentMetadata,
-    contentPreview: typeof message.content === 'string' ? message.content.substring(0, 100) + '...' : 'non-string',
-    metadata: message.metadata,
-    result
-  });
-  
-  return result;
+  return hasDocumentContent || hasDocumentMetadata;
 }
 
 // Function to render HTML content directly
