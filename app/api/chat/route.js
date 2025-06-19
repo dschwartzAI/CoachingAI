@@ -2395,34 +2395,44 @@ PROFILE CONTEXT: No profile context available - gather this information as neede
       // Enhance with James's proven DCM template reference data
       try {
         const { enhanceDCMPromptWithJamesTemplates } = await import('@/lib/utils/highlevel-docs');
+        const { detectDCMRequestType, buildDCMPrompt } = await import('@/prompts/dcm-modular-prompts');
         
-        // Determine request type based on user's message content
-        let requestType = 'build-from-scratch'; // default
-        const userMessage = messages[messages.length - 1]?.content?.toLowerCase() || '';
+        // Detect request type using intelligent analysis
+        const userMessage = messages[messages.length - 1]?.content || '';
+        const requestType = detectDCMRequestType(userMessage);
         
-        if (userMessage.includes('tech') || userMessage.includes('setup') || userMessage.includes('highlevel')) {
-          requestType = 'tech-support';
-        } else if (userMessage.includes('copy') || userMessage.includes('headline') || userMessage.includes('write')) {
-          requestType = 'copywriting';
-        } else if (userMessage.includes('strategy') || userMessage.includes('plan') || userMessage.includes('structure')) {
-          requestType = 'strategy';
-        } else if (userMessage.includes('1') || userMessage.includes('scratch') || userMessage.includes('build')) {
-          requestType = 'build-from-scratch';
-        }
+        console.log('[CHAT_API_DEBUG] DCM Request Type Detected:', {
+          requestType,
+          userMessage: userMessage.substring(0, 100) + '...',
+          messageLength: userMessage.length
+        });
         
-        // Get current answers for template reference
+        // Get current answers for context
         const currentAnswers = { ...collectedAnswers };
         
-        enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(enhancedSystemMessage, currentAnswers, requestType);
+        // Build specialized prompt based on request type
+        let specializedPrompt = buildDCMPrompt(requestType, userProfile, currentAnswers);
         
-        console.log('[CHAT_API_DEBUG] Enhanced DCM system message with James\'s template reference:', {
+        // Enhance with James's template reference data
+        enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(specializedPrompt, currentAnswers, requestType);
+        
+        console.log('[CHAT_API_DEBUG] Enhanced DCM with modular prompt system:', {
           requestType,
           hasTemplateData: enhancedSystemMessage.includes('JAMES\'S PROVEN DCM'),
-          messageLength: enhancedSystemMessage.length
+          messageLength: enhancedSystemMessage.length,
+          isSpecialized: enhancedSystemMessage.includes('You are the DCM')
         });
         
       } catch (error) {
-        console.error('[CHAT_API_DEBUG] Failed to enhance DCM prompt with James\'s templates:', error);
+        console.error('[CHAT_API_DEBUG] Failed to enhance DCM prompt with modular system:', error);
+        // Fallback to original system
+        try {
+          const { enhanceDCMPromptWithJamesTemplates } = await import('@/lib/utils/highlevel-docs');
+          const currentAnswers = { ...collectedAnswers };
+          enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(enhancedSystemMessage, currentAnswers, 'build-from-scratch');
+        } catch (fallbackError) {
+          console.error('[CHAT_API_DEBUG] Fallback DCM prompt enhancement also failed:', fallbackError);
+        }
       }
       
       // Retrieve thread metadata to get collected answers and current page
