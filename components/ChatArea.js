@@ -19,6 +19,7 @@ import { hybridOfferQuestions, workshopQuestions } from '@/lib/config/questions'
 import { useChatStore } from '@/lib/stores/chat-store';
 import { useBookmark } from '@/components/ChatLayoutWrapper';
 import { useChatTitle } from '@/lib/hooks/use-chat-title';
+import ChatHeader from './ChatHeader';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
@@ -661,7 +662,8 @@ export default function ChatArea() {
     isSidebarCollapsed,
     toggleSidebar,
     updateChat,
-    replaceOptimisticChat
+    replaceOptimisticChat,
+    ensureChatExists
   } = useChatStore();
 
   // Helper to append streamed text chunks to the last assistant message
@@ -1275,8 +1277,15 @@ export default function ChatArea() {
         if (tempId !== correctChatId) {
           console.log(`[CHAT_DEBUG] Replacing temporary chat ${tempId} with real chat ${correctChatId}`);
           replaceOptimisticChat(tempId, finalCurrentChat);
+          
+          // Ensure the chat is visible in the sidebar
+          ensureChatExists(finalCurrentChat);
         } else {
+          console.log(`[CHAT_DEBUG] Updating existing chat ${correctChatId}`);
           updateChat(correctChatId, finalCurrentChat);
+          
+          // Ensure the chat is visible in the sidebar (in case it was missing)
+          ensureChatExists(finalCurrentChat);
         }
 
         // Show toast notification if psychographic brief was saved
@@ -2020,16 +2029,31 @@ export default function ChatArea() {
     }, 100);
   };
 
+  // Title generation effect - triggers when messages are added
   useEffect(() => {
     if (!currentChat?.id || !Array.isArray(messages) || !messages.length) return;
+    
     const userMessageCount = messages.filter(m => m.role === 'user').length;
+    const assistantMessageCount = messages.filter(m => m.role === 'assistant').length;
     const now = Date.now();
+    
+    // Generate title when we have at least 1 user message and 1 assistant response
+    // and the chat doesn't have a custom title yet
     if (
-      messages.length >= 3 &&
-      userMessageCount >= 2 &&
+      messages.length >= 2 &&
+      userMessageCount >= 1 &&
+      assistantMessageCount >= 1 &&
       !currentChat.hasCustomTitle &&
-      now - lastTitleGeneration > 5000
+      (currentChat.title === 'New conversation' || currentChat.title?.startsWith('New ') || !currentChat.title) &&
+      now - lastTitleGeneration > 3000 // Reduced from 5 seconds to 3 seconds
     ) {
+      console.log('[ChatArea] Triggering title generation for chat:', currentChat.id, {
+        messageCount: messages.length,
+        userMessages: userMessageCount,
+        assistantMessages: assistantMessageCount,
+        currentTitle: currentChat.title,
+        hasCustomTitle: currentChat.hasCustomTitle
+      });
       generateTitle(currentChat.id, messages);
       setLastTitleGeneration(now);
     }
@@ -2038,16 +2062,8 @@ export default function ChatArea() {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Chat header - remains sticky */}
-      <div className="border-b p-3 sm:p-4 flex items-center sticky top-0 bg-background z-10 shrink-0">
-        <div className="flex items-center space-x-2 w-full px-4 sm:px-6 lg:px-8">
-          <div className="font-semibold">
-            {currentChat && currentChat.title ? (
-              <span className="text-base sm:text-lg">{currentChat.title}</span>
-            ) : (
-              <span className="text-base sm:text-lg">New Conversation</span>
-            )}
-          </div>
-        </div>
+      <div className="sticky top-0 bg-background z-10 shrink-0">
+        <ChatHeader chat={currentChat} />
       </div>
 
       {/* Messages container - flex-1 to take available space */}
