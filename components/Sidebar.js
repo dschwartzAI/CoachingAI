@@ -42,6 +42,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { usePostHog } from '@/hooks/use-posthog';
 import SnippetModal from './SnippetModal';
 import { useChatStore } from '@/lib/stores/chat-store';
+import EditableChatTitle from './EditableChatTitle';
 
 // Tool icons mapping
 const toolIcons = {
@@ -316,7 +317,10 @@ export default function Sidebar({ onShowProfile }) {
                           onClick={() => handleChatClick(chat)}
                         >
                           {getChatIcon(chat)}
-                          <span className="truncate">{chat.title}</span>
+                          <EditableChatTitle 
+                            chat={chat} 
+                            isActive={currentChat?.id === chat.id}
+                          />
                         </Button>
                       </div>
                     ))}
@@ -373,18 +377,21 @@ export default function Sidebar({ onShowProfile }) {
               );
             })}
             {/* Recent chats - show first 3 */}
-            {visibleChats.slice(0, 3).map((chat) => (
-              <Button
-                key={chat.id}
-                variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => handleChatClick(chat)}
-                title={chat.title}
-                className="h-10 w-10"
-              >
-                {getChatIcon(chat).props.children}
-              </Button>
-            ))}
+            {visibleChats.slice(0, 3).map((chat) => {
+              const IconComponent = chat.tool_id ? (toolIcons[chat.tool_id] || MessageSquare) : MessagesSquare;
+              return (
+                <Button
+                  key={chat.id}
+                  variant={currentChat?.id === chat.id ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => handleChatClick(chat)}
+                  title={chat.title}
+                  className="h-10 w-10"
+                >
+                  <IconComponent className="h-5 w-5" />
+                </Button>
+              );
+            })}
             {/* Collapsed user profile at the bottom */}
             <div className="mt-auto flex flex-col items-center gap-2 w-full">
               {user ? (
