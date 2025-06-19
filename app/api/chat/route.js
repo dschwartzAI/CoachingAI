@@ -2780,7 +2780,7 @@ What would you like to do next?
         
         if (currentPage && currentPage.id === 'foundation') {
           // Foundation phase
-          const nextQuestion = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers) : null;
+          const nextQuestion = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers, userProfile) : null;
           
           contextualSystemMessage += `\n\nCURRENT PHASE: Strategic Foundation
 ${nextQuestion ? `Progress: ${nextQuestion.progress}` : ''}
@@ -2863,7 +2863,7 @@ ${Object.keys(currentAnswers).map(key => `${key}: ${currentAnswers[key]}`).join(
               
               if (currentPage && currentPage.id === 'foundation') {
                 // For foundation phase, use getNextQuestion
-                const nextQ = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers) : null;
+                const nextQ = toolConfig.getNextQuestion ? toolConfig.getNextQuestion(currentAnswers, userProfile) : null;
                 if (nextQ) {
                   unansweredQuestion = nextQ;
                 }
