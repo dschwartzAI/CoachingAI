@@ -16,7 +16,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('full_name, occupation, current_mrr, desired_mrr, desired_hours, biggest_challenge, allow_memory, psychographic_brief, psychographic_brief_updated_at')
+      .select('full_name, occupation, current_mrr, desired_mrr, desired_hours, biggest_challenge, allow_memory, ideal_client_profile, ideal_client_profile_updated_at')
       .eq('user_id', user.id)
       .single()
 
@@ -27,9 +27,9 @@ export async function GET() {
 
     console.log('[API /api/profile GET] Profile data retrieved:', {
       userId: user.id,
-      hasPsychographicBrief: !!data?.psychographic_brief,
-      briefLength: data?.psychographic_brief?.length || 0,
-      updatedAt: data?.psychographic_brief_updated_at,
+      hasPsychographicBrief: !!data?.ideal_client_profile,
+      briefLength: data?.ideal_client_profile?.length || 0,
+      updatedAt: data?.ideal_client_profile_updated_at,
       fullData: data
     });
 
@@ -49,7 +49,7 @@ export async function POST(request) {
   }
 
   const body = await request.json()
-  const { full_name, occupation, current_mrr, desired_mrr, desired_hours, business_stage, biggest_challenge, primary_goal, allow_memory, psychographic_brief } = body
+  const { full_name, occupation, current_mrr, desired_mrr, desired_hours, business_stage, biggest_challenge, primary_goal, allow_memory, ideal_client_profile } = body
 
   // Prepare the update object
   const updateData = {
@@ -65,15 +65,15 @@ export async function POST(request) {
       allow_memory
   };
 
-  // Only update psychographic brief fields if provided
-  if (psychographic_brief !== undefined) {
-    updateData.psychographic_brief = psychographic_brief;
-    // Update timestamp only if the brief content is being changed
-    if (psychographic_brief) {
-      updateData.psychographic_brief_updated_at = new Date().toISOString();
+  // Only update ideal client profile fields if provided
+  if (ideal_client_profile !== undefined) {
+    updateData.ideal_client_profile = ideal_client_profile;
+    // Update timestamp only if the profile content is being changed
+    if (ideal_client_profile) {
+      updateData.ideal_client_profile_updated_at = new Date().toISOString();
     } else {
-      // If clearing the brief, also clear the timestamp
-      updateData.psychographic_brief_updated_at = null;
+      // If clearing the profile, also clear the timestamp
+      updateData.ideal_client_profile_updated_at = null;
     }
   }
 

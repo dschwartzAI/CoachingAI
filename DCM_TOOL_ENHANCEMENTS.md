@@ -34,7 +34,7 @@ The DCM tool was accepting vague responses like "help B2B service businesses sca
 ### 2. **Enhanced Profile Context Integration**
 
 #### Profile Usage Throughout Tool:
-- **Immediate acknowledgment** of existing psychographic briefs
+- **Immediate acknowledgment** of existing ideal client profiles
 - **Industry-specific examples** based on user's occupation
 - **Context-aware questions** that reference existing profile information
 - **Personalized guidance** tailored to their specific business situation

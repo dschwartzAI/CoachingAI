@@ -49,8 +49,8 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
         setDesiredMrr(data.profile.desired_mrr || '');
         setDesiredHours(data.profile.desired_hours || '');
         setBiggestChallenge(data.profile.biggest_challenge || '');
-        setPsychographicBrief(data.profile.psychographic_brief || '');
-        setPsychographicBriefUpdatedAt(data.profile.psychographic_brief_updated_at || '');
+        setPsychographicBrief(data.profile.ideal_client_profile || '');
+        setPsychographicBriefUpdatedAt(data.profile.ideal_client_profile_updated_at || '');
       }
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -101,7 +101,7 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
           biggest_challenge: biggestChallenge,
-          psychographic_brief: psychographicBrief
+          ideal_client_profile: psychographicBrief
         })
       });
       
@@ -222,10 +222,10 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
             />
           </div>
           
-          {/* Psychographic Brief Section */}
+                          {/* Ideal Client Profile Section */}
           <div className="grid gap-2 pt-4 border-t">
             <div className="flex items-center justify-between">
-              <Label htmlFor="psychographicBrief">Ideal Client Psychographic Brief</Label>
+                              <Label htmlFor="psychographicBrief">Ideal Client Profile</Label>
               {psychographicBriefUpdatedAt && (
                 <span className="text-xs text-muted-foreground">
                   Updated: {new Date(psychographicBriefUpdatedAt).toLocaleDateString()}
@@ -237,7 +237,7 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
               value={psychographicBrief} 
               onChange={(e) => setPsychographicBrief(e.target.value)} 
               disabled={saving}
-              placeholder="Your comprehensive ideal client psychographic brief will appear here automatically when you complete the Ideal Client Extractor tool, or you can manually add/edit it here."
+                                placeholder="Your comprehensive ideal client profile will appear here automatically when you complete the Ideal Client Extractor tool, or you can manually add/edit it here."
               className="min-h-32 resize-y font-mono text-sm"
               rows={8}
             />

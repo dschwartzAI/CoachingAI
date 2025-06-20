@@ -24,14 +24,14 @@ const GPT_ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
-// Helper function to detect and save psychographic briefs from ICP tool responses
+// Helper function to detect and save ideal client profiles from ICP tool responses
 async function detectAndSavePsychographicBrief(responseContent, userId) {
   try {
-    // Detection criteria for comprehensive psychographic briefs
+    // Detection criteria for comprehensive ideal client profiles
     const isPsychographicBrief = (
       responseContent.length > 1500 && // Must be substantial content
       (
-        /psychographic\s+brief/i.test(responseContent) || // Contains "psychographic brief"
+        /ideal\s+client\s+profile/i.test(responseContent) || // Contains "ideal client profile"
         /ideal\s+client\s+psychographic/i.test(responseContent) || // Contains "ideal client psychographic"
         (/demographics/i.test(responseContent) && /pain\s+points/i.test(responseContent)) || // Has both demographics and pain points
         (/core\s+demographics/i.test(responseContent) && /goals\s+and\s+aspirations/i.test(responseContent)) // Structured format
@@ -39,29 +39,29 @@ async function detectAndSavePsychographicBrief(responseContent, userId) {
     );
 
     if (!isPsychographicBrief) {
-      console.log('[CHAT_API_DEBUG] Response does not appear to be a comprehensive psychographic brief');
+      console.log('[CHAT_API_DEBUG] Response does not appear to be a comprehensive ideal client profile');
       return;
     }
 
-    console.log('[CHAT_API_DEBUG] Comprehensive psychographic brief detected, saving to user profile');
+    console.log('[CHAT_API_DEBUG] Comprehensive ideal client profile detected, saving to user profile');
     
     const supabase = createServerClientWithCookies();
     
-    // Update the user's profile with the psychographic brief
+    // Update the user's profile with the ideal client profile
     const { error } = await supabase
       .from('user_profiles')
       .update({ 
-        psychographic_brief: responseContent,
-        psychographic_brief_updated_at: new Date().toISOString()
+        ideal_client_profile: responseContent,
+        ideal_client_profile_updated_at: new Date().toISOString()
       })
       .eq('user_id', userId);
     
     if (error) {
-      console.error('[CHAT_API_DEBUG] Error saving psychographic brief to profile:', error);
+      console.error('[CHAT_API_DEBUG] Error saving ideal client profile to profile:', error);
       return false;
     }
     
-    console.log('[CHAT_API_DEBUG] Psychographic brief saved successfully to user profile');
+    console.log('[CHAT_API_DEBUG] Ideal client profile saved successfully to user profile');
     return true;
   } catch (error) {
     console.error('[CHAT_API_DEBUG] Error in detectAndSavePsychographicBrief:', error);
@@ -78,14 +78,14 @@ async function validateHybridOfferAnswer(questionKey, answer, userProfile = null
     };
   }
 
-  // Special validation for targetAudience - check if user has psychographic brief
+  // Special validation for targetAudience - check if user has ideal client profile
   if (questionKey === 'targetAudience') {
-    // Accept "same as my psychographic brief" or similar variations
+    // Accept "same as my ideal client profile" or similar variations
     const normalizedAnswer = answer.toLowerCase().trim();
-    const referencesPsychographicBrief = 
-      normalizedAnswer.includes('same as') && normalizedAnswer.includes('psychographic') ||
-      normalizedAnswer.includes('same as my brief') ||
-      normalizedAnswer.includes('as per my brief') ||
+    const referencesIdealClientProfile = 
+      normalizedAnswer.includes('same as') && (normalizedAnswer.includes('profile') || normalizedAnswer.includes('client')) ||
+      normalizedAnswer.includes('same as my profile') ||
+      normalizedAnswer.includes('as per my profile') ||
       normalizedAnswer.includes('see my profile') ||
       normalizedAnswer.includes('check my profile') ||
       normalizedAnswer.includes('yes the same') ||
@@ -93,19 +93,19 @@ async function validateHybridOfferAnswer(questionKey, answer, userProfile = null
       normalizedAnswer.includes('yes same') ||
       normalizedAnswer.includes('the same') ||
       normalizedAnswer === 'yes' ||
-      normalizedAnswer.includes('my brief') ||
-      normalizedAnswer.includes('my profile');
+      normalizedAnswer.includes('my profile') ||
+      normalizedAnswer.includes('ideal client');
     
-    if (referencesPsychographicBrief && userProfile?.psychographic_brief) {
-      // User is referencing their existing brief, and they have one - this is valid
+    if (referencesIdealClientProfile && userProfile?.ideal_client_profile) {
+      // User is referencing their existing profile, and they have one - this is valid
       return { isValid: true, reason: null };
     }
     
-    if (!userProfile?.psychographic_brief) {
+    if (!userProfile?.ideal_client_profile) {
       return {
         isValid: false,
-        reason: "Please complete your psychographic brief first using the Ideal Client Extractor tool. This will help ensure your target audience is properly defined for your hybrid offer.",
-        needsPsychographicBrief: true
+        reason: "Please complete your ideal client profile first using the Ideal Client Extractor tool. This will help ensure your target audience is properly defined for your hybrid offer.",
+        needsIdealClientProfile: true
       };
     }
   }
@@ -241,7 +241,7 @@ async function validateHybridOfferAnswer(questionKey, answer, userProfile = null
   const validationCriteria = {
     offerType: "Accept ANY description of their business model or offer type. Be extremely lenient - N8N will handle classification.",
     offerDescription: "Accept any description of what they offer or sell, even if brief",
-    targetAudience: "Accept any description of their target audience. If they reference their psychographic brief, that's perfect.",
+    targetAudience: "Accept any description of their target audience. If they reference their ideal client profile, that's perfect.",
     painPoints: "Accept any description of problems or challenges their audience faces",
     promiseSolution: "Accept ANY outcome, transformation, or promise statement. Be VERY LENIENT - any benefit or result is valid.",
     clientResult: "Accept ANY mention of helping clients or achieving results. Be extremely lenient.",
@@ -1304,7 +1304,7 @@ export async function POST(request) {
       const toolConfig = TOOLS[tool];
       
       // Create initial message
-      const initialMessage = `I'll interview you to get the juicy details about your client persona(s)...then I'll give you a psychographic brief you can use in your copywriting.\n\nStarting high level...\n\n**Who is your ideal customer?** Describe their demographics, current situation, and main challenges.\n\nFor example:\n• "Small business owners with 5-20 employees struggling to scale"\n• "Working moms in their 30s-40s overwhelmed juggling career and family"\n• "Tech startup founders who've raised Series A but can't find product-market fit"`;
+      const initialMessage = `I'll interview you to get the juicy details about your client persona(s)...then I'll give you an ideal client profile you can use in your copywriting.\n\nStarting high level...\n\n**Who is your ideal customer?** Describe their demographics, current situation, and main challenges.\n\nFor example:\n• "Small business owners with 5-20 employees struggling to scale"\n• "Working moms in their 30s-40s overwhelmed juggling career and family"\n• "Tech startup founders who've raised Series A but can't find product-market fit"`;
       
       const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
 
@@ -1550,7 +1550,7 @@ Just type the number or describe what you need help with.`;
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('user_profiles')
-          .select('full_name, occupation, desired_mrr, desired_hours, psychographic_brief')
+          .select('full_name, occupation, desired_mrr, desired_hours, ideal_client_profile')
           .eq('user_id', userId)
           .single();
         if (!profileError) {
@@ -1587,7 +1587,7 @@ Just type the number or describe what you need help with.`;
       
       // Check if user has psychographic brief and use context-aware question if available
       let initialMessage = firstQuestion ? firstQuestion.question : "What type of offer are you creating?";
-      if (userProfile?.psychographic_brief && firstQuestion?.contextAwareQuestion) {
+              if (userProfile?.ideal_client_profile && firstQuestion?.contextAwareQuestion) {
         initialMessage = firstQuestion.contextAwareQuestion;
       }
       
@@ -1906,7 +1906,7 @@ Just type the number or describe what you need help with.`;
       
       // Use context-aware question if user has psychographic brief
       let currentQuestionText = currentQuestionDetails?.question || 'this aspect of your offer';
-      if (userProfile?.psychographic_brief && currentQuestionDetails?.contextAwareQuestion) {
+              if (userProfile?.ideal_client_profile && currentQuestionDetails?.contextAwareQuestion) {
         currentQuestionText = currentQuestionDetails.contextAwareQuestion;
       }
 
@@ -1955,7 +1955,7 @@ Just type the number or describe what you need help with.`;
             - targetAudience question: "I solve their problems with my amazing service" (this is solution, not audience)
          * For each question type, these are examples of SUFFICIENT answers:
             - offerDescription: "Google Ads management service" or "Social media content creation for small businesses"
-            - targetAudience: "Small business owners who don't have time for marketing" OR if user has psychographic brief: "same as my psychographic brief", "same as my brief", "see my profile"
+            - targetAudience: "Small business owners who don't have time for marketing" OR if user has ideal client profile: "same as my ideal client profile", "same as my profile", "see my profile"
             - painPoints: "They struggle to get consistent leads and don't know how to optimize ad spend"
             - solution: "We handle campaign creation, keyword research, and ongoing optimization"
             - pricing: "Monthly retainer of $1000" or "15% of ad spend"
@@ -1978,8 +1978,8 @@ Just type the number or describe what you need help with.`;
       promptParts.push(`   - If isComplete is true: This can be null.`);
       
       // Provide context-aware questions for the AI to use
-      if (userProfile?.psychographic_brief) {
-        promptParts.push(`\nIMPORTANT - Context-Aware Questions: Since the user has a psychographic brief, use these context-aware versions of questions when applicable:`);
+      if (userProfile?.ideal_client_profile) {
+        promptParts.push(`\nIMPORTANT - Context-Aware Questions: Since the user has an ideal client profile, use these context-aware versions of questions when applicable:`);
         hybridOfferQuestions.forEach(q => {
           if (q.contextAwareQuestion && !collectedAnswers[q.key]) {
             promptParts.push(`   - ${q.key}: "${q.contextAwareQuestion}"`);
@@ -1990,11 +1990,11 @@ Just type the number or describe what you need help with.`;
       promptParts.push(`   - If validAnswer was true and isComplete is false: Briefly acknowledge their answer for '${currentQuestionDescription}'. Then, conversationally transition to ask about the topic of the nextQuestionKey. Refer to the chat history if it helps make your response more contextual.`);
       
       // Add context-aware question guidance
-      if (userProfile?.psychographic_brief) {
-        promptParts.push(`   - IMPORTANT: The user has a psychographic brief on file. When asking the next question, you MUST use the context-aware version of the question provided above. Specifically:`);
-        promptParts.push(`     * For targetAudience: Use the exact context-aware question: "I see you have a psychographic brief saved in your profile. Does this offer target the same audience described in your brief? If yes, just type 'same as my psychographic brief'. If it's different, please describe the specific audience for this offer. (You can view your brief by clicking 'Profile Settings' in the sidebar)"`);
+      if (userProfile?.ideal_client_profile) {
+        promptParts.push(`   - IMPORTANT: The user has an ideal client profile on file. When asking the next question, you MUST use the context-aware version of the question provided above. Specifically:`);
+        promptParts.push(`     * For targetAudience: Use the exact context-aware question: "I see you have an ideal client profile saved in your profile. Does this offer target the same audience described in your profile? If yes, just type 'same as my ideal client profile'. If it's different, please describe the specific audience for this offer. (You can view your profile by clicking 'Profile Settings' in the sidebar)"`);
         promptParts.push(`     * This acknowledges their existing profile and gives them the option to reference it or provide new information.`);
-        promptParts.push(`     * Accept answers like "same as my psychographic brief", "same as my brief", "see my profile", or "check my profile" as valid references to their existing brief.`);
+        promptParts.push(`     * Accept answers like "same as my ideal client profile", "same as my profile", "see my profile", or "check my profile" as valid references to their existing profile.`);
       }
       promptParts.push(`   - If validAnswer was true and currentQuestionKey was 'clientResult' AND isComplete is true (meaning clientResult was the last question): Acknowledge the great result. Then, transition to the completion message (e.g., "Fantastic result! That sounds like a powerful impact. Great, that's all the information I need for your hybrid offer! I'll start putting that together for you now."). Do NOT ask for more details about the client result if it was already deemed valid and it completes the questionnaire.`);
       promptParts.push(`   - If validAnswer was false: Gently explain why more information or a different kind of answer is needed for '${currentQuestionDescription}'. Be specific about what aspect was missing or why their answer addressed a different topic than what was asked. For example: "I see you're sharing about your pricing structure, which is great information we'll cover soon! Right now though, I'd like to understand more about your unique solution approach - how exactly do you solve the problems your clients face?"`);
@@ -2056,7 +2056,7 @@ Just type the number or describe what you need help with.`;
               
               let invalidAnswerResponse;
               
-              // Special handling for psychographic brief requirement
+              // Special handling for ideal client profile requirement
               if (validationResult.needsPsychographicBrief) {
                 invalidAnswerResponse = `${validationResult.reason}\n\nTo get started with the Ideal Client Extractor tool, just type "ideal client extractor" or click on the tool from the main menu. Once you've completed that, come back and we'll continue with your hybrid offer!`;
               } else {
@@ -2587,7 +2587,7 @@ PROFILE CONTEXT:
 ${profileContext}
 
 PROFILE USAGE INSTRUCTIONS:
-- If they have a psychographic brief: Reference it immediately, use it to personalize all questions and examples
+        - If they have an ideal client profile: Reference it immediately, use it to personalize all questions and examples
 - If they have occupation info: Use it to provide industry-specific guidance and skip basic profession questions  
 - If missing profile info: Gather it naturally during the conversation to improve personalization
 - Always acknowledge their existing context before asking for more details
@@ -2595,7 +2595,7 @@ PROFILE USAGE INSTRUCTIONS:
         
         console.log('[CHAT_API_DEBUG] Added profile context to DCM tool:', {
           hasOccupation: !!userProfile.occupation,
-          hasPsychographicBrief: !!userProfile.psychographic_brief,
+          hasPsychographicBrief: !!userProfile.ideal_client_profile,
           profileContextLength: profileContext.length
         });
       } else {
@@ -3258,7 +3258,7 @@ Return JSON:
         
         console.log('[CHAT_API_DEBUG] Claude Opus response received for ideal-client-extractor');
         
-        // Check if this response contains a comprehensive psychographic brief and auto-save it
+        // Check if this response contains a comprehensive ideal client profile and auto-save it
         const briefSaved = await detectAndSavePsychographicBrief(responseContent, userId);
         
         // Set the response content so it gets saved to the database

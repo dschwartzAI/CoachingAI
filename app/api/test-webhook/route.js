@@ -17,7 +17,7 @@ export async function POST(request) {
       answers: {
         offerType: "service with a membership component",
         offerDescription: "We show B2B service business founders how to automate their content with AI.",
-        targetAudience: "same as my psychographic brief",
+        targetAudience: "same as my ideal client profile",
         painPoints: "They are afraid of staying relevant, having competition beat them because they use AI, and that they don't have the discipline to commit to a content strategy.",
         promiseSolution: "They'll have an AI content blueprint that can serve as an evergreen lead-getting powerhouse that speaks directly to their ideal clients and generates customers and clients on autopilot, positioning them as a key thought leader in their niche.",
         clientResult: "Increased a client's sales by 30% in the first quarter.",

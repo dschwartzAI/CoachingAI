@@ -1252,10 +1252,10 @@ export default function ChatArea() {
           ensureChatExists(finalCurrentChat);
         }
 
-        // Show toast notification if psychographic brief was saved
+        // Show toast notification if ideal client profile was saved
         if (data.psychographicBriefSaved && toast) {
           toast({
-            title: "Psychographic Brief Saved! 🎯",
+            title: "Ideal Client Profile Saved! 🎯",
             description: "Your ideal client profile has been saved to your profile settings.",
             duration: 5000,
           });

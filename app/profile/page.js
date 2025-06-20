@@ -44,13 +44,13 @@ export default function ProfilePage() {
           setDesiredMrr(data.profile.desired_mrr || '');
           setDesiredHours(data.profile.desired_hours || '');
           setAllowMemory(data.profile.allow_memory ?? false);
-          console.log('[Profile Page] Setting psychographic brief:', {
-            hasBrief: !!data.profile.psychographic_brief,
-            briefLength: data.profile.psychographic_brief?.length,
-            updatedAt: data.profile.psychographic_brief_updated_at
-          });
-          setPsychographicBrief(data.profile.psychographic_brief || '');
-          setPsychographicBriefUpdatedAt(data.profile.psychographic_brief_updated_at || '');
+                  console.log('[Profile Page] Setting ideal client profile:', {
+          hasBrief: !!data.profile.ideal_client_profile,
+          briefLength: data.profile.ideal_client_profile?.length,
+          updatedAt: data.profile.ideal_client_profile_updated_at
+        });
+        setPsychographicBrief(data.profile.ideal_client_profile || '');
+        setPsychographicBriefUpdatedAt(data.profile.ideal_client_profile_updated_at || '');
         }
       } catch (err) {
         if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
@@ -103,7 +103,7 @@ export default function ProfilePage() {
           desired_mrr: desiredMrr,
           desired_hours: desiredHours,
           allow_memory: allowMemory,
-          psychographic_brief: psychographicBrief
+          ideal_client_profile: psychographicBrief
         })
       });
       const data = await res.json();
@@ -165,10 +165,10 @@ export default function ProfilePage() {
               />
               <Label htmlFor="allowMemory">Allow coaching memory</Label>
             </div>
-            {/* Psychographic Brief Section */}
-            <div className="grid gap-2 pt-4 border-t">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="psychographicBrief">Ideal Client Psychographic Brief</Label>
+                          {/* Ideal Client Profile Section */}
+              <div className="grid gap-2 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="psychographicBrief">Ideal Client Profile</Label>
                 {psychographicBriefUpdatedAt && (
                   <span className="text-xs text-muted-foreground">
                     Updated: {new Date(psychographicBriefUpdatedAt).toLocaleDateString()}
@@ -179,7 +179,7 @@ export default function ProfilePage() {
                 id="psychographicBrief"
                 value={psychographicBrief}
                 onChange={(e) => setPsychographicBrief(e.target.value)}
-                placeholder="Generate a comprehensive psychographic brief using the Ideal Client Extractor tool..."
+                                  placeholder="Generate a comprehensive ideal client profile using the Ideal Client Extractor tool..."
                 rows={6}
                 disabled={saving}
                 className="text-sm"
@@ -200,7 +200,7 @@ export default function ProfilePage() {
                     variant="destructive"
                     size="sm"
                     onClick={() => {
-                      if (confirm('Clear your psychographic brief? This cannot be undone.')) {
+                      if (confirm('Clear your ideal client profile? This cannot be undone.')) {
                         setPsychographicBrief('');
                         setPsychographicBriefUpdatedAt('');
                       }

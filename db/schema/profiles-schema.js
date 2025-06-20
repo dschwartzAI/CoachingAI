@@ -1,13 +1,13 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, boolean, integer } from "drizzle-orm/pg-core";
 
 export const userProfilesTable = pgTable("user_profiles", {
-  id: text("id").defaultRandom().primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   user_id: text("user_id").notNull().unique(),
   full_name: text("full_name"),
   occupation: text("occupation"),
-  current_mrr: text("current_mrr"),
-  desired_mrr: text("desired_mrr"),
-  desired_hours: text("desired_hours"),
+  current_mrr: integer("current_mrr"),
+  desired_mrr: integer("desired_mrr"),
+  desired_hours: integer("desired_hours"),
   business_stage: text("business_stage"),
   biggest_challenge: text("biggest_challenge"),
   primary_goal: text("primary_goal"),
@@ -18,8 +18,8 @@ export const userProfilesTable = pgTable("user_profiles", {
   business_description: text("business_description"),
   goals: text("goals"),
   challenges: text("challenges"),
-  psychographic_brief: text("psychographic_brief"),
-  psychographic_brief_updated_at: timestamp("psychographic_brief_updated_at"),
+  ideal_client_profile: text("ideal_client_profile"),
+  ideal_client_profile_updated_at: timestamp("ideal_client_profile_updated_at"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at")
     .defaultNow()
@@ -32,4 +32,6 @@ export const getUserProfilesTableWithJavascript = () => {
     $inferInsert: {},
     $inferSelect: {}
   };
-}; 
+};
+
+ 

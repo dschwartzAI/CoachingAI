@@ -107,7 +107,7 @@ The tool works exactly the same from a user perspective, but now:
 
 1. **Let Conversations Flow**: Don't rush through questions - let Claude explore interesting threads
 2. **Provide Rich Examples**: The more detailed your examples, the better Claude can analyze patterns
-3. **Save Generated Briefs**: The system auto-detects and saves comprehensive psychographic briefs
+3. **Save Generated Profiles**: The system auto-detects and saves comprehensive ideal client profiles
 4. **Use Profile Context**: If you've set up your profile, Claude will use that context for better questions
 
 ## Troubleshooting
@@ -129,7 +129,7 @@ Potential improvements to consider:
 
 ## Conclusion
 
-The Ideal Client Extractor now leverages Claude Opus 4's extended thinking capabilities to create psychographic briefs that are:
+The Ideal Client Extractor now leverages Claude Opus 4's extended thinking capabilities to create ideal client profiles that are:
 - More creative and elaborate
 - Psychologically insightful
 - Strategically actionable
