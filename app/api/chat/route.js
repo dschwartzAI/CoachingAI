@@ -1434,18 +1434,8 @@ export async function POST(request) {
     if (isToolInit && tool === 'daily-client-machine') {
       const toolConfig = TOOLS[tool];
       
-      // Create initial message for DCM
-      const initialMessage = `Welcome to the Daily Client Machine Builder! I'm here to help you create a powerful client acquisition system that works 24/7.
-
-How can I best support you today?
-
-1. **🚀 Build from Scratch** - Create a new Daily Client Machine step-by-step
-2. **🛠️ Tech Support** - Help with GoHighLevel setup, page building, or cloning templates
-3. **✍️ Copywriting Help** - Improve your headlines, sales copy, or email sequences
-4. **🎯 Strategy Session** - Discuss your overall DCM strategy, lead magnets, or offer structure
-5. **🔍 Review & Optimize** - Analyze your existing funnel for improvements
-
-Just type the number or describe what you need help with.`;
+      // Use the initialMessage from tool configuration
+      const initialMessage = toolConfig.initialMessage;
       
       const finalChatIdForDB = isValidUUID(clientChatId) ? clientChatId : chatId;
 
@@ -2604,47 +2594,28 @@ PROFILE USAGE INSTRUCTIONS:
 PROFILE CONTEXT: No profile context available - gather this information as needed during the conversation.`;
       }
       
-      // Enhance with James's proven DCM template reference data
+      // Enhance with James's actual DCM 2.0 templates from HighLevel API
       try {
-        const { enhanceDCMPromptWithJamesTemplates } = await import('@/lib/utils/highlevel-docs');
-        const { detectDCMRequestType, buildDCMPrompt } = await import('@/prompts/dcm-modular-prompts');
-        
-        // Detect request type using intelligent analysis
-        const userMessage = messages[messages.length - 1]?.content || '';
-        const requestType = detectDCMRequestType(userMessage);
-        
-        console.log('[CHAT_API_DEBUG] DCM Request Type Detected:', {
-          requestType,
-          userMessage: userMessage.substring(0, 100) + '...',
-          messageLength: userMessage.length
-        });
+        const { enhanceDCMPromptWithTemplates, getDCMTemplateData } = await import('@/lib/utils/highlevel-api');
         
         // Get current answers for context
         const currentAnswers = { ...collectedAnswers };
         
-        // Build specialized prompt based on request type
-        let specializedPrompt = buildDCMPrompt(requestType, userProfile, currentAnswers);
+        console.log('[CHAT_API_DEBUG] Fetching James\'s actual DCM templates from HighLevel...');
         
-        // Enhance with James's template reference data
-        enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(specializedPrompt, currentAnswers, requestType);
+        // Enhance system message with real template data from James's account
+        enhancedSystemMessage = await enhanceDCMPromptWithTemplates(enhancedSystemMessage, currentAnswers);
         
-        console.log('[CHAT_API_DEBUG] Enhanced DCM with modular prompt system:', {
-          requestType,
-          hasTemplateData: enhancedSystemMessage.includes('JAMES\'S PROVEN DCM'),
+        console.log('[CHAT_API_DEBUG] Enhanced DCM with real HighLevel templates:', {
+          hasRealTemplates: enhancedSystemMessage.includes('REAL DCM 2.0 TEMPLATE REFERENCE'),
           messageLength: enhancedSystemMessage.length,
-          isSpecialized: enhancedSystemMessage.includes('You are the DCM')
+          hasWorkflows: enhancedSystemMessage.includes('DCM Workflows Available')
         });
         
       } catch (error) {
-        console.error('[CHAT_API_DEBUG] Failed to enhance DCM prompt with modular system:', error);
-        // Fallback to original system
-        try {
-          const { enhanceDCMPromptWithJamesTemplates } = await import('@/lib/utils/highlevel-docs');
-          const currentAnswers = { ...collectedAnswers };
-          enhancedSystemMessage = await enhanceDCMPromptWithJamesTemplates(enhancedSystemMessage, currentAnswers, 'build-from-scratch');
-        } catch (fallbackError) {
-          console.error('[CHAT_API_DEBUG] Fallback DCM prompt enhancement also failed:', fallbackError);
-        }
+        console.error('[CHAT_API_DEBUG] Failed to enhance DCM prompt with HighLevel templates:', error);
+        // Add fallback message about having access to templates
+        enhancedSystemMessage += `\n\n## JAMES'S DCM 2.0 TEMPLATES\n\nYou have access to James Kemp's proven DCM 2.0 funnel templates and workflows through the HighLevel API integration. Use these real templates as reference for structure, copy, and proven conversion elements.\n\nKey DCM 2.0 Workflows Available:\n- Main Funnel (ad102e7b-7078-47cd-8910-8fceaa7bca41)\n- Reminder Email (d48d8f2b-428d-4e78-8214-36c2c60ce2ec)\n- Workshop (61ffd0c3-b0f3-462f-979d-fc7bffb61663)\n- Bundle Upsell (c95f91ac-c3d0-42c7-ba41-a8010d06e78b)\n- Cash Campaign (8db061a1-8d4f-4c07-8006-56047e48a957)\n\nProvide specific HighLevel setup instructions using these actual workflow IDs when users need technical guidance.`;
       }
       
       // Retrieve thread metadata to get collected answers and current page

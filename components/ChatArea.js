@@ -2127,7 +2127,7 @@ export default function ChatArea() {
                     <span className="text-base text-muted-foreground font-medium">Generating document...</span>
                   </div>
                   <p className="text-sm text-muted-foreground max-w-xs">
-                    This may take up to 1-3 minutes. Your document is being created based on your answers.
+                    This may take 1-3 minutes. Your document will be linked here, and a notification will appear when it's ready.
                   </p>
                 </div>
               </div>

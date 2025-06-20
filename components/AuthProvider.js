@@ -100,7 +100,7 @@ export function AuthProvider({ children }) {
               // Redirect to login if anonymous chats are not allowed
               router.push('/login');
             } else {
-              router.refresh();
+            router.refresh();
             }
           }
         });
