@@ -375,8 +375,59 @@ Apply the requested changes while maintaining:
 - Bold: Vibrant colors, strong contrasts, impactful typography`;
   }
 
+  // ========= ENHANCED WITH JAMES' DCM 2.0 WORKSHOP TEMPLATES =========
+  let templateEnhancement = "";
+  try {
+    console.log('[CHAT_API_DEBUG] Fetching James\'s actual workshop templates from HighLevel...');
+    const { enhanceDCMPromptWithTemplates, getDCMTemplateData } = await import('@/lib/utils/highlevel-api');
+    
+    // Get James' real workshop template data
+    const templateData = await getDCMTemplateData();
+    
+    if (templateData && templateData.workflows && templateData.workflows.workshop) {
+      templateEnhancement = `\n\n## JAMES' PROVEN WORKSHOP TEMPLATE REFERENCE
+
+You have access to James Kemp's actual workshop funnel template (ID: 61ffd0c3-b0f3-462f-979d-fc7bffb61663) from his HighLevel account. This is a REAL, PROVEN workshop landing page that has generated results.
+
+Workshop Template Details:
+- Template Name: ${templateData.workflows.workshop.name || 'DCM Workshop Funnel'}
+- Proven conversion structure and copy patterns
+- Real visual hierarchy and design elements
+- Tested opt-in forms and CTAs
+
+CRITICAL: Use this proven template as your foundation. Adapt James' successful structure, copy patterns, and visual design to the user's specific workshop while maintaining the conversion-optimized elements that make it work.
+
+Key DCM Workshop Elements to Preserve:
+- Compelling headline structure and benefit-focused copy
+- Strategic placement of social proof and credibility indicators
+- Conversion-optimized form design and CTA placement
+- Visual hierarchy that guides visitors to the registration
+- Mobile-responsive design patterns that convert`;
+    } else {
+      console.log('[CHAT_API_DEBUG] Workshop template not found, using DCM principles');
+      templateEnhancement = `\n\n## DCM 2.0 WORKSHOP PRINCIPLES
+
+Apply James Kemp's proven DCM 2.0 workshop conversion principles:
+- Benefit-driven headlines that address specific pain points
+- Clear value proposition with specific outcomes
+- Strategic use of urgency and scarcity
+- Professional design with high-converting color schemes
+- Mobile-first responsive design approach`;
+    }
+    
+  } catch (error) {
+    console.error('[CHAT_API_DEBUG] Failed to fetch workshop templates:', error);
+    templateEnhancement = `\n\n## DCM 2.0 WORKSHOP BEST PRACTICES
+
+Use James Kemp's proven workshop landing page principles:
+- Lead with transformation-focused headlines
+- Emphasize specific, measurable outcomes
+- Create urgency with limited availability
+- Use professional, conversion-optimized design`;
+  }
+
   // Use Claude Opus to create compelling copy from the collected answers
-  const copyGenerationPrompt = `You are an expert direct-response copywriter specializing in high-converting workshop landing pages. You follow the proven principles of copywriting legends like David Ogilvy, Gary Halbert, and Dan Kennedy.
+  const copyGenerationPrompt = `You are an expert direct-response copywriter specializing in high-converting workshop landing pages. You follow the proven principles of copywriting legends like David Ogilvy, Gary Halbert, and Dan Kennedy, combined with James Kemp's DCM 2.0 conversion methodology.
 
 Workshop Information:
 - Participant Outcomes: ${collectedAnswers.participantOutcomes || 'Transform skills and achieve results'}
@@ -384,7 +435,7 @@ Workshop Information:
 - Problem Addressed: ${collectedAnswers.problemAddressed || 'common challenges'}
 - Workshop Duration: ${collectedAnswers.workshopDuration || 'intensive workshop'}
 - Topics and Activities: ${collectedAnswers.topicsAndActivities || 'proven strategies'}
-- Resources Provided: ${collectedAnswers.resourcesProvided || 'comprehensive materials'}${designGuidelines}
+- Resources Provided: ${collectedAnswers.resourcesProvided || 'comprehensive materials'}${designGuidelines}${templateEnhancement}
 
 Create compelling, conversion-focused copy for each section. Use these copywriting best practices:
 
@@ -435,12 +486,14 @@ Return your response as valid JSON with this exact structure:
 
 Guidelines:
 - Use James Kemp's direct, no-fluff style
+- Follow DCM 2.0 proven conversion patterns and structure
 - Focus on specific outcomes and transformations
 - Create urgency and scarcity where appropriate
 - Make every word count for conversions
 - Use power words and emotional triggers
 - Ensure all copy is compelling and professional
-- Transform the user's input into benefit-focused, conversion copy${hasDesignInstructions ? '\n- Apply the requested design changes to the overall styling and presentation' : ''}`;
+- Transform the user's input into benefit-focused, conversion copy
+- Leverage the proven workshop template elements and visual hierarchy${hasDesignInstructions ? '\n- Apply the requested design changes to the overall styling and presentation' : ''}`;
 
   try {
     console.log('[CHAT_API_DEBUG] Generating AI-powered workshop copy with Claude Opus');
