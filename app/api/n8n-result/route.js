@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseClient } from '@/lib/utils/supabase';
+import { createServerClientWithCookies } from '@/lib/utils/supabaseServer';
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 
@@ -95,7 +95,7 @@ export async function POST(request) {
     let firstName = null;
     if (userId && !userId.startsWith('anon-')) {
       try {
-        const supabase = createSupabaseClient();
+        const supabase = createServerClientWithCookies();
         const { data: profileData, error: profileError } = await supabase
           .from('user_profiles')
           .select('full_name')

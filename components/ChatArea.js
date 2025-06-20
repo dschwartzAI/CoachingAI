@@ -79,9 +79,7 @@ function extractN8nLinks(content) {
 function isDocumentMessage(message) {
   const hasDocumentContent = typeof message.content === 'string' && 
     (message.content.includes('Document generated successfully') || 
-     message.content.includes('generating your document') ||
-     message.content.includes('View Google Doc') ||
-     message.content.includes('document-generation-status'));
+     message.content.includes('View Google Doc'));
   
   const hasDocumentMetadata = message.metadata?.documentLinks && 
     Object.values(message.metadata.documentLinks).some(link => link);
@@ -216,29 +214,6 @@ function HTMLContent({ content }) {
 
 // Define the DocumentMessage component
 function DocumentMessage({ message }) {
-  // Check if this is a document generation status message
-  const isGenerationStatus = typeof message.content === 'string' && 
-    message.content.includes('document-generation-status');
-  
-  // If it's a generation status message, show a proper loading UI
-  if (isGenerationStatus) {
-    return (
-      <div className="flex items-center justify-center py-6">
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground font-medium">I'm generating your document now</span>
-          </div>
-          <p className="text-xs text-muted-foreground max-w-xs text-center">
-            This typically takes about 1 minute to complete.
-          </p>
-          <p className="text-xs text-muted-foreground max-w-xs text-center">
-            You'll receive a notification and the document will appear here when it's ready.
-          </p>
-        </div>
-      </div>
-    );
-  }
   
   // First check if message has metadata with document links
   const documentLinks = message.metadata?.documentLinks;
@@ -1460,64 +1435,35 @@ export default function ChatArea() {
       chatHistoryLength: chatHistory.length
     });
 
-    // First, save an initial document generation message that will persist across refreshes
+    // Update thread metadata to indicate document generation is in progress
+    // We'll use ONLY the bottom loading state, not an in-line message
     try {
       if (user?.id) {
-        // Save both a text message for DB persistence and thread-level metadata to track generation state
-        const initialMessagePayload = {
-          thread_id: chatId,
-          role: 'assistant',
-          content: `
-          <div class="document-generation-status">
-            <p>📝 <strong>I'm generating your document now.</strong> Please wait...</p>
-            <p>This typically takes about 1 minute to complete.</p>
-            <p>You can safely refresh the page - the document will appear here when it's ready.</p>
-          </div>
-          `,
-          timestamp: new Date().toISOString(),
-          metadata: {
-            isGenerating: true,
-            generationStarted: new Date().toISOString()
-          }
-        };
-        console.log('[SSE Connect] Saving initial document generation message to DB:', initialMessagePayload);
-        saveMessage(initialMessagePayload, user.id)
-          .then(() => {
-            console.log('[SSE Connect] Successfully saved initial document message to DB.');
-            // Also update the thread metadata to indicate document generation is in progress
-            return fetch('/api/update-thread-metadata', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                threadId: chatId,
-                metadata: {
-                  ...currentChat?.metadata,
-                  isGeneratingDocument: true,
-                  generationStartTime: new Date().toISOString()
-                }
-              })
-            });
-          })
-          .then(response => {
-            if (!response.ok) {
-              console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
-            } else {
-              console.log('[SSE Connect] Successfully updated thread metadata for document generation');
+        fetch('/api/update-thread-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            threadId: chatId,
+            metadata: {
+              ...currentChat?.metadata,
+              isGeneratingDocument: true,
+              generationStartTime: new Date().toISOString()
             }
           })
-          .catch(err => console.error('[SSE Connect] Error in document generation setup:', err));
-          
-        // Also add to UI state to reflect message immediately - ENSURE IT GOES AT THE END
-        const initialMessage = { id: generateMessageId(), role: 'assistant', content: initialMessagePayload.content };
-        if (currentChat?.id === chatId) {
-          const updatedChat = {...currentChat, messages: [...currentChat.messages, initialMessage]};
-          updateChat(chatId, updatedChat);
-        }
+        }).then(response => {
+          if (!response.ok) {
+            console.warn('[SSE Connect] Failed to update thread metadata:', response.status);
+          } else {
+            console.log('[SSE Connect] Successfully updated thread metadata for document generation');
+          }
+        }).catch(err => {
+          console.error('[SSE Connect] Error updating thread metadata:', err);
+        });
       } else {
-        console.warn('[SSE Connect] Cannot save initial document message - no user ID');
+        console.warn('[SSE Connect] Cannot update thread metadata - no user ID');
       }
     } catch (initErr) {
-      console.error('[SSE Connect] Error saving initial document message:', initErr);
+      console.error('[SSE Connect] Error updating thread metadata:', initErr);
     }
 
     // We need to use a custom implementation for EventSource with POST
@@ -1683,18 +1629,9 @@ export default function ChatArea() {
                   }
                 };
                 
-                // Remove any "generating document" messages and add the new result message at the end
+                // Add the new document message at the end
                 if (currentChat?.id === chatId) {
-                  // Filter out any "generating document" messages first
-                  const filteredMessages = currentChat.messages.filter(m => 
-                    !(typeof m.content === 'string' && (
-                      m.content.includes("generating your document") || 
-                      m.content.includes("document-generation-status"))
-                    )
-                  );
-                  
-                  // Always add the new document message at the end
-                  const updatedChat = {...currentChat, messages: [...filteredMessages, documentMessage]};
+                  const updatedChat = {...currentChat, messages: [...currentChat.messages, documentMessage]};
                   updateChat(chatId, updatedChat);
                 }
                 
@@ -1777,12 +1714,7 @@ export default function ChatArea() {
         }; 
         
         if (currentChat?.id === chatId) {
-          // Remove any "generating document" messages
-          const filteredMessages = currentChat.messages.filter(m => 
-            m.content !== "I'm generating your document now. Please wait..."
-          );
-          
-          const updatedChat = {...currentChat, messages: [...filteredMessages, sseErrorMessage]};
+          const updatedChat = {...currentChat, messages: [...currentChat.messages, sseErrorMessage]};
           updateChat(chatId, updatedChat);
         }
         
@@ -2079,40 +2011,8 @@ export default function ChatArea() {
               </div>
             ) : (
               (() => {
-                const filteredMessages = currentChat.messages
-                  .filter((message) => {
-                    // Filter out document generation status messages if document is already complete
-                    const isGenerationStatus =
-                      typeof message.content === "string" &&
-                      message.content.includes("document-generation-status");
-
-                    if (isGenerationStatus) {
-                      // Check if there are any completed document messages in the chat
-                      const hasCompletedDocuments = currentChat.messages.some(
-                        (msg) =>
-                          isDocumentMessage(msg) &&
-                          !msg.content.includes("document-generation-status")
-                      );
-
-                      // Also check metadata for completion
-                      const isDocumentComplete =
-                        currentChat.metadata?.documentGenerated === true ||
-                        currentChat.metadata?.isGeneratingDocument === false;
-
-                      // Filter out generation status if document is complete
-                      if (hasCompletedDocuments || isDocumentComplete) {
-                        console.log(
-                          "[ChatArea] Filtering out generation status message - document is complete"
-                        );
-                        return false;
-                      }
-                    }
-
-                    return true;
-                  });
-
-                return filteredMessages.map((message, index) => {
-                    const isLastMessage = index === filteredMessages.length - 1;
+                return currentChat.messages.map((message, index) => {
+                    const isLastMessage = index === currentChat.messages.length - 1;
 
                     return (
                       <div
