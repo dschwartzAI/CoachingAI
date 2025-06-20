@@ -39,20 +39,35 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
 
   const fetchProfile = async () => {
     try {
+      console.log('[ProfileModal] Fetching profile for user:', user?.id);
       const res = await fetch('/api/profile');
-      if (!res.ok) return;
+      console.log('[ProfileModal] Profile API response status:', res.status);
+      
+      if (!res.ok) {
+        console.log('[ProfileModal] Profile API response not ok:', res.status, res.statusText);
+        return;
+      }
+      
       const data = await res.json();
+      console.log('[ProfileModal] Profile API response data:', data);
+      
       if (data.profile) {
+        console.log('[ProfileModal] Setting profile data:', data.profile);
         setFullName(data.profile.full_name || '');
         setOccupation(data.profile.occupation || '');
-        setCurrentMrr(data.profile.current_mrr || '');
-        setDesiredMrr(data.profile.desired_mrr || '');
-        setDesiredHours(data.profile.desired_hours || '');
+        // Convert numbers back to formatted currency strings for display
+        setCurrentMrr(data.profile.current_mrr ? formatCurrency(data.profile.current_mrr.toString()) : '');
+        setDesiredMrr(data.profile.desired_mrr ? formatCurrency(data.profile.desired_mrr.toString()) : '');
+        setDesiredHours(data.profile.desired_hours?.toString() || '');
         setBiggestChallenge(data.profile.biggest_challenge || '');
         setPsychographicBrief(data.profile.ideal_client_profile || '');
         setPsychographicBriefUpdatedAt(data.profile.ideal_client_profile_updated_at || '');
+        console.log('[ProfileModal] Profile state updated');
+      } else {
+        console.log('[ProfileModal] No profile data in response');
       }
     } catch (err) {
+      console.error('[ProfileModal] Failed to load profile:', err);
       if (process.env.NODE_ENV !== 'production') console.error('Failed to load profile:', err);
     }
   };
@@ -74,6 +89,15 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
     }).format(number);
   };
 
+  // Convert formatted currency back to number for storage
+  const parseCurrency = (currencyString) => {
+    if (!currencyString) return null;
+    // Remove all non-numeric characters except decimal point
+    const numericValue = currencyString.replace(/[^0-9.]/g, '');
+    const number = parseFloat(numericValue);
+    return isNaN(number) ? null : Math.round(number); // Round to nearest integer for database
+  };
+
   const handleCurrentMrrChange = (e) => {
     const formatted = formatCurrency(e.target.value);
     setCurrentMrr(formatted);
@@ -91,21 +115,27 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
     setSuccess('');
     
     try {
+      console.log('[ProfileModal] Submitting profile data');
+      const profileData = {
+        full_name: fullName,
+        occupation,
+        current_mrr: parseCurrency(currentMrr),
+        desired_mrr: parseCurrency(desiredMrr),
+        desired_hours: desiredHours ? parseInt(desiredHours) : null,
+        biggest_challenge: biggestChallenge,
+        ideal_client_profile: psychographicBrief
+      };
+      console.log('[ProfileModal] Profile data to submit:', profileData);
+      
       const res = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: fullName,
-          occupation,
-          current_mrr: currentMrr,
-          desired_mrr: desiredMrr,
-          desired_hours: desiredHours,
-          biggest_challenge: biggestChallenge,
-          ideal_client_profile: psychographicBrief
-        })
+        body: JSON.stringify(profileData)
       });
       
       const data = await res.json();
+      console.log('[ProfileModal] Submit response:', data);
+      
       if (!res.ok) {
         throw new Error(data.error || 'Failed to save profile');
       }
@@ -124,6 +154,7 @@ export default function ProfileModal({ open, onOpenChange, onProfileComplete }) 
       }, 1000);
       
     } catch (err) {
+      console.error('[ProfileModal] Error saving profile:', err);
       if (process.env.NODE_ENV !== 'production') console.error('Error saving profile:', err);
       setError(err.message || 'Failed to save profile');
     } finally {
