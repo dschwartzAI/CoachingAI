@@ -233,7 +233,7 @@ function DocumentMessage({ message }) {
     <div className="space-y-3">
       <div>
         {/* Check if content contains HTML and render appropriately */}
-        {message.content.includes('<a href') ? (
+        {typeof message.content === 'string' && message.content.includes('<a href') ? (
           <HTMLContent content={message.content} />
         ) : (
           <MarkdownMessage content={message.content} />
@@ -2083,7 +2083,7 @@ export default function ChatArea() {
                                     <LandingPageMessage content={message.content} />
                                   ) : (
                                     // Check for HTML content
-                                    message.content.includes('<a href') ? (
+                                    typeof message.content === 'string' && message.content.includes('<a href') ? (
                                       <HTMLContent content={message.content} />
                                     ) : (
                                       <MarkdownMessage content={message.content} />

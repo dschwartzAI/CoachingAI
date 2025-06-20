@@ -97,7 +97,8 @@ export default function NotificationBell() {
       // Check if this chat has a completed document
       const hasDocumentMessage = chat.messages?.some(message => 
         message.role === 'assistant' && 
-        message.content && // Ensure content exists
+        message.content && 
+        typeof message.content === 'string' && // Ensure content is a string
         (message.content.includes('Document generated successfully') ||
          message.content.includes('✅ Document generated successfully!')) &&
         (message.metadata?.documentLinks?.googleDocLink || 
