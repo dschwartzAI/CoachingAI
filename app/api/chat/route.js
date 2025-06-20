@@ -375,55 +375,27 @@ Apply the requested changes while maintaining:
 - Bold: Vibrant colors, strong contrasts, impactful typography`;
   }
 
-  // ========= ENHANCED WITH JAMES' DCM 2.0 WORKSHOP TEMPLATES =========
+  // ========= ENHANCED WITH JAMES' REAL WORKSHOP TEMPLATES =========
   let templateEnhancement = "";
   try {
     console.log('[CHAT_API_DEBUG] Fetching James\'s actual workshop templates from HighLevel...');
-    const { enhanceDCMPromptWithTemplates, getDCMTemplateData } = await import('@/lib/utils/highlevel-api');
+    const { enhanceWorkshopPromptWithTemplates } = await import('@/lib/utils/highlevel-api');
     
-    // Get James' real workshop template data
-    const templateData = await getDCMTemplateData();
-    
-    if (templateData && templateData.workflows && templateData.workflows.workshop) {
-      templateEnhancement = `\n\n## JAMES' PROVEN WORKSHOP TEMPLATE REFERENCE
-
-You have access to James Kemp's actual workshop funnel template (ID: 61ffd0c3-b0f3-462f-979d-fc7bffb61663) from his HighLevel account. This is a REAL, PROVEN workshop landing page that has generated results.
-
-Workshop Template Details:
-- Template Name: ${templateData.workflows.workshop.name || 'DCM Workshop Funnel'}
-- Proven conversion structure and copy patterns
-- Real visual hierarchy and design elements
-- Tested opt-in forms and CTAs
-
-CRITICAL: Use this proven template as your foundation. Adapt James' successful structure, copy patterns, and visual design to the user's specific workshop while maintaining the conversion-optimized elements that make it work.
-
-Key DCM Workshop Elements to Preserve:
-- Compelling headline structure and benefit-focused copy
-- Strategic placement of social proof and credibility indicators
-- Conversion-optimized form design and CTA placement
-- Visual hierarchy that guides visitors to the registration
-- Mobile-responsive design patterns that convert`;
-    } else {
-      console.log('[CHAT_API_DEBUG] Workshop template not found, using DCM principles');
-      templateEnhancement = `\n\n## DCM 2.0 WORKSHOP PRINCIPLES
-
-Apply James Kemp's proven DCM 2.0 workshop conversion principles:
-- Benefit-driven headlines that address specific pain points
-- Clear value proposition with specific outcomes
-- Strategic use of urgency and scarcity
-- Professional design with high-converting color schemes
-- Mobile-first responsive design approach`;
-    }
+    // Get James' real workshop template data and enhance the prompt
+    const baseTemplatePrompt = `\n\n## WORKSHOP TEMPLATE FOUNDATION`;
+    templateEnhancement = await enhanceWorkshopPromptWithTemplates(baseTemplatePrompt, collectedAnswers);
     
   } catch (error) {
     console.error('[CHAT_API_DEBUG] Failed to fetch workshop templates:', error);
-    templateEnhancement = `\n\n## DCM 2.0 WORKSHOP BEST PRACTICES
+    templateEnhancement = `\n\n## WORKSHOP BEST PRACTICES
 
-Use James Kemp's proven workshop landing page principles:
-- Lead with transformation-focused headlines
+Use proven workshop landing page principles:
+- Lead with transformation-focused headlines  
 - Emphasize specific, measurable outcomes
 - Create urgency with limited availability
-- Use professional, conversion-optimized design`;
+- Use professional, conversion-optimized design
+- Focus on benefits over features
+- Include clear registration process`;
   }
 
   // Use Claude Opus to create compelling copy from the collected answers
@@ -486,14 +458,15 @@ Return your response as valid JSON with this exact structure:
 
 Guidelines:
 - Use James Kemp's direct, no-fluff style
-- Follow DCM 2.0 proven conversion patterns and structure
+- Follow James' REAL workshop templates as your foundation (not generic designs)
+- Extract proven structure and copy patterns from the actual workshop templates
 - Focus on specific outcomes and transformations
 - Create urgency and scarcity where appropriate
 - Make every word count for conversions
 - Use power words and emotional triggers
 - Ensure all copy is compelling and professional
 - Transform the user's input into benefit-focused, conversion copy
-- Leverage the proven workshop template elements and visual hierarchy${hasDesignInstructions ? '\n- Apply the requested design changes to the overall styling and presentation' : ''}`;
+- Leverage the proven workshop landing page elements and visual hierarchy from real templates${hasDesignInstructions ? '\n- Apply the requested design changes to the overall styling and presentation' : ''}`;
 
   try {
     console.log('[CHAT_API_DEBUG] Generating AI-powered workshop copy with Claude Opus');
