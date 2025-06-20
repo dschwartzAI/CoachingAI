@@ -7,30 +7,33 @@ import remarkGfm from 'remark-gfm';
 
 // Add a component for rendering markdown messages
 function MarkdownMessage({ content }) {
+  // Gracefully handle non-string or empty content
+  const safeContent = typeof content === 'string' ? content : '';
+
   // Check if content is short and simple (no markdown formatting)
-  const isShortSimple = content.length <= 100 && 
-    !content.includes('\n') && 
-    !content.includes('**') && 
-    !content.includes('*') && 
-    !content.includes('`') && 
-    !content.includes('#') && 
-    !content.includes('[') && 
-    !content.includes('](') &&
-    !content.includes('- ') &&
-    !content.includes('1. ') &&
-    !content.includes('2. ') &&
-    !content.includes('3. ') &&
-    !/^\d+\.\s/.test(content);
+  const isShortSimple = safeContent.length <= 100 && 
+    !safeContent.includes('\n') && 
+    !safeContent.includes('**') && 
+    !safeContent.includes('*') && 
+    !safeContent.includes('`') && 
+    !safeContent.includes('#') && 
+    !safeContent.includes('[') && 
+    !safeContent.includes('](') &&
+    !safeContent.includes('- ') &&
+    !safeContent.includes('1. ') &&
+    !safeContent.includes('2. ') &&
+    !safeContent.includes('3. ') &&
+    !/^\d+\.\s/.test(safeContent);
 
   // For short, simple messages, render as plain text to avoid paragraph margins
   if (isShortSimple) {
-    return <span className="text-base leading-relaxed">{content}</span>;
+    return <span className="text-base leading-relaxed">{safeContent}</span>;
   }
 
   // For longer or formatted content, use markdown with proper prose styling
   return (
     <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:mb-2 prose-headings:mt-4 prose-pre:my-1 prose-ul:my-2 prose-ol:my-2 prose-li:my-0 max-w-none text-[inherit] [&_*]:text-[inherit]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{safeContent}</ReactMarkdown>
     </div>
   );
 }
