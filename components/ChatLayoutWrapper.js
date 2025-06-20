@@ -93,7 +93,7 @@ export default function ChatLayoutWrapper({ children }) {
   const handleProfileComplete = () => {
     setProfileComplete(true);
     toast({
-      title: "Profile Complete!",
+      title: "Profile Complete",
       description: "Your profile has been saved. We can now provide more personalized assistance.",
     });
   };

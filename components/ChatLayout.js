@@ -99,7 +99,7 @@ export default function ChatLayout({ initialChatId } = {}) {
   // Create default chat if needed
   const createDefaultChat = () => {
     if (process.env.NODE_ENV !== "production") console.log('[ChatLayout] Creating a default chat');
-    const defaultChat = createNewThread(null); // Regular JamesBot chat
+    const defaultChat = createNewThread(null); // Regular DarkJK chat
     defaultChat.isTemporary = false; // Make it persistent
     defaultChat.isNewChat = true;
     setIsNewChat(true);
@@ -372,7 +372,7 @@ export default function ChatLayout({ initialChatId } = {}) {
   const handleProfileComplete = () => {
     setProfileComplete(true);
     toast({
-      title: "Profile Complete!",
+      title: "Profile Complete",
       description: "Your profile has been saved. We can now provide more personalized assistance.",
     });
   };

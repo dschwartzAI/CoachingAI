@@ -613,7 +613,7 @@ export default function ChatArea() {
   const prevSelectedToolRef = useRef();
   const { user } = useAuth();
   const lastMessageRef = useRef(null);
-  const { track } = usePostHog();
+  const { track, trackMessageContent, trackToolProgress, trackToolCompletion, trackUserStruggles } = usePostHog();
   const { toast } = useToast();
   const { onBookmark } = useBookmark();
   const { currentChat, messages = [] } = useChatStore(); // Default messages to []
@@ -849,6 +849,13 @@ export default function ChatArea() {
   // Function to call the API for the first message
   const initiateToolChat = async (chatIdToInitiate, tool) => {
       console.log(`[ChatArea Initiate Func] Starting for chat ID: ${chatIdToInitiate}`);
+      
+      // Track tool initiation
+      trackToolProgress(tool, 'initiated', {
+        chatId: chatIdToInitiate,
+        timestamp: Date.now()
+      });
+      
       setIsLoading(true);
       // setCollectedAnswers({}); // This might clear answers if an existing empty chat is re-initialized
       
@@ -951,15 +958,6 @@ export default function ChatArea() {
         return;
     }
 
-    // Track message attempt once we know there's a chat and input
-    if (trimmedInput) {
-      track('chat_message_sent', {
-        chatId: currentChat.id,
-        toolId: selectedTool,
-        length: trimmedInput.length
-      });
-    }
-    
     // Prevent submission if loading
     if (!trimmedInput || isLoading || isResponseLoading || isInitiating) {
       console.log(`[CHAT_DEBUG] Submit prevented: empty=${!trimmedInput}, isLoading=${isLoading}, isResponseLoading=${isResponseLoading}, isInitiating=${isInitiating}`);
@@ -982,6 +980,26 @@ export default function ChatArea() {
     const tempId = chatToUpdate.id; // Store the temporary ID for reference
 
     const updatedMessages = [...chatToUpdate.messages, newMessage];
+
+    // Track message attempt after we have updatedMessages defined
+    if (trimmedInput) {
+      track('chat_message_sent', {
+        chatId: currentChat.id,
+        toolId: selectedTool,
+        length: trimmedInput.length
+      });
+
+      // Track detailed message content for analysis (if enabled)
+      trackMessageContent(trimmedInput, {
+        chatId: currentChat.id,
+        toolId: selectedTool,
+        questionsAnswered,
+        currentQuestionKey,
+        messageIndex: updatedMessages.length - 1,
+        sessionStartTime: currentChat.created_at,
+        isFollowUp: updatedMessages.length > 1
+      });
+    }
     const optimisticChat = { ...chatToUpdate, messages: updatedMessages };
 
     console.log(`[CHAT_DEBUG] Before optimistic update - tempId: ${tempId}`, {
@@ -1009,21 +1027,49 @@ export default function ChatArea() {
          })
        });
             
-       const response = await fetch('/api/chat', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({
-               messages: updatedMessages,
-               tool: selectedTool,
-               currentQuestionKey: currentQuestionKey,
-               questionsAnswered: questionsAnswered,
-               collectedAnswers: collectedAnswers,
-               chatId: currentChat.id // Explicitly include the chatId
-           }),
-       });
+       // Add timeout handling for Vercel function limits
+       const controller = new AbortController();
+       const timeoutId = setTimeout(() => {
+         controller.abort();
+       }, 55000); // 55 second timeout (leaving buffer for Vercel's 60s Fluid Compute limit)
+
+       let response;
+       try {
+         response = await fetch('/api/chat', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+                 messages: updatedMessages,
+                 tool: selectedTool,
+                 currentQuestionKey: currentQuestionKey,
+                 questionsAnswered: questionsAnswered,
+                 collectedAnswers: collectedAnswers,
+                 chatId: currentChat.id // Explicitly include the chatId
+             }),
+             signal: controller.signal
+         });
+       } catch (fetchError) {
+         clearTimeout(timeoutId);
+         
+         if (fetchError.name === 'AbortError') {
+           console.error('[CHAT_DEBUG] Request timed out');
+           throw new Error('Request timed out. Please try a simpler question or use a specialized tool from the sidebar.');
+         }
+         throw fetchError;
+       }
+
+       clearTimeout(timeoutId);
 
         if (!response.ok) {
            console.error(`[CHAT_DEBUG] API response not OK: ${response.status}`);
+           
+           // Handle specific error codes
+           if (response.status === 504) {
+             throw new Error('The server is taking too long to respond. Please try a simpler question or use a specialized tool from the sidebar.');
+           } else if (response.status === 429) {
+             throw new Error('Too many requests. Please wait a moment before trying again.');
+           }
+           
            const errorData = await response.json().catch(() => ({ error: "Request failed with status: " + response.status }));
            throw new Error(errorData.details || errorData.error || 'API request failed');
         }
@@ -1255,7 +1301,7 @@ export default function ChatArea() {
         // Show toast notification if ideal client profile was saved
         if (data.psychographicBriefSaved && toast) {
           toast({
-            title: "Ideal Client Profile Saved! 🎯",
+            title: "Ideal Client Profile Saved 🎯",
             description: "Your ideal client profile has been saved to your profile settings.",
             duration: 5000,
           });
@@ -1265,11 +1311,27 @@ export default function ChatArea() {
         console.log('[CHAT_DEBUG] Checking for completion to start n8n wait:', { isComplete, correctChatId, selectedTool, returnedAnswersLength: Object.keys(returnedAnswers || {}).length });
         if (isComplete && correctChatId && selectedTool === 'hybrid-offer') {
             console.log(`[CHAT_DEBUG] Hybrid offer complete for chatId: ${correctChatId}. Initiating SSE connection.`);
+            
+            // Track tool completion
+            trackToolCompletion(selectedTool, true, {
+              questionsAnswered: returnedQuestionsAnswered,
+              completionTime: Date.now() - (new Date(currentChat.created_at).getTime()),
+              chatId: correctChatId
+            });
+            
             setIsWaitingForN8n(true);
             const encodedAnswers = encodeURIComponent(JSON.stringify(returnedAnswers || {}));
             connectToN8nResultStream(correctChatId, encodedAnswers);
         } else if (isComplete && correctChatId && selectedTool === 'workshop-generator') {
             console.log(`[CHAT_DEBUG] Workshop generator complete for chatId: ${correctChatId}. HTML should be displayed directly in the message.`);
+            
+            // Track tool completion
+            trackToolCompletion(selectedTool, true, {
+              questionsAnswered: returnedQuestionsAnswered,
+              completionTime: Date.now() - (new Date(currentChat.created_at).getTime()),
+              chatId: correctChatId
+            });
+            
             // Workshop generator completion is handled by the HTML generation in the API response
             // No need to trigger n8n document generation
         }
@@ -1555,7 +1617,7 @@ export default function ChatArea() {
               };
               
               // Construct plain text version with HTML link embedded directly in the content
-              contentToSaveToDB = `✅ Document generated successfully!\n\n<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\nLink: ${googleDocLink}`;
+                                contentToSaveToDB = `✅ Document generated successfully.\n\n<a href="${googleDocLink}" target="_blank" rel="noopener noreferrer">View Google Doc</a>\n\nLink: ${googleDocLink}`;
             } else {
               throw new Error('No Google Doc link found in the response.');
             }
@@ -1645,7 +1707,7 @@ export default function ChatArea() {
                 
                 // Show browser notification if user has granted permission
                 if ('Notification' in window && Notification.permission === 'granted') {
-                  new Notification('Document Ready! 🎉', {
+                  new Notification('Document Ready 🎉', {
                     body: 'Your document has been generated and is ready to view.',
                     icon: '/favicon.ico',
                     tag: 'document-ready',
@@ -1655,7 +1717,7 @@ export default function ChatArea() {
                   // Request permission if not yet granted or denied
                   Notification.requestPermission().then(permission => {
                     if (permission === 'granted') {
-                      new Notification('Document Ready! 🎉', {
+                      new Notification('Document Ready 🎉', {
                         body: 'Your document has been generated and is ready to view.',
                         icon: '/favicon.ico',
                         tag: 'document-ready',
@@ -1668,7 +1730,7 @@ export default function ChatArea() {
                 // Also show a toast notification using the app's toast system
                 if (toast) {
                   toast({
-                    title: "Document Ready! 🎉",
+                    title: "Document Ready 🎉",
                     description: "Your document has been generated successfully.",
                     duration: 5000,
                   });
@@ -2051,8 +2113,8 @@ export default function ChatArea() {
                               </div>
                             </Avatar>
                           ) : (
-                            <Avatar className="h-8 w-8 flex-shrink-0">
-                              <AvatarImage src="" alt="Assistant" />
+                            <Avatar className="h-10 w-10 flex-shrink-0">
+                              <AvatarImage src="/james-face.png" alt="DarkJK" />
                               <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
                                 <Bot className="h-4 w-4" />
                               </div>
@@ -2137,8 +2199,8 @@ export default function ChatArea() {
             {isResponseLoading && !isWaitingForN8n && (
               <div className="group relative">
                 <div className="flex gap-3 max-w-full">
-                  <Avatar className="h-8 w-8 flex-shrink-0">
-                    <AvatarImage src="" alt="Assistant" />
+                  <Avatar className="h-10 w-10 flex-shrink-0">
+                    <AvatarImage src="/james-face.png" alt="DarkJK" />
                     <div className="flex items-center justify-center h-full w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
                       <Bot className="h-4 w-4" />
                     </div>

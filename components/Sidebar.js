@@ -257,7 +257,7 @@ export default function Sidebar({ onShowProfile }) {
                     onClick={() => handleNewChat(null)}
                   >
                     <MessagesSquare className="h-4 w-4 mr-2" />
-                    JamesBot
+                    DarkJK
                     <Plus className="h-4 w-4 ml-auto" />
                   </Button>
                 </div>
@@ -352,7 +352,7 @@ export default function Sidebar({ onShowProfile }) {
               variant={!selectedTool ? "secondary" : "ghost"}
               size="icon"
               onClick={() => handleNewChat(null)}
-              title="New JamesBot Chat"
+              title="New DarkJK Chat"
               className="h-10 w-10"
             >
               <MessagesSquare className="h-5 w-5" />

@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from '@/components/AuthProvider';
-import { Chrome } from 'lucide-react';
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('');
@@ -16,7 +15,7 @@ export default function SignUpPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signUpWithEmail, signInWithGoogle, user } = useAuth();
+  const { signUpWithEmail, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -49,17 +48,7 @@ export default function SignUpPage() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await signInWithGoogle();
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') console.error("Google login error:", err);
-      setError(err.message || 'Failed to initiate Google sign up.');
-      setLoading(false);
-    }
-  };
+
 
   return (
     <div className="container mx-auto flex items-center justify-center min-h-screen p-4">
@@ -112,22 +101,6 @@ export default function SignUpPage() {
                 {loading ? 'Signing up...' : 'Sign Up with Email'}
               </Button>
           </form>
-
-          <div className="relative my-2">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={loading}>
-            <Chrome className="mr-2 h-4 w-4" />
-            Google
-          </Button>
         </CardContent>
         <CardFooter className="text-center text-sm text-muted-foreground">
           <div className="w-full text-center">

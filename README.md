@@ -128,7 +128,7 @@ Add the following variables to enable the memory features:
 
 ### Proactive Tool Suggestions
 
-The main "JamesBot" coaching chat now includes intelligent tool suggestion capabilities. When you ask questions or describe tasks, the AI analyzes your request and can proactively suggest using specialized tools when relevant:
+The main "DarkJK" coaching chat now includes intelligent tool suggestion capabilities. When you ask questions or describe tasks, the AI analyzes your request and can proactively suggest using specialized tools when relevant:
 
 - **Hybrid Offer Creator** - Suggested when discussing offers, pricing, or packaging services
 - **Workshop Generator** - Suggested when talking about workshops, training, or educational content
@@ -201,3 +201,36 @@ Conversation data is stored remotely. Disable `ALLOW_ANONYMOUS_CHATS` and
 `NEXT_PUBLIC_SKIP_AUTH` to restrict access in production. Storing long histories
 and running the `compressMemories` job will consume Supabase storage and OpenAI
 credits, so adjust the schedule according to your budget.
+
+## Troubleshooting
+
+### 504 Gateway Timeout Errors on Vercel
+
+If you're experiencing 504 errors with JamesBot or tools like the Ideal Client Extractor:
+
+1. **Vercel Function Timeout Limits:**
+   - Hobby Plan: 10 seconds max
+   - Pro Plan: 60 seconds max (configured in `vercel.json`)
+   - Enterprise: Up to 900 seconds
+
+2. **Current Configuration:**
+   - API routes are configured for 60-second timeout (Pro plan required)
+   - AI API calls have 45-second timeout with 5-second buffer
+   - Token limits reduced to prevent long generation times
+
+3. **Current Configuration (Hobby Plan + Fluid Compute):**
+   - Configured for 60-second timeout limits (Fluid Compute enabled)
+   - AI API calls limited to 50 seconds with 5-second buffer
+   - Token limits restored to 4000 for comprehensive responses
+   - Full AI feature access available with Fluid Compute
+   - No need to upgrade to Pro for basic timeout needs
+
+4. **Additional Optimizations:**
+   - The Ideal Client Extractor token limit was reduced from 8000 to 4000
+   - Retry attempts reduced from 2 to 1 to avoid timeout cascades
+   - Better error messages for timeout scenarios
+
+5. **If errors persist:**
+   - Check Vercel Function logs for specific timeout details
+   - Consider using edge functions for faster response times
+   - Break complex queries into smaller parts

@@ -10,12 +10,23 @@ import { buildProfileContext } from '@/lib/utils/ai';
 import { createSessionSummary, getCoachingContext, getMessageCount, createToolMemorySummary } from '@/lib/utils/memory';
 import { generateThreadTitle } from '@/lib/utils/thread';
 
+// Vercel Fluid Compute provides extended timeouts:
+// - Hobby + Fluid Compute: 60 seconds (current setup)
+// - Pro + Fluid Compute: up to 14 minutes
+// Set conservative timeouts to leave buffer for processing
+const VERCEL_TIMEOUT_BUFFER = 5000; // 5 second buffer for Fluid Compute
+const MAX_API_TIMEOUT = process.env.VERCEL ? 50000 : 55000; // 50s on Vercel Fluid Compute, 55s locally
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  timeout: MAX_API_TIMEOUT,
+  maxRetries: 1, // Reduce retries to avoid timeout on Vercel
 });
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+  timeout: MAX_API_TIMEOUT,
+  maxRetries: 1, // Reduce retries to avoid timeout on Vercel
 });
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -2514,7 +2525,7 @@ I'll be happy to regenerate the HTML with your specific changes!`;
             // Replace the placeholder with the actual HTML in a code block and add design edit instructions
             determinedAiResponseContent = determinedAiResponseContent.replace(
               '<!-- GENERATE_WORKSHOP_HTML_NOW -->',
-              `\n\n**Landing Page Preview:**\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Perfect! I have all the information needed to create your workshop landing page.**\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
+              `\n\n**Landing Page Preview:**\n\n\`\`\`html\n${generatedHTML}\n\`\`\`\n\n**Perfect. I have all the information needed to create your workshop landing page.**\n\n**Instructions:**\n1. Copy the HTML code above\n2. In HighLevel, go to Sites → Pages → Create New Page\n3. Choose "Custom Code" or "Blank Page"\n4. Paste the HTML code into the custom code section\n5. Save and publish your landing page\n\n**Want to make changes?** Just tell me what you'd like to modify! For example:\n- "Make the background darker"\n- "Change the colors to blue and white"\n- "Make it look more professional"\n- "Add more spacing between sections"\n\nI'll regenerate the HTML with your requested changes instantly!`
             );
             
             console.log('[CHAT_API_DEBUG] HTML generated and inserted into response');
@@ -3218,7 +3229,7 @@ Return JSON:
         
         const claudeResponse = await anthropic.messages.create({
           model: "claude-opus-4-20250514",
-          max_tokens: toolConfig.maxTokens || 8000,
+          max_tokens: Math.min(toolConfig.maxTokens || 4000, 4000), // Restored to 4000 with Fluid Compute
           temperature: toolConfig.temperature || 0.85,
           top_p: toolConfig.topP || 0.95,
           system: enhancedSystemMessage,
@@ -3257,16 +3268,29 @@ Return JSON:
       } catch (claudeError) {
         console.error('[CHAT_API_DEBUG] Error calling Claude Opus for ideal-client-extractor:', claudeError);
         
+        // Check if it's a timeout error
+        let errorMessage = "I apologize, but I'm having trouble processing your request right now.";
+        
+        if (claudeError.message && (claudeError.message.includes('timeout') || claudeError.message.includes('ETIMEDOUT'))) {
+          errorMessage = "I apologize, but the request is taking longer than expected. This sometimes happens with complex analyses. Please try again with a shorter response, or break your question into smaller parts.";
+        } else if (claudeError.status === 504 || claudeError.code === 'ECONNABORTED') {
+          errorMessage = "The server is experiencing high load. Please try again in a moment, or consider using a different tool from the sidebar.";
+        } else if (claudeError.status === 429) {
+          errorMessage = "We're experiencing high demand right now. Please wait a few moments before trying again.";
+        }
+        
         // Fallback response
-        determinedAiResponseContent = "I apologize, but I'm having trouble processing your request right now. Could you please try again?";
+        determinedAiResponseContent = errorMessage;
         
         toolResponsePayload = {
-          message: "I apologize, but I'm having trouble processing your request right now. Could you please try again?",
+          message: errorMessage,
           currentQuestionKey: null,
           collectedAnswers: {},
           questionsAnswered: 0,
           isComplete: false,
-          chatId: chatId
+          chatId: chatId,
+          error: true,
+          errorType: claudeError.status || 'unknown'
         };
       }
     } else if (!tool) {
@@ -3396,6 +3420,7 @@ PERSONALITY & TONE:
 - Confident but human, blunt yet empathetic
 - Philosophical yet tactical—zoom between execution and worldview
 - Truth-focused, no fluff or corporate jargon
+- NEVER use exclamation points - James doesn't use them
 
 CORE PRINCIPLES (weave naturally into advice, don't list):
 • Leverage > hustle
@@ -3404,12 +3429,19 @@ CORE PRINCIPLES (weave naturally into advice, don't list):
 • Don't sell "clarity" or "confidence"—sell mechanisms and outcomes
 • Business should feed life, not consume it
 
-SIGNATURE PHRASES (use sparingly, max 1-2 per response, only when they fit naturally):
-• "Let me be blunt..."
+SIGNATURE PHRASES (use very sparingly, max 1 per conversation, only when perfectly natural):
+• "Here's the thing..."
 • "This isn't about the thing, it's about how people feel about the thing."
 • "The fastest way to get rich is also the fastest way to burn out."
 • "Don't sell the seat on the plane—sell the destination."
 • "It's not that it's hard—it's just harder for people who haven't done the Reps."
+• "Right, so..."
+• "Look..."
+
+LANGUAGE VARIETY: 
+- Avoid repetitive openings like "Let me be blunt" - use fresh, natural conversation starters
+- Vary your sentence structure and avoid formulaic responses
+- Speak as if continuing a natural conversation, not delivering a speech
 
 TOOL MENTIONS: ${suggestionAnalysis.shouldMention ? `
 The user's question relates to our ${suggestionAnalysis.toolName}. You should:
@@ -3500,10 +3532,27 @@ The user's conversation history and knowledge base research are provided below.$
 
       } catch (error) {
         console.error('[CHAT_API_DEBUG] Error with 2-step coaching process:', error);
+        
+        // Check if it's a timeout error and provide more helpful messages
+        let errorMessage = `Sorry, an error occurred: Error with coaching process: ${error.message}`;
+        let statusCode = 500;
+        
+        if (error.message && (error.message.includes('timeout') || error.message.includes('ETIMEDOUT'))) {
+          errorMessage = "The request is taking longer than expected. Please try again with a simpler question, or use one of the specialized tools in the sidebar for specific tasks.";
+          statusCode = 504;
+        } else if (error.status === 504 || error.code === 'ECONNABORTED') {
+          errorMessage = "The server is experiencing high load. Please refresh and try again in a moment.";
+          statusCode = 504;
+        } else if (error.status === 429) {
+          errorMessage = "We're experiencing high demand. Please wait a few moments before trying again.";
+          statusCode = 429;
+        }
+        
         return NextResponse.json({ 
-          error: `Sorry, an error occurred: Error with coaching process: ${error.message}`, 
-          chatId 
-        }, { status: 500 });
+          error: errorMessage, 
+          chatId,
+          errorType: error.status || 'unknown'
+        }, { status: statusCode });
       }
     } else { 
       console.log(`[CHAT_API_DEBUG] Calling OpenAI for generic tool: ${tool}`);

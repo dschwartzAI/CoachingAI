@@ -5,7 +5,7 @@ This document outlines the significant bugs, build issues, and architectural pro
 ## 1. Chat Creation Race Condition & Refresh Bug
 
 ### Symptoms
-- **Initial Report:** Creating a new "JamesBot" chat would incorrectly load a previous chat's content.
+- **Initial Report:** Creating a new "DarkJK" chat would incorrectly load a previous chat's content.
 - **Second Report:** The exact same issue occurred with the "Workshop Generator" and "Hybrid Offer" tools after the initial fix.
 
 ### Root Cause

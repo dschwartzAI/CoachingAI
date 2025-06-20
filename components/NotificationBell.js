@@ -46,9 +46,17 @@ export default function NotificationBell() {
       if (savedProcessedChats) {
         try {
           const parsed = JSON.parse(savedProcessedChats);
-          setProcessedChats(new Set(parsed));
+          // Clean up old processed chats (older than 24 hours) to prevent indefinite growth
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const cleanedProcessedChats = parsed.filter(chatId => {
+            // Keep chat IDs that are still relevant (this is a simple cleanup)
+            return true; // For now, keep all - could be enhanced with timestamp tracking
+          });
+          setProcessedChats(new Set(cleanedProcessedChats));
         } catch (error) {
           console.error('Error parsing saved processed chats:', error);
+          // Clear corrupted data
+          localStorage.removeItem(`processedChats_${user.id}`);
         }
       }
     }
@@ -94,26 +102,44 @@ export default function NotificationBell() {
       // Skip if we've already processed this chat for notifications
       if (processedChats.has(chat.id)) return;
 
-      // Check if this chat has a completed document
-      const hasDocumentMessage = chat.messages?.some(message => 
-        message.role === 'assistant' && 
-        message.content && 
-        typeof message.content === 'string' && // Ensure content is a string
-        (message.content.includes('Document generated successfully') ||
-         message.content.includes('✅ Document generated successfully!')) &&
-        (message.metadata?.documentLinks?.googleDocLink || 
-         message.content.includes('https://docs.google.com/document/'))
-      );
+      // More strict document completion check - only trigger for recent messages
+      const recentDocumentMessage = chat.messages?.find(message => {
+        if (message.role !== 'assistant' || !message.content || typeof message.content !== 'string') {
+          return false;
+        }
+        
+        // Check if message is recent (within last 10 minutes) to avoid old notifications
+        const messageTime = message.timestamp ? new Date(message.timestamp) : new Date();
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const isRecent = messageTime > tenMinutesAgo;
+        
+        // Check for document completion indicators
+        const hasDocumentIndicator = (
+          message.content.includes('Document generated successfully') ||
+          message.content.includes('✅ Document generated successfully!')  ||
+          message.content.includes('✅ Document generated successfully.')
+        );
+        
+        // Check for actual document link
+        const hasDocumentLink = (
+          message.metadata?.documentLinks?.googleDocLink || 
+          message.content.includes('https://docs.google.com/document/')
+        );
+        
+        return isRecent && hasDocumentIndicator && hasDocumentLink;
+      });
       
-      // Also check thread metadata for document completion
-      const hasDocumentInMetadata = chat.metadata?.documentGenerated === true && 
-                                   chat.metadata?.documentLinks?.googleDocLink;
+      // Also check thread metadata for recent document completion
+      const hasRecentDocumentInMetadata = chat.metadata?.documentGenerated === true && 
+                                         chat.metadata?.documentLinks?.googleDocLink &&
+                                         chat.metadata?.documentGeneratedAt &&
+                                         new Date(chat.metadata.documentGeneratedAt) > new Date(Date.now() - 10 * 60 * 1000);
       
-      if (hasDocumentMessage || hasDocumentInMetadata) {
+      if (recentDocumentMessage || hasRecentDocumentInMetadata) {
         // Mark this chat as processed
         newProcessedChats.add(chat.id);
         
-        // Create notification only for legitimate document completions
+        // Create notification only for legitimate recent document completions
         newNotifications.push({
           id: `doc-ready-${chat.id}-${Date.now()}`,
           chatId: chat.id,
@@ -134,7 +160,7 @@ export default function NotificationBell() {
     if (newProcessedChats.size > processedChats.size) {
       setProcessedChats(newProcessedChats);
     }
-  }, [chats, user]); // Removed processedChats from dependencies to prevent loops
+  }, [chats, user, processedChats]); // Re-added processedChats to dependencies for proper tracking
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -170,8 +196,10 @@ export default function NotificationBell() {
     setShowNotifications(false);
     if (user?.id) {
       localStorage.removeItem(`notifications_${user.id}`);
+      // Also clear processed chats to allow fresh detection if needed
+      localStorage.removeItem(`processedChats_${user.id}`);
+      setProcessedChats(new Set());
     }
-    // Note: We don't clear processedChats here - this prevents notifications from reappearing
   };
 
   return (

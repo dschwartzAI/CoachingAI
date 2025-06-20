@@ -49,7 +49,8 @@ export default function Message({ message }) {
       isUser ? "self-end ml-auto" : "self-start mr-auto"
     )}>
       {!isUser && (
-        <Avatar className="h-8 w-8 flex-shrink-0">
+        <Avatar className="h-10 w-10 flex-shrink-0">
+          <AvatarImage src="/james-face.png" alt="DarkJK" />
           <AvatarFallback className="bg-primary/10 text-primary">
             <Bot className="h-4 w-4" />
           </AvatarFallback>
