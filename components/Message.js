@@ -56,7 +56,7 @@ export default function Message({ message }) {
       <div className={cn(
         "rounded-2xl p-3 text-sm", 
         isUser 
-          ? "bg-primary text-primary-foreground rounded-tr-none" 
+          ? "bg-primary text-primary-foreground rounded-tr-none w-fit" 
           : "bg-muted text-foreground rounded-tl-none overflow-auto"
       )}>
         {/* Render content with markdown for assistant messages or as text for users */}
